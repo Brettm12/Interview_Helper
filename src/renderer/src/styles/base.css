@@ -1,0 +1,110 @@
+/* Base reset + shared micro-classes. Screen-specific styles live next to the
+   screen components; anything reused across ≥2 screens belongs here. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg-panel);
+  color: var(--text-bright);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+  overflow: hidden;
+}
+
+button {
+  all: unset;
+  cursor: pointer;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+  padding: 0;
+}
+
+/* every multi-line text block in the design uses this */
+.pretty {
+  text-wrap: pretty;
+}
+
+/* the standard 9.5px mono section label */
+.label {
+  font: 500 9.5px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-label);
+}
+
+/* breadcrumb variant: 11px, .08em */
+.label--crumb {
+  font: 500 11px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+}
+
+/* small action chip: "New answer", "⌘K find" */
+.chip {
+  font: 500 11px/1 var(--font-ui);
+  color: var(--text-action);
+  background: var(--border-mid);
+  padding: 6px 9px;
+  border-radius: 5px;
+}
+
+.chip--mono {
+  font: 500 10.5px/1 var(--font-mono);
+  padding: 6px 8px;
+}
+
+/* metric chip on story cards */
+.metric-chip {
+  font: 500 10.5px/1 var(--font-mono);
+  color: var(--text-inverse);
+  background: var(--accent-light);
+  padding: 5px 8px;
+  border-radius: 4px;
+}
+
+/* primary CTA ("Start listening", "Save to loop") */
+.cta {
+  font: 500 12px/1 var(--font-ui);
+  color: var(--text-inverse);
+  background: var(--accent-light);
+  padding: 12px 18px;
+  border-radius: 6px;
+  flex: none;
+}
+
+/* quiet inline action ("Edit", "Practice", "Swap", "Test") */
+.action {
+  font: 500 11px/1 var(--font-ui);
+  color: var(--text-action);
+}
+
+/* footer shortcut text */
+.footer-hint {
+  font: 500 11.5px/1 var(--font-ui);
+  color: var(--text-label);
+}
+
+/* blinking-style caret used in mock text inputs */
+.caret {
+  opacity: 0.55;
+  font-weight: 300;
+}

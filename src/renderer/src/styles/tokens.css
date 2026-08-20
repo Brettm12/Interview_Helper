@@ -1,0 +1,67 @@
+/* Design tokens — one-to-one with the handoff README's token table.
+   Values are exact; read off the design reference markup. */
+:root {
+  /* -- colors: backgrounds -- */
+  --bg-app: #0e0f11;                 /* window behind the call */
+  --bg-panel: #16181b;               /* panel + bank surface */
+  --bg-panel-deep: #131518;          /* transcript footer, sidebar */
+  --bg-raised: #1c1f23;              /* story card, inputs, stat cards */
+  --bg-row-selected: #1f2327;        /* selected rows, top candidate */
+  --bg-row: #1a1d21;                 /* editor point rows */
+  --bg-strip: #121417;               /* share-safe strip (opaque) */
+  --bg-strip-overlay: rgba(18, 20, 23, 0.94); /* strip over a shared surface */
+
+  /* -- colors: borders -- */
+  --border-strong: #3a3f46;          /* focused input, top candidate */
+  --border-mid: #2b2f35;             /* cards, chips, buttons */
+  --border-window: #26292e;          /* window hairline */
+  --border-section: #23262b;         /* section hairline */
+  --border-row: #21242a;             /* row divider hairline */
+
+  /* -- colors: text -- */
+  --text-primary: #f4f2ee;           /* questions, active point */
+  --text-body: #e6e3dd;              /* key points */
+  --text-secondary: #c3bfb8;         /* chips */
+  --text-action: #c9c4ba;            /* actions (also accent/light) */
+  --text-quiet: #cfcbc4;             /* quiet buttons */
+  --text-muted: #a8a39b;             /* sub-lines */
+  --text-history: #9c968e;           /* history rows */
+  --text-label: #8d8880;             /* all monospace labels, transcript */
+  --text-inverse: #16181b;           /* on light chips/CTA */
+  --text-dim: #6f6b64;               /* collapse, call header, × */
+  --text-listening: #b6b2aa;         /* "Listening" header label, bank title */
+  --text-story: #d9d5ce;             /* story body */
+  --text-bright: #eceae5;            /* panel base color, transcript highlight */
+  --text-pill: #a9a5a0;              /* video name pill */
+  --text-video-label: #4c4f54;       /* placeholder video labels */
+
+  /* -- colors: accent + status -- */
+  --accent-light: #c9c4ba;           /* primary CTA, metric chips */
+  --status-live: oklch(0.72 0.15 145);       /* listening dot, ✓, covered */
+  --status-live-dim: oklch(0.55 0.09 145);   /* schematic fill */
+  --status-live-dim-2: oklch(0.5 0.09 145);  /* strip alert border */
+  --status-attention: oklch(0.78 0.15 75);   /* unsure, new-question alert */
+  --status-attention-text: oklch(0.86 0.12 75); /* warning stat number */
+  --warn-bg: #221e19;
+  --warn-border: oklch(0.42 0.07 75);
+  --warn-text: #bfb3a0;
+  --dot-inactive: #4f545b;           /* upcoming point marker */
+  --placement-selected-border: #4b5158; /* selected placement card, schematic block */
+  --track-progress: #2e3238;         /* 44×2 progress bar remainder */
+  --track-autopick: #26292e;         /* unsure auto-pick track */
+  --highlight-find: #2f3a33;         /* query-term highlight in ⌘K results */
+
+  /* -- placeholder stripes (replace with real content in production) -- */
+  --stripes-call: repeating-linear-gradient(135deg, #1a1c1f 0 9px, #191b1e 9px 18px);
+  --stripes-call-you: repeating-linear-gradient(135deg, #1f2124 0 9px, #1c1e21 9px 18px);
+  --stripes-schematic: repeating-linear-gradient(135deg, #242830 0 6px, #20242b 6px 12px);
+  --stripes-shared-screen: repeating-linear-gradient(135deg, #f2f0eb 0 10px, #eeece6 10px 20px);
+
+  /* -- typography -- */
+  --font-serif: 'Instrument Serif', Georgia, serif;
+  --font-ui: 'Helvetica Neue', Helvetica, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  /* -- shadow (only one in the whole design) -- */
+  --shadow-strip: 0 6px 20px rgba(0, 0, 0, 0.28);
+}

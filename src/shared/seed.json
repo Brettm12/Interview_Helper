@@ -1,0 +1,511 @@
+{
+  "activeLoopId": "loop-meridian",
+  "loops": [
+    {
+      "id": "loop-meridian",
+      "name": "Senior People Partner · Meridian Health · Round 2",
+      "detail": "Dana Okafor + one more · 45 min · Google Meet",
+      "startsIn": "STARTS IN 6 MINUTES",
+      "likelyOpeners": [
+        "Tell me about a time you handled a difficult employee relations case",
+        "Why Meridian?"
+      ],
+      "shortName": "People Partner · Meridian"
+    },
+    {
+      "id": "loop-castlegate",
+      "name": "HR Manager · Castlegate Logistics",
+      "detail": "Panel of 3 · 60 min · Teams",
+      "likelyOpeners": [
+        "Walk me through your background"
+      ],
+      "shortName": "HR Manager · Castlegate"
+    },
+    {
+      "id": "loop-practice",
+      "name": "Practice / cold calls",
+      "detail": "Self-run drills",
+      "likelyOpeners": [
+        "Tell me about yourself"
+      ],
+      "shortName": "Practice / cold calls"
+    }
+  ],
+  "sections": [
+    {
+      "id": "sec-behavioural",
+      "name": "Behavioural"
+    },
+    {
+      "id": "sec-er",
+      "name": "Employee relations"
+    },
+    {
+      "id": "sec-compliance",
+      "name": "Compliance"
+    },
+    {
+      "id": "sec-closing",
+      "name": "Closing"
+    }
+  ],
+  "stories": [
+    {
+      "id": "story-invest",
+      "title": "Warehouse harassment investigation, Q2",
+      "body": "Two complainants, one long-tenured supervisor, and a site that assumed nothing would happen. I ran eleven interviews in five days, kept both complainants working through schedule changes instead of suspensions, and the termination stood up — no grievance, no appeal.",
+      "metrics": [
+        "5 days",
+        "11 interviews",
+        "0 appeals"
+      ]
+    },
+    {
+      "id": "story-rif",
+      "title": "40-role restructure, two provinces",
+      "body": "Legal wanted paper speed; managers wanted it over. I sequenced every notification into one day, trained each manager on the script the week before, and redeployed a third of the affected people internally before notice went out.",
+      "metrics": [
+        "40 roles",
+        "13 redeployed",
+        "0 claims"
+      ]
+    },
+    {
+      "id": "story-onboard",
+      "title": "Call-centre onboarding rebuild",
+      "body": "Ninety-day attrition in the call centre was sitting at 31%. I rebuilt week one around shadowing, moved the compliance modules out of day one, and paired every hire with a floor mentor. Attrition fell to 19% inside two quarters.",
+      "metrics": [
+        "31% → 19%",
+        "2 quarters",
+        "eNPS +21"
+      ]
+    }
+  ],
+  "answers": [
+    {
+      "id": "a-er-case",
+      "question": "Tell me about a time you handled a difficult employee relations case.",
+      "sectionId": "sec-behavioural",
+      "loopIds": [
+        "loop-meridian",
+        "loop-castlegate",
+        "loop-practice"
+      ],
+      "storyId": "story-invest",
+      "triggerPhrases": [
+        "difficult employee relations case",
+        "difficult ER case",
+        "hardest investigation"
+      ],
+      "lastUsed": {
+        "loopName": "Castlegate screen",
+        "date": "12 Aug",
+        "covered": 4,
+        "total": 4
+      },
+      "points": [
+        {
+          "id": "p-erc-1",
+          "text": "Start with the risk: two complainants, one supervisor, a site used to silence"
+        },
+        {
+          "id": "p-erc-2",
+          "text": "Separate the people, not the payroll — schedule changes, no suspensions"
+        },
+        {
+          "id": "p-erc-3",
+          "text": "Eleven interviews in five days, documented as I went"
+        },
+        {
+          "id": "p-erc-4",
+          "text": "The decision stood up — no grievance, no appeal"
+        }
+      ]
+    },
+    {
+      "id": "a-disagree",
+      "question": "Tell me about a time you disagreed with a leader and changed the outcome.",
+      "sectionId": "sec-behavioural",
+      "loopIds": [
+        "loop-meridian",
+        "loop-castlegate"
+      ],
+      "storyId": "story-rif",
+      "triggerPhrases": [
+        "pushed back on leadership",
+        "disagreed with your VP",
+        "disagree and commit"
+      ],
+      "lastUsed": null,
+      "points": [
+        {
+          "id": "p-dis-1",
+          "text": "Frame it as a risk disagreement, not a personality one"
+        },
+        {
+          "id": "p-dis-2",
+          "text": "I brought a sequencing plan, not an objection"
+        },
+        {
+          "id": "p-dis-3",
+          "text": "Say out loud where I was partly wrong"
+        },
+        {
+          "id": "p-dis-4",
+          "text": "Land on the relationship after, not the win"
+        }
+      ]
+    },
+    {
+      "id": "a-mistake",
+      "question": "Tell me about a mistake that had real consequences.",
+      "sectionId": "sec-behavioural",
+      "loopIds": [
+        "loop-meridian",
+        "loop-practice"
+      ],
+      "storyId": "story-onboard",
+      "triggerPhrases": [
+        "biggest mistake",
+        "time you got it wrong"
+      ],
+      "lastUsed": null,
+      "points": [
+        {
+          "id": "p-mis-1",
+          "text": "Own it in one sentence — no wind-up"
+        },
+        {
+          "id": "p-mis-2",
+          "text": "The first rollout skipped the night shift entirely"
+        },
+        {
+          "id": "p-mis-3",
+          "text": "What changed: every pilot now names who it excludes"
+        }
+      ]
+    },
+    {
+      "id": "a-pressure",
+      "question": "How do you handle several urgent cases at once?",
+      "sectionId": "sec-behavioural",
+      "loopIds": [
+        "loop-meridian"
+      ],
+      "storyId": "story-invest",
+      "triggerPhrases": [
+        "everything at once",
+        "competing priorities"
+      ],
+      "lastUsed": null,
+      "points": [
+        {
+          "id": "p-pre-1",
+          "text": "Triage by legal exposure first, people risk second"
+        },
+        {
+          "id": "p-pre-2",
+          "text": "One case owner per file — no shared inboxes"
+        },
+        {
+          "id": "p-pre-3",
+          "text": "Tell the waiting managers when, not just that, I'll get to them"
+        }
+      ]
+    },
+    {
+      "id": "a-stakeholder",
+      "question": "Working with a difficult stakeholder",
+      "sectionId": "sec-behavioural",
+      "loopIds": [
+        "loop-meridian",
+        "loop-castlegate"
+      ],
+      "storyId": null,
+      "triggerPhrases": [
+        "difficult stakeholder"
+      ],
+      "lastUsed": null,
+      "points": [
+        {
+          "id": "p-stk-1",
+          "text": "Pick the one who controls the outcome, not the loudest"
+        },
+        {
+          "id": "p-stk-2",
+          "text": "Move the fight to data they already trust"
+        },
+        {
+          "id": "p-stk-3",
+          "text": "Agree the escalation path before you need it"
+        }
+      ]
+    },
+    {
+      "id": "a-invest-run",
+      "question": "Walk me through how you'd run a harassment investigation.",
+      "sectionId": "sec-er",
+      "loopIds": [
+        "loop-meridian",
+        "loop-castlegate"
+      ],
+      "storyId": "story-invest",
+      "triggerPhrases": [
+        "harassment complaint",
+        "run an investigation",
+        "one word against another"
+      ],
+      "lastUsed": null,
+      "points": [
+        {
+          "id": "p-inv-1",
+          "text": "Scope and interim measures in the first 24 hours"
+        },
+        {
+          "id": "p-inv-2",
+          "text": "Interview order: complainant, witnesses, respondent last"
+        },
+        {
+          "id": "p-inv-3",
+          "text": "Credibility calls on the record, not in my head"
+        },
+        {
+          "id": "p-inv-4",
+          "text": "Close the loop with both sides — silence reads as cover-up"
+        }
+      ]
+    },
+    {
+      "id": "a-retaliation",
+      "question": "An employee says their manager is retaliating — what do the first 48 hours look like?",
+      "sectionId": "sec-er",
+      "loopIds": [
+        "loop-meridian"
+      ],
+      "storyId": "story-invest",
+      "triggerPhrases": [
+        "retaliation claim",
+        "decide who to believe"
+      ],
+      "lastUsed": null,
+      "points": [
+        {
+          "id": "p-ret-1",
+          "text": "Freeze anything that could look like reprisal — shifts, reviews, access"
+        },
+        {
+          "id": "p-ret-2",
+          "text": "Get the timeline in their words before memories move"
+        },
+        {
+          "id": "p-ret-3",
+          "text": "Loop legal early if there's a protected complaint underneath"
+        }
+      ]
+    },
+    {
+      "id": "a-coach",
+      "question": "How do you coach a manager who's burning out their team?",
+      "sectionId": "sec-er",
+      "loopIds": [
+        "loop-meridian",
+        "loop-castlegate"
+      ],
+      "storyId": "story-onboard",
+      "triggerPhrases": [
+        "burning out their team",
+        "manager in trouble"
+      ],
+      "lastUsed": null,
+      "points": [
+        {
+          "id": "p-cch-1",
+          "text": "Show them their own attrition and overtime numbers first"
+        },
+        {
+          "id": "p-cch-2",
+          "text": "Coach the behaviour, not the intention"
+        },
+        {
+          "id": "p-cch-3",
+          "text": "Set a review date — coaching without a checkpoint is a hope"
+        }
+      ]
+    },
+    {
+      "id": "a-term",
+      "question": "Tell me about a termination that didn't go to plan.",
+      "sectionId": "sec-er",
+      "loopIds": [
+        "loop-meridian"
+      ],
+      "storyId": null,
+      "triggerPhrases": [
+        "termination went wrong",
+        "dismissal gone bad"
+      ],
+      "lastUsed": null,
+      "points": [
+        {
+          "id": "p-trm-1",
+          "text": "The plan survived until the room did something human"
+        },
+        {
+          "id": "p-trm-2",
+          "text": "Security-escort optics cost us that site's trust for a quarter"
+        },
+        {
+          "id": "p-trm-3",
+          "text": "Now I rehearse the worst five minutes, not the paperwork"
+        }
+      ]
+    },
+    {
+      "id": "a-multi",
+      "question": "How do you keep managers compliant across provinces?",
+      "sectionId": "sec-compliance",
+      "loopIds": [
+        "loop-meridian",
+        "loop-castlegate"
+      ],
+      "storyId": "story-rif",
+      "triggerPhrases": [
+        "multi-province",
+        "different jurisdictions"
+      ],
+      "lastUsed": null,
+      "points": [
+        {
+          "id": "p-mlt-1",
+          "text": "One national floor with provincial overlays — never ten policies"
+        },
+        {
+          "id": "p-mlt-2",
+          "text": "Train on scenarios, not statutes"
+        },
+        {
+          "id": "p-mlt-3",
+          "text": "Audit the exceptions log quarterly — that's where drift shows"
+        }
+      ]
+    },
+    {
+      "id": "a-policy",
+      "question": "Tell me about rolling out a policy people hated.",
+      "sectionId": "sec-compliance",
+      "loopIds": [
+        "loop-meridian"
+      ],
+      "storyId": "story-rif",
+      "triggerPhrases": [
+        "unpopular policy"
+      ],
+      "lastUsed": null,
+      "points": [
+        {
+          "id": "p-pol-1",
+          "text": "Name the cost honestly on day one"
+        },
+        {
+          "id": "p-pol-2",
+          "text": "Give managers the why in their numbers, not HR's"
+        },
+        {
+          "id": "p-pol-3",
+          "text": "Publish the exception path — pressure needs a valve"
+        }
+      ]
+    },
+    {
+      "id": "a-bend",
+      "question": "What would you do if leadership asked you to bend a policy?",
+      "sectionId": "sec-compliance",
+      "loopIds": [
+        "loop-meridian",
+        "loop-castlegate"
+      ],
+      "storyId": "story-invest",
+      "triggerPhrases": [
+        "bend the rules",
+        "asked to look the other way"
+      ],
+      "lastUsed": null,
+      "points": [
+        {
+          "id": "p-bnd-1",
+          "text": "Clarify what's actually being asked before reacting"
+        },
+        {
+          "id": "p-bnd-2",
+          "text": "Separate legal lines from policy preferences"
+        },
+        {
+          "id": "p-bnd-3",
+          "text": "Offer the compliant version of the same outcome"
+        },
+        {
+          "id": "p-bnd-4",
+          "text": "Document the ask either way"
+        }
+      ]
+    },
+    {
+      "id": "a-why",
+      "question": "Why this team?",
+      "sectionId": "sec-closing",
+      "loopIds": [
+        "loop-meridian"
+      ],
+      "storyId": "story-onboard",
+      "triggerPhrases": [
+        "why us",
+        "why meridian",
+        "why this role"
+      ],
+      "lastUsed": null,
+      "points": [
+        {
+          "id": "p-why-1",
+          "text": "Healthcare scale plus in-house ER — the problems I want"
+        },
+        {
+          "id": "p-why-2",
+          "text": "The onboarding rebuild is the work I want to do more of"
+        },
+        {
+          "id": "p-why-3",
+          "text": "Ask what the first 90 days need — make it a dialogue"
+        }
+      ]
+    },
+    {
+      "id": "a-career",
+      "question": "Where do you want to take your HR career?",
+      "sectionId": "sec-closing",
+      "loopIds": [
+        "loop-meridian",
+        "loop-practice"
+      ],
+      "storyId": "story-onboard",
+      "triggerPhrases": [
+        "five years",
+        "career goals"
+      ],
+      "lastUsed": null,
+      "points": [
+        {
+          "id": "p-car-1",
+          "text": "Towards owning ER strategy, not just the cases"
+        },
+        {
+          "id": "p-car-2",
+          "text": "Keep one hand in the messy work — credibility comes from files"
+        },
+        {
+          "id": "p-car-3",
+          "text": "Building managers who don't need me is the goal"
+        }
+      ]
+    }
+  ]
+}

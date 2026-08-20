@@ -1,0 +1,39 @@
+{
+  "comment": "Scripted mock session replayed by MockAudioSource/MockTranscriber. `at` is the session clock in seconds (drives timestamps); `delay` is playback ms since the previous event (compressed vs the clock so the whole demo runs in ~2 minutes). Covers: confident match, points striking through, ambiguous question with the 4s auto-pick, a question absent from the bank, a long answer, a ⌘K override, collapse/expand, and session end.",
+  "events": [
+    { "delay": 2500, "kind": "them", "at": 38, "text": "Thanks for making the time. So to start — tell me about a time you handled", "confirmed": false },
+    { "delay": 2200, "kind": "them", "at": 42, "text": "So to start — tell me about a time you handled a really difficult employee relations case.", "confirmed": true, "highlight": "difficult employee relations case" },
+    { "delay": 4200, "kind": "you", "at": 52, "text": "Sure — the riskiest one was two complainants against one long-tenured supervisor, at a site that was used to silence.", "confirmed": true },
+    { "delay": 4800, "kind": "you", "at": 78, "text": "First move was to separate the people, not the payroll — schedule changes, no suspensions.", "confirmed": true },
+    { "delay": 4600, "kind": "you", "at": 104, "text": "I ran eleven interviews in five days and documented as I went,", "confirmed": true },
+    { "delay": 3400, "kind": "you", "at": 128, "text": "and in the end the supervisor left the business.", "confirmed": true },
+
+    { "delay": 4000, "kind": "them", "at": 150, "text": "when it comes down to one person's word against", "confirmed": false },
+    { "delay": 2000, "kind": "them", "at": 154, "text": "When it comes down to one person's word against another's — how do you decide who to believe?", "confirmed": true, "highlight": "who to believe" },
+    { "delay": 6500, "kind": "you", "at": 168, "text": "I'm careful about interview order — complainant first, then witnesses, the respondent last.", "confirmed": true },
+    { "delay": 4600, "kind": "you", "at": 196, "text": "And I make the credibility calls on the record, not in my head.", "confirmed": true },
+
+    { "delay": 4200, "kind": "them", "at": 260, "text": "What's your approach to pay transparency conversations, when someone finds out a peer earns more?", "confirmed": true },
+    { "delay": 4400, "kind": "you", "at": 272, "text": "Honestly, I start from the range architecture — if the bands are defensible, the conversation is about the band, not the person.", "confirmed": true },
+
+    { "delay": 4600, "kind": "them", "at": 340, "text": "Something closer to home — I've got a manager who's burning their team out.", "confirmed": false },
+    { "delay": 2400, "kind": "them", "at": 344, "text": "I've got a manager who's burning their team out — how do you coach a manager in that spot?", "confirmed": true, "highlight": "burning their team out" },
+    { "delay": 4400, "kind": "you", "at": 356, "text": "I'd show them their own attrition and overtime numbers first — those tell the story better than I can.", "confirmed": true },
+    { "delay": 4200, "kind": "you", "at": 424, "text": "Then coach the behaviour, not the intention — almost none of them mean to do it.", "confirmed": true },
+    { "delay": 4200, "kind": "you", "at": 498, "text": "And set a review date, because coaching without a checkpoint is a hope, not a plan.", "confirmed": true },
+
+    { "delay": 4400, "kind": "them", "at": 550, "text": "We're about to roll out a return-to-office policy nobody is going to love — walk me through how you'd land it.", "confirmed": true },
+    { "delay": 2600, "kind": "find-open", "at": 556 },
+    { "delay": 900, "kind": "find-query", "at": 557, "query": "policy" },
+    { "delay": 1400, "kind": "find-pin", "at": 559, "entryId": "a-policy" },
+    { "delay": 3000, "kind": "you", "at": 570, "text": "First, name the cost honestly on day one — people smell spin.", "confirmed": true },
+    { "delay": 4400, "kind": "you", "at": 610, "text": "And publish the exception path, because pressure needs a valve.", "confirmed": true },
+
+    { "delay": 3200, "kind": "collapse", "at": 630 },
+    { "delay": 4200, "kind": "them", "at": 680, "text": "Before we wrap — what would you want to know from us before accepting an offer?", "confirmed": true },
+    { "delay": 3600, "kind": "expand", "at": 692 },
+    { "delay": 2800, "kind": "you", "at": 700, "text": "Two things — how the team defines a good first ninety days, and what burned out the last person in this seat.", "confirmed": true },
+
+    { "delay": 4200, "kind": "end", "at": 762 }
+  ]
+}
