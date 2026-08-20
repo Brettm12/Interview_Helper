@@ -1,0 +1,56 @@
+/* Window shell. In Electron each window is sized by the main process and the
+ * view fills it; in the browser (dev:web) views render at their reference
+ * frame size, centered on the app background. */
+
+.app-root {
+  width: 100%;
+  height: 100%;
+}
+
+.app-root--web {
+  min-height: 100vh;
+  background: var(--bg-app);
+}
+
+.app-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.app-frame {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-window);
+  border-radius: 10px;
+}
+
+/* the live panel region: positioning context for the ⌘K find overlay */
+.app-panel-host {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* collapsed demo: the share-safe strip floats over the call frame, matching
+ * the reference's top:14px; right:14px placement */
+.app-strip-float {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  /* 340px strip content + 24 padding + 2 border, per the 2c frame */
+  width: 366px;
+}
+
+/* full-height layer so FindOverlay's absolute inset resolves to the panel */
+.find-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}

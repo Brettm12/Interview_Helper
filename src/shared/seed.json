@@ -243,7 +243,7 @@
     },
     {
       "id": "a-invest-run",
-      "question": "Walk me through how you'd run a harassment investigation.",
+      "question": "Walk me through how you run a harassment investigation.",
       "sectionId": "sec-er",
       "loopIds": [
         "loop-meridian",
@@ -276,6 +276,35 @@
       ]
     },
     {
+      "id": "a-informal",
+      "question": "An employee raises a harassment complaint but asks you not to investigate — what would you do?",
+      "sectionId": "sec-er",
+      "loopIds": [
+        "loop-meridian",
+        "loop-castlegate"
+      ],
+      "storyId": "story-invest",
+      "triggerPhrases": [
+        "harassment complaint",
+        "asked me not to investigate"
+      ],
+      "lastUsed": null,
+      "points": [
+        {
+          "id": "p-inf-1",
+          "text": "No absolute promises — explain the duty to act on what I now know"
+        },
+        {
+          "id": "p-inf-2",
+          "text": "Assess severity first: a one-off comment and a pattern take different paths"
+        },
+        {
+          "id": "p-inf-3",
+          "text": "Agree what happens next and when, so nothing drifts"
+        }
+      ]
+    },
+    {
       "id": "a-retaliation",
       "question": "An employee says their manager is retaliating — what do the first 48 hours look like?",
       "sectionId": "sec-er",
@@ -284,8 +313,7 @@
       ],
       "storyId": "story-invest",
       "triggerPhrases": [
-        "retaliation claim",
-        "decide who to believe"
+        "retaliation claim"
       ],
       "lastUsed": null,
       "points": [

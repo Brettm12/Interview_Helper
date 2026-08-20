@@ -8,8 +8,8 @@
     { "delay": 4600, "kind": "you", "at": 104, "text": "I ran eleven interviews in five days and documented as I went,", "confirmed": true },
     { "delay": 3400, "kind": "you", "at": 128, "text": "and in the end the supervisor left the business.", "confirmed": true },
 
-    { "delay": 4000, "kind": "them", "at": 150, "text": "when it comes down to one person's word against", "confirmed": false },
-    { "delay": 2000, "kind": "them", "at": 154, "text": "When it comes down to one person's word against another's — how do you decide who to believe?", "confirmed": true, "highlight": "who to believe" },
+    { "delay": 4000, "kind": "them", "at": 150, "text": "say a harassment complaint lands on your desk", "confirmed": false },
+    { "delay": 2000, "kind": "them", "at": 154, "text": "Say a harassment complaint lands on your desk — how do you run the investigation?", "confirmed": true, "highlight": "harassment complaint" },
     { "delay": 6500, "kind": "you", "at": 168, "text": "I'm careful about interview order — complainant first, then witnesses, the respondent last.", "confirmed": true },
     { "delay": 4600, "kind": "you", "at": 196, "text": "And I make the credibility calls on the record, not in my head.", "confirmed": true },
 
@@ -20,7 +20,7 @@
     { "delay": 2400, "kind": "them", "at": 344, "text": "I've got a manager who's burning their team out — how do you coach a manager in that spot?", "confirmed": true, "highlight": "burning their team out" },
     { "delay": 4400, "kind": "you", "at": 356, "text": "I'd show them their own attrition and overtime numbers first — those tell the story better than I can.", "confirmed": true },
     { "delay": 4200, "kind": "you", "at": 424, "text": "Then coach the behaviour, not the intention — almost none of them mean to do it.", "confirmed": true },
-    { "delay": 4200, "kind": "you", "at": 498, "text": "And set a review date, because coaching without a checkpoint is a hope, not a plan.", "confirmed": true },
+    { "delay": 4200, "kind": "you", "at": 505, "text": "And set a review date, because coaching without a checkpoint is a hope, not a plan.", "confirmed": true },
 
     { "delay": 4400, "kind": "them", "at": 550, "text": "We're about to roll out a return-to-office policy nobody is going to love — walk me through how you'd land it.", "confirmed": true },
     { "delay": 2600, "kind": "find-open", "at": 556 },

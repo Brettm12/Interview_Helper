@@ -21,6 +21,9 @@ export default defineConfig({
         '@': resolve('src/renderer/src'),
         '@shared': resolve('src/shared')
       }
+    },
+    worker: {
+      format: 'es'
     }
   }
 })

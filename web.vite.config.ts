@@ -17,6 +17,9 @@ export default defineConfig({
     outDir: resolve('dist-web'),
     emptyOutDir: true
   },
+  worker: {
+    format: 'es'
+  },
   server: {
     port: 5199,
     strictPort: true
