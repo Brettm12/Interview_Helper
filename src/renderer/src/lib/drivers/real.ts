@@ -13,6 +13,7 @@ const TARGET_RATE = TUNING.asrSampleRate
 abstract class MediaStreamSource implements AudioSource {
   private cb: ((c: AudioChunk) => void) | null = null
   private errCb: ((e: Error) => void) | null = null
+  private deviceCb: ((label: string) => void) | null = null
   private ctx: AudioContext | null = null
   private node: AudioWorkletNode | null = null
   private mediaStream: MediaStream | null = null
@@ -40,6 +41,10 @@ abstract class MediaStreamSource implements AudioSource {
       this.mediaStream.getTracks().forEach((t) => t.stop())
       return
     }
+    // the real device name, which only the track knows. Without this the UI
+    // showed a hardcoded 'Your mic' and a silently-switched input was invisible
+    const label = this.mediaStream.getAudioTracks()[0]?.label
+    if (label) this.deviceCb?.(label)
     this.ctx = new AudioContext()
     // capture runs on the audio thread; ScriptProcessorNode (deprecated,
     // main-thread) would jank the panel
@@ -101,33 +106,73 @@ abstract class MediaStreamSource implements AudioSource {
   onError(cb: (e: Error) => void): void {
     this.errCb = cb
   }
+
+  /** the device's real name, once a track exists */
+  onDevice(cb: (label: string) => void): void {
+    this.deviceCb = cb
+  }
 }
 
 export class MicAudioSource extends MediaStreamSource {
-  constructor() {
+  constructor(private deviceId: string | null = null) {
     super('mic')
   }
   protected acquire(): Promise<MediaStream> {
-    return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true }, video: false })
+    return navigator.mediaDevices.getUserMedia({
+      audio: {
+        // an exact id would fail outright when the device is unplugged
+        // mid-interview; ideal falls back to the system default instead
+        ...(this.deviceId ? { deviceId: { ideal: this.deviceId } } : {}),
+        // Chromium's speech-tuned processing chain. Echo cancellation is what
+        // keeps the meeting audio coming out of your speakers from being
+        // transcribed as *you*; gain control is a real rescue for a quiet mic
+        echoCancellation: true,
+        autoGainControl: true,
+        noiseSuppression: true,
+        channelCount: 1
+      },
+      video: false
+    })
   }
 }
 
-/** system-audio loopback; main routes getDisplayMedia through
- *  setDisplayMediaRequestHandler with audio 'loopback' (Windows). On
- *  platforms without loopback the stream arrives with no audio track and the
- *  error below carries the fix. */
+/**
+ * The meeting side, by one of two routes.
+ *
+ * `getDisplayMedia` + main's loopback request handler captures system audio
+ * directly, but Electron only supports that on Windows. Everywhere else the
+ * meeting has to be routed through a virtual audio cable (BlackHole and
+ * friends) and picked up as an ordinary input — which is what a non-null
+ * deviceId means here.
+ */
 export class MeetingAudioSource extends MediaStreamSource {
-  constructor() {
+  constructor(private deviceId: string | null = null) {
     super('meeting')
   }
   protected async acquire(): Promise<MediaStream> {
+    if (this.deviceId) {
+      return navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: { ideal: this.deviceId },
+          // a loopback device carries clean digital audio that never went
+          // through the air. Every one of these would only damage it — and
+          // echo cancellation in particular would gate out the interviewer
+          // whenever you were talking.
+          echoCancellation: false,
+          autoGainControl: false,
+          noiseSuppression: false,
+          channelCount: 1
+        },
+        video: false
+      })
+    }
     const stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true })
     // the video track is only a capture-API requirement — drop it
     stream.getVideoTracks().forEach((t) => t.stop())
     if (stream.getAudioTracks().length === 0) {
       stream.getTracks().forEach((t) => t.stop())
       throw new Error(
-        'no system-audio track — on this platform route the meeting through a loopback device (see README)'
+        'no system-audio track — this platform cannot capture system audio directly. Route the meeting through a loopback device (BlackHole) and pick it below.'
       )
     }
     return stream

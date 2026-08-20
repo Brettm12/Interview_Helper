@@ -225,13 +225,37 @@ export interface AudioRowView {
   why: string
 }
 
+/** one entry in a source's device picker */
+export interface DeviceOption {
+  /** '' is the row's default: the system mic, or screen-capture loopback */
+  value: string
+  label: string
+}
+
+/** when present, the row's title becomes a picker. The meeting row needs one
+ *  on macOS (its audio has to come from a virtual cable) and the mic row needs
+ *  one because a default input can change under you without saying so. */
+export interface DevicePickerView {
+  options: DeviceOption[]
+  value: string
+  onChange: (value: string) => void
+}
+
 export interface SetupScreenProps {
   eyebrow: string
   title: string
   sub: string
   stats: { answers: number; stories: number; noStory: number }
-  meeting: AudioRowView & { levels: number[] | null }
-  mic: AudioRowView & { hasSignal: boolean; levels?: number[] | null }
+  meeting: AudioRowView & { levels: number[] | null; picker?: DevicePickerView }
+  mic: AudioRowView & { hasSignal: boolean; levels?: number[] | null; picker?: DevicePickerView }
+  /** which Whisper build transcribes, and the cost of switching */
+  model?: {
+    options: DeviceOption[]
+    value: string
+    onChange: (value: string) => void
+    /** "~145 MB · noticeably better, still real-time" */
+    detail: string
+  }
   keepTranscript: boolean
   onToggleTranscript: () => void
   placement: 'docked' | 'strip' | 'second-screen'
@@ -247,6 +271,8 @@ export interface SetupScreenProps {
   onEditBank: () => void
   onFixNoStory: () => void
   onTestMic: () => void
+  /** "Test" | "Listening…" | "Thinking…" | "Test again" */
+  testLabel?: string
   onDryRun: () => void
 }
 

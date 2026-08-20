@@ -155,6 +155,15 @@ export const TUNING = {
    *  arrive at ~23Hz per stream and re-rendered the whole setup screen */
   levelPublishMinIntervalMs: 100,
 
+  // --- the pre-interview microphone check ------------------------------------
+  /** how long "Test" records for. Long enough for a whole sentence, short
+   *  enough that nobody skips it */
+  micTestRecordMs: 5000,
+  /** ...and how long it then waits for the model. A cold model on a slow
+   *  machine is the worst case, and reporting "heard nothing" because we gave
+   *  up early would be the same dishonesty this replaces */
+  micTestDecodeMs: 20000,
+
   // --- desktop plumbing ------------------------------------------------------
   /** strip snapshots: min interval between IPC sends (a trailing send always
    *  delivers the latest state, so bursts collapse to two messages) */

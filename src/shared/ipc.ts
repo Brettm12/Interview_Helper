@@ -29,10 +29,14 @@ export interface StripState {
 export interface ModelsStatus {
   /** userData/models — shown in the setup notice */
   dir: string
-  /** Xenova/whisper-tiny.en present */
+  /** the *selected* Whisper build is present. Switching tiers can turn this
+   *  false again, which is the point: it has to be about the model actually
+   *  in use, not "some Whisper is installed" */
   whisper: boolean
   /** Xenova/all-MiniLM-L6-v2 present */
   embeddings: boolean
+  /** which Whisper build the answer is about */
+  whisperModel: string
 }
 
 /** localModelPath prefix served by main's privileged custom protocol */
@@ -92,9 +96,9 @@ export interface HelperApi {
     expand(): Promise<void>
   }
   models: {
-    status(): Promise<ModelsStatus>
+    status(whisperModel?: string): Promise<ModelsStatus>
     /** fetch the on-device models — the only network call the app makes */
-    download(): Promise<{ ok: boolean; error?: string }>
+    download(whisperModel?: string): Promise<{ ok: boolean; error?: string }>
     /** progress while a download runs: "3/11 · Xenova/whisper-tiny.en/…" */
     onProgress(cb: (p: { done: number; total: number; file: string }) => void): () => void
   }

@@ -16,6 +16,19 @@
       ]
     },
     {
+      "id": "Xenova/whisper-base.en",
+      "use": "transcription",
+      "files": [
+        "config.json",
+        "generation_config.json",
+        "preprocessor_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "onnx/encoder_model_quantized.onnx",
+        "onnx/decoder_model_merged_quantized.onnx"
+      ]
+    },
+    {
       "id": "Xenova/all-MiniLM-L6-v2",
       "use": "matching + coverage",
       "files": [

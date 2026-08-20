@@ -8,6 +8,7 @@ import EditorPane from '../screens/bank/EditorPane'
 import SetupScreen from '../screens/setup/SetupScreen'
 import ArmedCard from '../screens/setup/ArmedCard'
 import RecapScreen from '../screens/recap/RecapScreen'
+import { WHISPER_TIERS } from '@shared/models'
 import './gallery.css'
 
 // Static state gallery (?screen=…): every screen at its reference frame with
@@ -448,6 +449,74 @@ function Setup({ permissions }: { permissions: boolean }): JSX.Element {
   )
 }
 
+/** the desktop build's version of 4a: device pickers on both sources, the
+ *  speech-model choice, and the mic test having actually reported back. Not
+ *  part of the pinned design comparison — the mock predates all three — but
+ *  this is the layout a real user sees, so it needs somewhere to be reviewed. */
+function SetupDevices(): JSX.Element {
+  const inputs = [
+    { value: 'a', label: 'Your mic · MacBook Pro Microphone' },
+    { value: 'b', label: 'Your mic · Jabra Evolve2 65' },
+    { value: 'c', label: 'Your mic · BlackHole 2ch' }
+  ]
+  return (
+    <Frame width={880} height={812}>
+      <SetupScreen
+        eyebrow="STARTS IN 6 MINUTES"
+        title="Senior PM · Northwind · Round 2"
+        sub="Priya Raman + one more · 45 min · Google Meet"
+        stats={{ answers: 23, stories: 11, noStory: 2 }}
+        meeting={{
+          ok: true,
+          failed: false,
+          title: 'Meeting audio · BlackHole 2ch',
+          why: 'so it hears their questions',
+          levels: [6, 13, 9, 14, 5],
+          picker: {
+            options: [
+              { value: '', label: 'Meeting audio · system capture' },
+              { value: 'c', label: 'Meeting audio · BlackHole 2ch' }
+            ],
+            value: 'c',
+            onChange: noop
+          }
+        }}
+        mic={{
+          ok: true,
+          failed: false,
+          title: 'Your mic · MacBook Pro Microphone',
+          why: 'heard: “Tell me about a time you disagreed with a peer.”',
+          hasSignal: true,
+          levels: [6, 13, 9, 14, 5],
+          picker: {
+            options: [{ value: '', label: 'Your mic · system default' }, ...inputs],
+            value: 'a',
+            onChange: noop
+          }
+        }}
+        model={{
+          options: WHISPER_TIERS.map((t) => ({ value: t.id, label: `Speech model · ${t.label}` })),
+          value: WHISPER_TIERS[0].id,
+          onChange: noop,
+          detail: WHISPER_TIERS[0].detail
+        }}
+        keepTranscript
+        onToggleTranscript={noop}
+        placement="docked"
+        onPlacement={noop}
+        placementError={null}
+        canStart
+        onStart={noop}
+        onEditBank={noop}
+        onFixNoStory={noop}
+        onTestMic={noop}
+        testLabel="Test again"
+        onDryRun={noop}
+      />
+    </Frame>
+  )
+}
+
 // ---- 4b: armed -------------------------------------------------------------
 
 function Armed(): JSX.Element {
@@ -579,6 +648,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
   editor: Editor,
   setup: () => <Setup permissions />,
   'setup-noperm': () => <Setup permissions={false} />,
+  'setup-devices': SetupDevices,
   armed: Armed,
   recap: () => <Recap transcriptKept />,
   'recap-off': () => <Recap transcriptKept={false} />

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Settings } from '@shared/types'
+import { DEFAULT_WHISPER_MODEL } from '@shared/models'
 import { api } from '../lib/api'
 
 interface SettingsState extends Settings {
@@ -13,6 +14,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   keepTranscript: false,
   placement: 'docked',
   stripPosition: null,
+  micDeviceId: null,
+  meetingDeviceId: null,
+  whisperModel: DEFAULT_WHISPER_MODEL,
   loaded: false,
 
   load: async () => {
@@ -23,8 +27,24 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   update: async (patch) => {
     set(patch)
-    const { contentProtection, keepTranscript, placement, stripPosition } = get()
-    await api.settings.save({ contentProtection, keepTranscript, placement, stripPosition })
+    const {
+      contentProtection,
+      keepTranscript,
+      placement,
+      stripPosition,
+      micDeviceId,
+      meetingDeviceId,
+      whisperModel
+    } = get()
+    await api.settings.save({
+      contentProtection,
+      keepTranscript,
+      placement,
+      stripPosition,
+      micDeviceId,
+      meetingDeviceId,
+      whisperModel
+    })
     if ('contentProtection' in patch) {
       void api.windows.setContentProtection(patch.contentProtection!)
     }

@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { Settings } from '@shared/types'
 import SetupScreen from '../screens/setup/SetupScreen'
 import { useAudioStore } from '../state/audioStore'
 import { useBankStore, answersForLoop } from '../state/bankStore'
 import { usePanelStore } from '../state/panelStore'
 import { useSettingsStore } from '../state/settingsStore'
+import { WHISPER_TIERS, whisperTier } from '@shared/models'
 import { api } from '../lib/api'
-import { prepareAudio, startSession } from './runtime'
+import { onDeviceChange, suggestLoopback } from '../lib/devices'
+import { prepareAudio, restartAudio, runMicTest, startSession } from './runtime'
 
 // Pre-interview setup. The status dots are a live signal and have to be
 // honest: green only when a source is genuinely hearing something, amber when
@@ -26,38 +29,57 @@ export default function SetupContainer(): JSX.Element | null {
   const permissions = useAudioStore((s) => s.permissions)
   const meetingLabel = useAudioStore((s) => s.meetingLabel)
   const micLabel = useAudioStore((s) => s.micLabel)
+  const devices = useAudioStore((s) => s.inputDevices)
+  const micTest = useAudioStore((s) => s.micTest)
   const settings = useSettingsStore()
   const [placementError, setPlacementError] = useState<string | null>(null)
   const [modelsNotice, setModelsNotice] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
 
+  const refreshModels = (whisperModel: string): void => {
+    if (api.env.mock) return
+    void api.models.status(whisperModel).then((m) => {
+      setModelsNotice(
+        m.whisper && m.embeddings
+          ? null
+          : 'On-device models not installed — matching runs on the lexical fallback until they are.'
+      )
+    })
+  }
+
   useEffect(() => {
     prepareAudio()
-    void useAudioStore.getState().refreshPermissions()
+    const audio = useAudioStore.getState()
+    void audio.refreshPermissions()
+    void audio.refreshDevices()
     const id = window.setInterval(() => void useAudioStore.getState().refreshPermissions(), 3000)
+    // plugging in a headset mid-setup should populate the pickers, not require
+    // a restart. Device *labels* also only appear once permission is granted,
+    // so the first enumeration is often nameless.
+    const offDevices = onDeviceChange(() => void useAudioStore.getState().refreshDevices())
     // the mock session never touches the models — no notice to show there
     let offProgress: (() => void) | null = null
     if (!api.env.mock) {
-      void api.models.status().then((m) => {
-        setModelsNotice(
-          m.whisper && m.embeddings
-            ? null
-            : 'On-device models not installed — matching runs on the lexical fallback until they are.'
-        )
-      })
+      refreshModels(useSettingsStore.getState().whisperModel)
       offProgress = api.models.onProgress((p) =>
         setModelsNotice(`Downloading models — ${p.done}/${p.total} · ${p.file}`)
       )
     }
     return () => {
       window.clearInterval(id)
+      offDevices()
       offProgress?.()
     }
   }, [])
 
+  // labels arrive with microphone permission, so re-enumerate when it lands
+  useEffect(() => {
+    if (permissions.microphone === 'granted') void useAudioStore.getState().refreshDevices()
+  }, [permissions.microphone])
+
   const downloadModels = (): void => {
     setDownloading(true)
-    void api.models.download().then((r) => {
+    void api.models.download(settings.whisperModel).then((r) => {
       setDownloading(false)
       setModelsNotice(
         r.ok
@@ -108,6 +130,54 @@ export default function SetupContainer(): JSX.Element | null {
 
   const panel = usePanelStore.getState()
 
+  // options keep the row's name in front of the device name, so the picker
+  // reads exactly like the title it replaced — "Your mic · MacBook Pro"
+  const deviceOptions = (prefix: string): { value: string; label: string }[] =>
+    devices.map((d) => ({ value: d.deviceId, label: `${prefix} · ${d.label}` }))
+
+  // macOS can't capture system audio directly, so the meeting side depends on
+  // a virtual cable. If one is installed, name it rather than making them
+  // work out which of eight inputs is the right one.
+  const loopback = suggestLoopback(devices)
+  const meetingHint =
+    meeting.state === 'no-track' && loopback
+      ? ` “${loopback.label}” looks like the one.`
+      : ''
+  // constraints are fixed at getUserMedia time, so a new device means
+  // re-acquiring the stream rather than reconfiguring the one we have
+  const pickDevice = (patch: Partial<Settings>): void => {
+    void settings.update(patch).then(restartAudio)
+  }
+
+  // the mic row's why-line is where the test result belongs: it's the line
+  // that already answers "is this working", and putting it there means the
+  // answer and the evidence sit together
+  const micWhy =
+    micTest.state === 'recording'
+      ? 'listening… say a full sentence'
+      : micTest.state === 'thinking'
+        ? 'transcribing what you just said…'
+        : micTest.state === 'done'
+          ? `heard: “${micTest.text}”`
+          : micTest.state === 'failed'
+            ? (micTest.error ?? 'the test failed')
+            : whyFor(
+                mic,
+                micOk,
+                'grant Microphone access in System Settings → Privacy & Security',
+                'so it can tick off points as you say them',
+                'connected, but nothing audible yet'
+              )
+
+  const testLabel =
+    micTest.state === 'recording'
+      ? 'Listening…'
+      : micTest.state === 'thinking'
+        ? 'Thinking…'
+        : micTest.state === 'idle'
+          ? 'Test'
+          : 'Test again'
+
   return (
     <SetupScreen
       eyebrow={loop.startsIn ?? 'READY WHEN YOU ARE'}
@@ -118,29 +188,58 @@ export default function SetupContainer(): JSX.Element | null {
         ok: meetingLive,
         failed: meeting.state === 'no-track',
         title: meeting.deviceLabel ?? meetingLabel,
-        why: whyFor(
-          meeting,
-          screenOk,
-          'grant Screen Recording in System Settings → Privacy & Security',
-          'so it hears their questions',
-          'connected, but nothing audible yet'
-        ),
-        levels: meetingLevels
+        why:
+          whyFor(
+            meeting,
+            screenOk,
+            'grant Screen Recording in System Settings → Privacy & Security',
+            'so it hears their questions',
+            'connected, but nothing audible yet'
+          ) + meetingHint,
+        levels: meetingLevels,
+        picker: api.env.mock
+          ? undefined
+          : {
+              // '' is screen-capture loopback, which Electron only supports on
+              // Windows; everywhere else the meeting has to arrive as an input
+              options: [
+                { value: '', label: 'Meeting audio · system capture' },
+                ...deviceOptions('Meeting audio')
+              ],
+              value: settings.meetingDeviceId ?? '',
+              onChange: (v) => pickDevice({ meetingDeviceId: v || null })
+            }
       }}
       mic={{
         ok: micLive,
         failed: mic.state === 'no-track',
         title: mic.deviceLabel ?? micLabel,
-        why: whyFor(
-          mic,
-          micOk,
-          'grant Microphone access in System Settings → Privacy & Security',
-          'so it can tick off points as you say them',
-          'connected, but nothing audible yet'
-        ),
+        why: micWhy,
         hasSignal: micLive,
-        levels: micLevels
+        levels: micLevels,
+        picker: api.env.mock
+          ? undefined
+          : {
+              options: [
+                { value: '', label: 'Your mic · system default' },
+                ...deviceOptions('Your mic')
+              ],
+              value: settings.micDeviceId ?? '',
+              onChange: (v) => pickDevice({ micDeviceId: v || null })
+            }
       }}
+      model={
+        api.env.mock
+          ? undefined
+          : {
+              options: WHISPER_TIERS.map((t) => ({ value: t.id, label: `Speech model · ${t.label}` })),
+              value: settings.whisperModel,
+              onChange: (v) => {
+                void settings.update({ whisperModel: v }).then(() => refreshModels(v))
+              },
+              detail: whisperTier(settings.whisperModel).detail
+            }
+      }
       keepTranscript={settings.keepTranscript}
       onToggleTranscript={() => void settings.update({ keepTranscript: !settings.keepTranscript })}
       placement={settings.placement}
@@ -170,9 +269,8 @@ export default function SetupContainer(): JSX.Element | null {
         if (noStoryIds[0]) useBankStore.getState().selectAnswer(noStoryIds[0])
         panel.setView('bank')
       }}
-      onTestMic={() => {
-        if (!micOk) void api.permissions.requestMicrophone()
-      }}
+      onTestMic={() => void runMicTest()}
+      testLabel={testLabel}
       onDryRun={() => startSession({ dryRun: true })}
     />
   )

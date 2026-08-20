@@ -46,8 +46,8 @@ const api: HelperApi = {
     expand: () => ipcRenderer.invoke('strip:expand')
   },
   models: {
-    status: () => ipcRenderer.invoke('models:status'),
-    download: () => ipcRenderer.invoke('models:download'),
+    status: (whisperModel) => ipcRenderer.invoke('models:status', whisperModel),
+    download: (whisperModel) => ipcRenderer.invoke('models:download', whisperModel),
     onProgress: (cb) => {
       const listener = (_e: unknown, p: { done: number; total: number; file: string }): void => cb(p)
       ipcRenderer.on('models:progress', listener)

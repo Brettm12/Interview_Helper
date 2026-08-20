@@ -1,4 +1,4 @@
-import type { Segment, Transcriber } from '@shared/types'
+import type { AudioChunk, Segment, Transcriber } from '@shared/types'
 import { MODELS_URL_PREFIX } from '@shared/ipc'
 import { createMockDriver, type MockDriver } from '../lib/drivers/mock'
 import {
@@ -98,6 +98,44 @@ function tee(t: Transcriber): Transcriber & { subscribe(cb: (s: Segment) => void
   }
 }
 
+// ---- session clock ---------------------------------------------------------
+// Each capture source counts time from its own first sample, which is right
+// for the resampler and wrong for the session: capture starts on the setup
+// screen, and pausing or switching device restarts the counter from zero. The
+// engine's clock is monotonic (`max`), so a counter that jumped backwards
+// would freeze it and hand the recap nonsense durations.
+
+const capture = {
+  meeting: { base: 0, last: 0, zero: 0 },
+  mic: { base: 0, last: 0, zero: 0 }
+}
+
+function stampClock(stream: 'meeting' | 'mic', c: AudioChunk): AudioChunk {
+  const s = capture[stream]
+  s.last = c.t
+  return { ...c, t: Math.max(0, s.base + c.t - s.zero) }
+}
+
+/** capture stopped: fold what it counted into the running total */
+function parkClock(): void {
+  for (const s of [capture.meeting, capture.mic]) {
+    s.base += s.last
+    s.last = 0
+  }
+}
+
+/** t=0 is the moment the session starts, not the moment capture did */
+function zeroClock(atSessionStart: boolean): void {
+  for (const s of [capture.meeting, capture.mic]) {
+    if (atSessionStart) s.zero = s.base + s.last
+    else {
+      s.base = 0
+      s.last = 0
+      s.zero = 0
+    }
+  }
+}
+
 /** "live, but zero segments" is the signature of audio arriving and never
  *  surviving transcription — the one failure diagnostics can't infer from
  *  levels alone, so the count has to come from the transcriber itself */
@@ -126,21 +164,159 @@ export function prepareAudio(): void {
     audio.setLabels({ meeting: 'Meeting audio · Google Meet tab', mic: 'Your mic · MacBook Pro' })
     return
   }
-  realSources = { meeting: new MeetingAudioSource(), mic: new MicAudioSource() }
+  const settings = useSettingsStore.getState()
+  realSources = {
+    meeting: new MeetingAudioSource(settings.meetingDeviceId),
+    mic: new MicAudioSource(settings.micDeviceId)
+  }
   realSources.meeting.onChunk((c) => {
     meetingMeter(c.samples)
-    realTranscribers?.them.push(c)
+    realTranscribers?.them.push(stampClock('meeting', c))
   })
   realSources.mic.onChunk((c) => {
     micMeter(c.samples)
-    realTranscribers?.you.push(c)
+    // a copy, and *before* the session transcriber: push() transfers the
+    // buffer, so whoever goes second would be handed a detached array
+    if (micTestSink) micTestSink({ ...c, samples: c.samples.slice() })
+    realTranscribers?.you.push(stampClock('mic', c))
   })
+  // the device's real name, straight off the track — a default input that
+  // switched to a narrowband headset is otherwise completely invisible
+  realSources.meeting.onDevice((label) =>
+    useAudioStore.getState().publish('meeting', { deviceLabel: `Meeting audio · ${label}` })
+  )
+  realSources.mic.onDevice((label) =>
+    useAudioStore.getState().publish('mic', { deviceLabel: `Your mic · ${label}` })
+  )
   // failures land in the store; the setup row's why-line carries them and the
-  // dot stays amber (level never rises)
+  // dot goes red (never amber, which could be mistaken for "merely quiet")
   realSources.meeting.onError((e) => useAudioStore.getState().setError('meeting', e.message))
   realSources.mic.onError((e) => useAudioStore.getState().setError('mic', e.message))
   realSources.mic.start()
   realSources.meeting.start()
+  // labels arrive with the track, so the picker needs a refresh once
+  // permission has actually been granted
+  void useAudioStore.getState().refreshDevices()
+}
+
+/** tear the capture path down. Pause uses this: for an app whose promise is
+ *  "audio stays on this machine and nothing is recorded", pausing has to stop
+ *  the tracks, not just flip a flag and keep listening. */
+export function stopAudio(): void {
+  // the mock driver's scripted playback *is* the demo — stopping it would look
+  // like a broken app rather than a paused one
+  if (MOCK || !realSources) return
+  realSources.meeting.stop()
+  realSources.mic.stop()
+  realSources = null
+  audioPrepared = false
+  parkClock()
+  const audio = useAudioStore.getState()
+  audio.reset('meeting')
+  audio.reset('mic')
+}
+
+/** picking a different input has to re-acquire — constraints are fixed at
+ *  getUserMedia time */
+export function restartAudio(): void {
+  const wasPrepared = audioPrepared
+  stopAudio()
+  if (wasPrepared) prepareAudio()
+}
+
+// ---- the pre-interview microphone check ------------------------------------
+// "Test" used to call requestMicrophone() and do nothing at all when
+// permission was already granted, which is the normal case by the time you're
+// on that screen. A check that cannot fail is worse than none: it tells you
+// everything is fine right up until the interview starts. This one records
+// through the real capture path, transcribes with the real model, and shows
+// you the words back — the same path that will run during the call.
+
+let micTestSink: ((c: AudioChunk) => void) | null = null
+
+const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+export async function runMicTest(): Promise<void> {
+  const audio = useAudioStore.getState()
+  if (audio.micTest.state === 'recording' || audio.micTest.state === 'thinking') return
+  if (realTranscribers) {
+    audio.setMicTest({ state: 'failed', error: 'A session is already running.' })
+    return
+  }
+  audio.resetMicTest()
+
+  if (audio.permissions.microphone !== 'granted') {
+    await api.permissions.requestMicrophone()
+    await useAudioStore.getState().refreshPermissions()
+    if (useAudioStore.getState().permissions.microphone !== 'granted') {
+      audio.setMicTest({
+        state: 'failed',
+        error: 'Microphone permission was not granted, so there is nothing to test.'
+      })
+      return
+    }
+  }
+
+  if (MOCK) {
+    // the demo build has no microphone and no model — say so rather than
+    // inventing a transcript, which is exactly the kind of lie this replaces
+    audio.setMicTest({ state: 'recording' })
+    await delay(1200)
+    audio.setMicTest({
+      state: 'failed',
+      error: 'This is the demo build — there is no microphone or model to test.'
+    })
+    return
+  }
+
+  const models = await api.models.status(useSettingsStore.getState().whisperModel)
+  if (!models.whisper) {
+    audio.setMicTest({
+      state: 'failed',
+      error: 'The speech model is not installed yet — download it first.'
+    })
+    return
+  }
+
+  prepareAudio()
+  audio.setMicTest({ state: 'recording' })
+
+  const modelPath = IN_ELECTRON ? MODELS_URL_PREFIX : 'models'
+  const probe = new WhisperTranscriber('you', modelPath, useSettingsStore.getState().whisperModel)
+  const heard: string[] = []
+  probe.onSegment((s) => {
+    if (s.confirmed) heard.push(s.text)
+  })
+  micTestSink = (c) => probe.push(c)
+
+  try {
+    await delay(TUNING.micTestRecordMs)
+    micTestSink = null
+    useAudioStore.getState().setMicTest({ state: 'thinking' })
+    // whatever is mid-sentence still counts — this is a five-second test and
+    // losing the tail would report "heard nothing" for a working mic
+    probe.flush()
+    const deadline = Date.now() + TUNING.micTestDecodeMs
+    while (heard.length === 0 && Date.now() < deadline) await delay(150)
+    const text = heard.join(' ').trim()
+    useAudioStore.getState().setMicTest(
+      text
+        ? { state: 'done', text, error: null }
+        : {
+            state: 'failed',
+            error:
+              'Heard nothing. Check the input device above, move closer, or raise the input level in System Settings → Sound.'
+          }
+    )
+  } catch (err) {
+    useAudioStore.getState().setMicTest({
+      state: 'failed',
+      error: err instanceof Error ? err.message : String(err)
+    })
+  } finally {
+    micTestSink = null
+    probe.dispose()
+  }
 }
 
 /** wire a mock driver's control events to the same commands the shortcuts use */
@@ -280,6 +456,7 @@ export function startSession(opts: StartOptions = {}): void {
   const useMock = MOCK || opts.dryRun === true
 
   session.arm(bank.activeLoopId, settings.keepTranscript)
+  zeroClock(true)
   startViewSync()
 
   if (useMock) {
@@ -326,8 +503,8 @@ export function startSession(opts: StartOptions = {}): void {
     // build never reaches this branch
     const modelPath = IN_ELECTRON ? MODELS_URL_PREFIX : 'models'
     realTranscribers = {
-      them: new WhisperTranscriber('them', modelPath),
-      you: new WhisperTranscriber('you', modelPath)
+      them: new WhisperTranscriber('them', modelPath, settings.whisperModel),
+      you: new WhisperTranscriber('you', modelPath, settings.whisperModel)
     }
     realEmbeddings = new WorkerEmbeddings(modelPath)
     const cache = new EmbeddingCache(realEmbeddings)
@@ -364,6 +541,7 @@ export async function endSession(): Promise<void> {
   realTranscribers = null
   realEmbeddings?.dispose()
   realEmbeddings = null
+  zeroClock(false)
   stripPublisherStop?.()
   usePanelStore.getState().setCollapsed(false)
   if (IN_ELECTRON) void api.windows.showStrip(false)
@@ -379,8 +557,25 @@ export function recapCommand(): void {
   }
 }
 
+/**
+ * Pause used to flip a status flag and nothing else: the engine dropped the
+ * segments but the microphone stayed open the whole time. For an app that
+ * promises "audio stays on this machine and nothing is recorded", pause has to
+ * actually close the tracks — and the meters going dark is the honest signal
+ * that it did.
+ */
 export function pauseSession(): void {
   const s = useSessionStore.getState()
-  if (s.status === 'paused') s.setStatus(s.match.entryId ? 'listening' : 'armed')
-  else if (s.status === 'armed' || s.status === 'listening') s.setStatus('paused')
+  if (s.status === 'paused') {
+    s.setStatus(s.match.entryId ? 'listening' : 'armed')
+    prepareAudio()
+    return
+  }
+  if (s.status === 'armed' || s.status === 'listening') {
+    s.setStatus('paused')
+    // anything mid-sentence still belongs in the transcript
+    realTranscribers?.them.flush()
+    realTranscribers?.you.flush()
+    stopAudio()
+  }
 }

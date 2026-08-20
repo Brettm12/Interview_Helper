@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import manifest from '../shared/models.json'
+import { DEFAULT_WHISPER_MODEL } from '../shared/models'
 import type { ModelsStatus } from '../shared/ipc'
 
 // On-device model files live in userData/models and are fetched once. A
@@ -22,16 +23,19 @@ const exists = (p: string): Promise<boolean> =>
     () => false
   )
 
-export async function modelsStatus(): Promise<ModelsStatus> {
+/** the manifest entries needed for one choice of Whisper build: the selected
+ *  transcription model plus everything that isn't a transcription model. The
+ *  other Whisper tiers are only fetched if you switch to them — nobody should
+ *  download 145MB they never use. */
+function required(whisperModel: string): typeof manifest.models {
+  return manifest.models.filter((m) => m.use !== 'transcription' || m.id === whisperModel)
+}
+
+export async function modelsStatus(whisperModel = DEFAULT_WHISPER_MODEL): Promise<ModelsStatus> {
   const dir = modelsDir()
-  const present = await Promise.all(
-    manifest.models.map((m) => exists(join(dir, m.id, 'config.json')))
-  )
-  return {
-    dir,
-    whisper: present[0] ?? false,
-    embeddings: present[1] ?? false
-  }
+  const whisper = await exists(join(dir, whisperModel, 'config.json'))
+  const embeddings = await exists(join(dir, 'Xenova/all-MiniLM-L6-v2', 'config.json'))
+  return { dir, whisper, embeddings, whisperModel }
 }
 
 export interface ModelProgress {
@@ -44,9 +48,12 @@ export interface ModelProgress {
 
 /** Download every missing model file. Resumable: anything already on disk is
  *  skipped, and partial writes go to a .part file that is renamed on success. */
-export async function downloadModels(onProgress: (p: ModelProgress) => void): Promise<void> {
+export async function downloadModels(
+  onProgress: (p: ModelProgress) => void,
+  whisperModel = DEFAULT_WHISPER_MODEL
+): Promise<void> {
   const dir = modelsDir()
-  const jobs = manifest.models.flatMap((m) => m.files.map((f) => ({ id: m.id, file: f })))
+  const jobs = required(whisperModel).flatMap((m) => m.files.map((f) => ({ id: m.id, file: f })))
   let done = 0
   for (const job of jobs) {
     done++

@@ -154,4 +154,15 @@ export interface Settings {
   placement: 'docked' | 'strip' | 'second-screen'
   /** last remembered strip position */
   stripPosition: { x: number; y: number } | null
+  /** chosen microphone, or null for the system default. Worth persisting:
+   *  a default input that silently switches to a narrowband headset is
+   *  invisible otherwise */
+  micDeviceId: string | null
+  /** input device carrying the meeting, for the loopback route (BlackHole and
+   *  friends). null means screen-capture loopback, which Electron only
+   *  supports on Windows — on macOS this is the setting that makes the
+   *  meeting side work at all. */
+  meetingDeviceId: string | null
+  /** Whisper build to transcribe with; ids come from models.json */
+  whisperModel: string
 }

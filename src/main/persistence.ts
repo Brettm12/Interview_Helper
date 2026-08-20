@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import type { ZodType } from 'zod'
+import { DEFAULT_WHISPER_MODEL } from '../shared/models'
 import { BankSchema, SessionsFileSchema, SettingsSchema } from '../shared/schema'
 import type { Bank, SessionRecord, Settings } from '../shared/types'
 import seed from '../shared/seed.json'
@@ -15,7 +16,10 @@ const DEFAULT_SETTINGS: Settings = {
   contentProtection: true,
   keepTranscript: false,
   placement: 'docked',
-  stripPosition: null
+  stripPosition: null,
+  micDeviceId: null,
+  meetingDeviceId: null,
+  whisperModel: DEFAULT_WHISPER_MODEL
 }
 
 function dataPath(name: string): string {

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { PermissionsInfo } from '@shared/ipc'
 import { api } from '../lib/api'
+import { listInputDevices, type AudioDevice } from '../lib/devices'
 
 // Audio source state driving the setup screen's status dots and meters.
 //
@@ -45,14 +46,38 @@ const EMPTY: SourceStatus = {
   floorDbfs: null
 }
 
+/**
+ * The pre-interview microphone check.
+ *
+ * "Test" used to call requestMicrophone() and then do nothing at all when
+ * permission was already granted — the normal case by the time you're looking
+ * at that screen. A test that can't fail tells you nothing, so this one runs
+ * real audio through the real pipeline and shows you the words back.
+ */
+export interface MicTest {
+  state: 'idle' | 'recording' | 'thinking' | 'done' | 'failed'
+  /** what the model heard, once it's done */
+  text: string | null
+  /** why it couldn't, when it failed */
+  error: string | null
+}
+
+const NO_TEST: MicTest = { state: 'idle', text: null, error: null }
+
 interface AudioState {
   permissions: PermissionsInfo
   meeting: SourceStatus
   mic: SourceStatus
   meetingLabel: string
   micLabel: string
+  /** every audio input, for the two device pickers */
+  inputDevices: AudioDevice[]
+  micTest: MicTest
 
   refreshPermissions(): Promise<void>
+  refreshDevices(): Promise<void>
+  setMicTest(patch: Partial<MicTest>): void
+  resetMicTest(): void
   /** publish a smoothed level + liveness for one source (throttled upstream) */
   publish(stream: 'meeting' | 'mic', patch: Partial<SourceStatus>): void
   setLabels(labels: { meeting?: string; mic?: string }): void
@@ -67,11 +92,21 @@ export const useAudioStore = create<AudioState>((set) => ({
   mic: EMPTY,
   meetingLabel: 'Meeting audio · system loopback',
   micLabel: 'Your mic',
+  inputDevices: [],
+  micTest: NO_TEST,
 
   refreshPermissions: async () => {
     const permissions = await api.permissions.status()
     set({ permissions })
   },
+
+  refreshDevices: async () => {
+    set({ inputDevices: await listInputDevices() })
+  },
+
+  setMicTest: (patch) => set((s) => ({ micTest: { ...s.micTest, ...patch } })),
+
+  resetMicTest: () => set({ micTest: NO_TEST }),
 
   publish: (stream, patch) =>
     set((s) => ({ [stream]: { ...s[stream], ...patch } }) as Partial<AudioState>),

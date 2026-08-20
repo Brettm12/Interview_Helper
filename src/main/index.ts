@@ -101,10 +101,10 @@ function registerIpc(): void {
   ipcMain.handle('strip:expand', () => broadcast('command', 'strip-expand'))
 
   // ---- on-device models ----
-  ipcMain.handle('models:status', () => modelsStatus())
-  ipcMain.handle('models:download', async (e) => {
+  ipcMain.handle('models:status', (_e, whisperModel?: string) => modelsStatus(whisperModel))
+  ipcMain.handle('models:download', async (e, whisperModel?: string) => {
     try {
-      await downloadModels((p) => e.sender.send('models:progress', p))
+      await downloadModels((p) => e.sender.send('models:progress', p), whisperModel)
       return { ok: true }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }

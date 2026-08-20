@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { DEFAULT_WHISPER_MODEL } from './models'
 
 // zod schemas used to validate persisted data on read (the repository never
 // trusts the file on disk). Shapes mirror shared/types.ts.
@@ -86,9 +87,16 @@ export const SessionRecordSchema = z.object({
 
 export const SessionsFileSchema = z.array(SessionRecordSchema)
 
+// Every field added after the first release needs a `.default()`. readValidated
+// falls back to DEFAULT_SETTINGS *wholesale* when parsing fails, so a new
+// required field would silently wipe an existing user's placement, transcript
+// preference and strip position on upgrade.
 export const SettingsSchema = z.object({
   contentProtection: z.boolean(),
   keepTranscript: z.boolean(),
   placement: z.enum(['docked', 'strip', 'second-screen']),
-  stripPosition: z.object({ x: z.number(), y: z.number() }).nullable()
+  stripPosition: z.object({ x: z.number(), y: z.number() }).nullable(),
+  micDeviceId: z.string().nullable().default(null),
+  meetingDeviceId: z.string().nullable().default(null),
+  whisperModel: z.string().default(DEFAULT_WHISPER_MODEL)
 })

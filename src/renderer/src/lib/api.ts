@@ -1,4 +1,5 @@
 import type { AppCommand, HelperApi } from '@shared/ipc'
+import { DEFAULT_WHISPER_MODEL } from '@shared/models'
 import type { Bank, SessionRecord, Settings } from '@shared/types'
 import seed from '@shared/seed.json'
 
@@ -16,7 +17,10 @@ const DEFAULT_SETTINGS: Settings = {
   contentProtection: true,
   keepTranscript: false,
   placement: 'docked',
-  stripPosition: null
+  stripPosition: null,
+  micDeviceId: null,
+  meetingDeviceId: null,
+  whisperModel: DEFAULT_WHISPER_MODEL
 }
 
 function browserShim(): HelperApi {
@@ -130,7 +134,7 @@ function browserShim(): HelperApi {
     },
     models: {
       // mock mode never loads models
-      status: async () => ({ dir: '', whisper: false, embeddings: false }),
+      status: async () => ({ dir: '', whisper: false, embeddings: false, whisperModel: '' }),
       download: async () => ({ ok: false, error: 'Models are only used by the desktop app.' }),
       onProgress: () => () => {}
     },

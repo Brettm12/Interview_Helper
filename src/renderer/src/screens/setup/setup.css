@@ -112,6 +112,26 @@
   color: var(--text-primary);
 }
 
+/* a device picker that reads as the row's title, not as an OS widget: the
+   chevron is the only thing that says it's clickable, which is enough */
+.setup-device {
+  appearance: none;
+  -webkit-appearance: none;
+  max-width: 100%;
+  border: 0;
+  padding: 0 15px 0 0;
+  background: transparent
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6'%3E%3Cpath d='M1 1l3.5 3.5L8 1' fill='none' stroke='%23888' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E")
+    no-repeat right center;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+.setup-device:focus-visible {
+  outline: 1px solid var(--accent, #2f7d5b);
+  outline-offset: 2px;
+}
+
 .setup-hear__why {
   font: 400 12.5px/1.4 var(--font-ui);
   color: var(--text-label);

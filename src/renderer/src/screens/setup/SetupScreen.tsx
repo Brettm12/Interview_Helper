@@ -1,4 +1,4 @@
-import type { SetupScreenProps } from '../contracts'
+import type { DevicePickerView, SetupScreenProps } from '../contracts'
 import { Label, LevelMeter, StatCard, StatusDot } from '../../components/primitives'
 import './setup.css'
 
@@ -53,6 +53,29 @@ function dotColor(row: { ok: boolean; failed: boolean }): string {
   return row.ok ? 'var(--status-live)' : 'var(--status-attention)'
 }
 
+/** the row title, as a native select when the source has devices to choose
+ *  between. Native so it behaves like every other menu on the machine and so
+ *  a long device list doesn't have to fit inside a 380px panel. */
+function RowTitle({ title, picker }: { title: string; picker?: DevicePickerView }): JSX.Element {
+  if (!picker || picker.options.length === 0) {
+    return <div className="setup-hear__title">{title}</div>
+  }
+  return (
+    <select
+      className="setup-hear__title setup-device"
+      value={picker.value}
+      onChange={(e) => picker.onChange(e.target.value)}
+      aria-label={title}
+    >
+      {picker.options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 export default function SetupScreen(props: SetupScreenProps): JSX.Element {
   const {
     eyebrow,
@@ -61,6 +84,7 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
     stats,
     meeting,
     mic,
+    model,
     keepTranscript,
     onToggleTranscript,
     placement,
@@ -73,6 +97,7 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
     onEditBank,
     onFixNoStory,
     onTestMic,
+    testLabel,
     onDryRun
   } = props
 
@@ -122,7 +147,7 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
             <div className="setup-hear">
               <StatusDot size={7} color={dotColor(meeting)} />
               <div className="setup-hear__main">
-                <div className="setup-hear__title">{meeting.title}</div>
+                <RowTitle title={meeting.title} picker={meeting.picker} />
                 <div className="setup-hear__why">{meeting.why}</div>
               </div>
               {/* always mounted: unmounting it restarted the CSS animation and
@@ -132,14 +157,33 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
             <div className="setup-hear">
               <StatusDot size={7} color={dotColor(mic)} />
               <div className="setup-hear__main">
-                <div className="setup-hear__title">{mic.title}</div>
+                <RowTitle title={mic.title} picker={mic.picker} />
                 <div className="setup-hear__why">{mic.why}</div>
               </div>
               <LevelMeter heights={mic.levels ?? []} live={mic.ok} />
               <span className="action setup-action" onClick={onTestMic}>
-                Test
+                {testLabel ?? 'Test'}
               </span>
             </div>
+            {model != null && (
+              <div className="setup-hear">
+                <div className="setup-hear__main">
+                  <select
+                    className="setup-hear__title setup-device"
+                    value={model.value}
+                    onChange={(e) => model.onChange(e.target.value)}
+                    aria-label="Speech model"
+                  >
+                    {model.options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="setup-hear__why">{model.detail}</div>
+                </div>
+              </div>
+            )}
             <div className="setup-hear">
               <div className="setup-hear__main">
                 <div className="setup-hear__title">Keep a transcript for the recap</div>
