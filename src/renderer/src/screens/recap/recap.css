@@ -1,0 +1,231 @@
+/* Recap screen — authoritative spec: docs/spec-recap.md (no HTML mock; the
+   header/footer/card idioms mirror the setup reference 4a-setup.html). */
+
+.recap-screen {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-panel);
+  color: var(--text-bright);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- header ---- */
+
+.recap-header {
+  flex: none;
+  padding: 26px 30px 20px;
+  border-bottom: 1px solid var(--border-section);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.recap-header__title {
+  font: 400 26px/1.25 var(--font-serif);
+  color: var(--text-primary);
+}
+
+.recap-header__sub {
+  font: 400 13.5px/1.4 var(--font-ui);
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+.recap-header__actions {
+  flex: none;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.recap-header__delete {
+  font: 500 11px/1 var(--font-ui);
+  color: var(--text-label);
+}
+
+/* ---- body ---- */
+
+.recap-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.recap-group {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---- 1. how it went ---- */
+
+.recap-stats {
+  display: flex;
+  gap: 10px;
+}
+
+/* ---- 2. question by question ---- */
+
+.recap-qlist {
+  border: 1px solid var(--border-mid);
+  border-radius: 9px;
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+
+.recap-row {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-section);
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.recap-row:last-child {
+  border-bottom: none;
+}
+
+.recap-row--expandable {
+  cursor: pointer;
+}
+
+.recap-row--unmatched {
+  border-left: 2px solid var(--status-attention);
+  padding-left: 14px; /* 14px + 2px border keeps the text aligned */
+}
+
+.recap-row__time {
+  width: 40px;
+  flex: none;
+  font: 500 10.5px/1 var(--font-mono);
+  color: var(--text-label);
+}
+
+.recap-row__mid {
+  flex: 1;
+}
+
+.recap-row__question {
+  font: 400 15.5px/1.4 var(--font-ui);
+  color: var(--text-body);
+}
+
+.recap-row__sub {
+  font: 400 12.5px/1.4 var(--font-ui);
+  color: var(--text-label);
+  margin-top: 6px;
+}
+
+.recap-row__sub--unmatched {
+  color: var(--status-attention);
+}
+
+.recap-row__right {
+  flex: none;
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+
+.recap-row__counter {
+  font: 500 10.5px/1 var(--font-mono);
+  color: var(--text-label);
+}
+
+.recap-row__add {
+  font: 500 11px/1 var(--font-ui);
+  color: var(--text-action);
+}
+
+/* in-place transcript expansion (height animated 0 → measured px) */
+
+.recap-row__expand {
+  overflow: hidden;
+  transition: height 200ms ease-out;
+}
+
+.recap-row__transcript {
+  /* spec margin-top:11px — applied as padding so the measured height includes it */
+  padding-top: 11px;
+}
+
+.recap-row__tline {
+  font: 400 12px/1.5 var(--font-mono);
+  color: var(--text-label);
+}
+
+.recap-row__hl {
+  color: var(--text-bright);
+  background: var(--border-mid);
+  padding: 1px 3px;
+  border-radius: 3px;
+}
+
+/* ---- 3. worth fixing ---- */
+
+.recap-fixes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.recap-fix {
+  border: 1px solid var(--border-mid);
+  border-radius: 9px;
+  background: var(--bg-raised);
+  padding: 13px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px; /* not in spec: keeps a wrapping why-line off the chip */
+}
+
+.recap-fix__title {
+  font: 500 14px/1.3 var(--font-ui);
+  color: var(--text-primary);
+}
+
+.recap-fix__why {
+  font: 400 12.5px/1.4 var(--font-ui);
+  color: var(--text-label);
+  margin-top: 5px;
+}
+
+.recap-nothing {
+  font: 400 13.5px/1.4 var(--font-ui);
+  color: var(--text-muted);
+}
+
+/* ---- privacy + footer ---- */
+
+.recap-privacy {
+  flex: none;
+  font: 400 12px/1.5 var(--font-ui);
+  color: var(--text-label);
+}
+
+.recap-footer {
+  flex: none;
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-row);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.recap-footer__hints {
+  display: flex;
+  gap: 20px;
+}
+
+.recap-footer__practice {
+  font: 500 11.5px/1 var(--font-ui);
+  color: var(--text-action);
+}

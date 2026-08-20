@@ -6,3 +6,4 @@ dist-web/
 .DS_Store
 *.log
 .vite/
+*.tsbuildinfo

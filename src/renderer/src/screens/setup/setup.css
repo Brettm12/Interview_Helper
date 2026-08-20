@@ -1,0 +1,331 @@
+/* Pre-interview setup (reference 4a) + armed/waiting card (reference 4b).
+   Values transcribed from docs/reference/4a-setup.html, 4b-armed.html and
+   docs/spec-setup-addition.md; colors via tokens.css. */
+
+.setup {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  color: var(--text-bright);
+}
+
+/* ---- header ---- */
+
+.setup-header {
+  padding: 26px 30px 20px;
+  border-bottom: 1px solid var(--border-section);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.setup-header__title {
+  font: 400 26px/1.25 var(--font-serif);
+  color: var(--text-primary);
+}
+
+.setup-header__sub {
+  font: 400 13.5px/1.4 var(--font-ui);
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+.setup-cta {
+  cursor: pointer;
+}
+
+.setup-cta--disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---- body ---- */
+
+.setup-body {
+  flex: 1;
+  padding: 24px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.setup-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setup-group__label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.setup-action {
+  cursor: pointer;
+  flex: none;
+}
+
+/* ---- bank loaded ---- */
+
+.setup-stats {
+  display: flex;
+  gap: 10px;
+}
+
+/* the warning card is clickable (→ filtered bank view) */
+.setup-stats .stat-card[role='button'] {
+  cursor: pointer;
+}
+
+/* ---- what it hears ---- */
+
+.setup-hears {
+  border: 1px solid var(--border-mid);
+  border-radius: 9px;
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+
+.setup-hear {
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--border-section);
+}
+
+.setup-hear:last-child {
+  border-bottom: none;
+}
+
+.setup-hear__main {
+  flex: 1;
+}
+
+.setup-hear__title {
+  font: 500 14px/1.3 var(--font-ui);
+  color: var(--text-primary);
+}
+
+.setup-hear__why {
+  font: 400 12.5px/1.4 var(--font-ui);
+  color: var(--text-label);
+  margin-top: 5px;
+}
+
+/* transcript toggle (spec-setup-addition.md) */
+.setup-toggle {
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--border-mid);
+  position: relative;
+  flex: none;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.setup-toggle--on {
+  background: var(--status-live-dim);
+}
+
+.setup-toggle__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-light);
+  transition: left 120ms ease;
+}
+
+.setup-toggle--on .setup-toggle__knob {
+  left: 16px;
+}
+
+.setup-privacy {
+  font: 400 12px/1.5 var(--font-ui);
+  color: var(--text-label);
+}
+
+/* ---- where the panel sits ---- */
+
+.setup-placements {
+  display: flex;
+  gap: 10px;
+}
+
+.setup-placement {
+  flex: 1;
+  border: 1px solid var(--border-mid);
+  border-radius: 9px;
+  padding: 13px 14px;
+  cursor: pointer;
+}
+
+.setup-placement--selected {
+  border-color: var(--placement-selected-border);
+  background: var(--bg-row-selected);
+}
+
+.setup-placement__title {
+  font: 500 13px/1.3 var(--font-ui);
+  color: var(--text-body);
+}
+
+.setup-placement--selected .setup-placement__title {
+  color: var(--text-primary);
+}
+
+.setup-placement__caption {
+  font: 400 12px/1.4 var(--font-ui);
+  color: var(--text-label);
+  margin-top: 5px;
+}
+
+/* schematics — one per placement, transcribed exactly from 4a */
+.setup-schem {
+  height: 52px;
+  border-radius: 5px;
+  background: var(--bg-panel-deep);
+  padding: 4px;
+  margin-bottom: 11px;
+}
+
+.setup-schem--docked {
+  display: flex;
+  gap: 3px;
+}
+
+.setup-schem--strip {
+  position: relative;
+}
+
+.setup-schem--second {
+  display: flex;
+}
+
+.setup-schem__stripes {
+  border-radius: 3px;
+  background: var(--stripes-schematic);
+}
+
+.setup-schem--docked .setup-schem__stripes,
+.setup-schem--second .setup-schem__stripes {
+  flex: 1;
+}
+
+.setup-schem--strip .setup-schem__stripes {
+  height: 100%;
+}
+
+.setup-schem__block {
+  border-radius: 3px;
+  background: var(--placement-selected-border);
+}
+
+.setup-placement--selected .setup-schem__block {
+  background: var(--status-live-dim);
+}
+
+.setup-schem--docked .setup-schem__block {
+  width: 26px;
+}
+
+.setup-schem--strip .setup-schem__block {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 52px;
+  height: 9px;
+}
+
+.setup-schem--second .setup-schem__block {
+  width: 34px;
+  margin-right: 3px;
+}
+
+.setup-placement-error {
+  font: 400 12px/1.5 var(--font-ui);
+  color: var(--text-label);
+}
+
+/* ---- footer (inside the body's padding box) ---- */
+
+.setup-footer {
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-row);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.setup-footer__shortcuts {
+  display: flex;
+  gap: 20px;
+}
+
+.setup-footer__dryrun {
+  color: var(--text-action);
+  cursor: pointer;
+}
+
+/* ---- armed / waiting card (4b) ---- */
+
+.armed {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  padding: 26px 22px;
+  color: var(--text-bright);
+}
+
+.armed-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 26px;
+}
+
+.armed-headline {
+  font: 400 21px/1.3 var(--font-serif);
+  color: var(--text-primary);
+}
+
+.armed-openers {
+  margin-top: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.armed-opener {
+  font: 400 15.5px/1.4 var(--font-ui);
+  color: var(--text-muted);
+}
+
+.armed-opener--lead {
+  color: var(--text-body);
+}
+
+.armed-footer {
+  margin-top: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-row);
+}
+
+.armed-footer__pause {
+  color: var(--text-action);
+  cursor: pointer;
+}

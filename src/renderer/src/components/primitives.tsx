@@ -106,22 +106,23 @@ export function StatCard({
   )
 }
 
-/** story card as on the live panel / bank detail */
+/** story card. 'live' is the 2a panel card (15/16, body 1.45, metrics 12);
+ *  'detail' is the 3a bank card (16/17, body 1.5, metrics 13). */
 export function StoryCard({
   label,
   body,
   metrics,
   usedIn,
-  padding = '15px 16px'
+  variant = 'live'
 }: {
   label: string
   body: string
   metrics: string[]
   usedIn?: number
-  padding?: string
+  variant?: 'live' | 'detail'
 }) {
   return (
-    <div className="story-card" style={{ padding }}>
+    <div className={variant === 'detail' ? 'story-card story-card--detail' : 'story-card'}>
       {usedIn != null ? (
         <div className="story-card__head">
           <Label style={{ marginBottom: 0 }}>{label}</Label>

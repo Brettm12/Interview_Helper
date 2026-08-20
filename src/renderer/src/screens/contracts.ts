@@ -69,6 +69,8 @@ export interface LivePanelProps {
 export interface MockCallFrameProps {
   headerLeft: string
   timer: string
+  /** name pill on the main tile, e.g. "Priya R. · speaking" */
+  speakerPill: string
   children: import('react').ReactNode
 }
 
@@ -117,8 +119,10 @@ export interface BankRowView {
   question: string
   /** "4 points" */
   pointsLabel: string
-  /** story title or null → renders amber "no story yet" */
+  /** story title; null with `noStory` unset renders the points-only meta */
   storyTitle: string | null
+  /** incomplete entry → amber "no story yet" replaces the meta line */
+  noStory?: boolean
 }
 
 export interface BankGroupView {
@@ -153,9 +157,10 @@ export interface BankScreenProps {
   groups: BankGroupView[]
   selectedAnswerId: string | null
   detail: BankDetailProps | null
-  /** when true, pane 3 renders the editor instead of the detail */
+  /** when true, pane 3 renders `editorSlot` instead of the detail */
   editing: boolean
-  editor: EditorPaneProps | null
+  /** the composed <EditorPane> element (kept as a slot so the two stay decoupled) */
+  editorSlot: import('react').ReactNode
   searchQuery: string
   onSearch: (q: string) => void
   onSelectLoop: (id: string) => void
@@ -231,9 +236,10 @@ export interface RecapRowView {
   time: string
   question: string
   matched: boolean
-  /** "Missed: … · …" | "All 4 points covered" | "Not in your bank" */
+  /** "Missed: … · …" | "All 4 points covered" | "Not in your bank" —
+   *  already carries the trailing " · transcript off" when applicable */
   subLine: string
-  /** append " · transcript off" and don't expand */
+  /** transcript wasn't kept → the row doesn't expand */
   transcriptOff: boolean
   /** 0–100, matched rows only */
   coveredPct: number | null

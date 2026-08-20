@@ -82,6 +82,20 @@
   border: 1px solid var(--border-mid);
   border-radius: 9px;
   background: var(--bg-raised);
+  padding: 15px 16px;
+}
+
+/* 3a bank-detail variant: roomier padding, taller body leading, 13px metrics gap */
+.story-card--detail {
+  padding: 16px 17px;
+}
+
+.story-card--detail .story-card__body {
+  line-height: 1.5;
+}
+
+.story-card--detail .story-card__metrics {
+  margin-top: 13px;
 }
 
 .story-card__head {

@@ -1,0 +1,222 @@
+import { useLayoutEffect, useRef, useState } from 'react'
+import type { DragEvent, KeyboardEvent } from 'react'
+import type { EditorPaneProps } from '../contracts'
+import { Label, PhraseChip } from '../../components/primitives'
+import './editor.css'
+
+/** Entry editor pane — reference: docs/reference/3b-editor.html (handoff §6). */
+const EditorPane = (props: EditorPaneProps): JSX.Element => {
+  const {
+    question,
+    points,
+    story,
+    triggers,
+    onQuestionChange,
+    onPointChange,
+    onPointAdd,
+    onPointRemove,
+    onPointsReorder,
+    onTriggerAdd,
+    onTriggerRemove,
+    onSwapStory,
+    onCancel,
+    onSave
+  } = props
+
+  // -- auto-growing question textarea --
+  const questionRef = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const el = questionRef.current
+    if (el) {
+      el.style.height = 'auto'
+      el.style.height = `${el.scrollHeight}px`
+    }
+  }, [question])
+
+  // -- local (uncommitted) input state --
+  const [newPoint, setNewPoint] = useState('')
+  const [newTrigger, setNewTrigger] = useState('')
+
+  // -- drag reorder: row is draggable only while the handle is pressed --
+  const [armedIndex, setArmedIndex] = useState<number | null>(null)
+  const [dragFrom, setDragFrom] = useState<number | null>(null)
+  const [dragOver, setDragOver] = useState<number | null>(null)
+
+  const resetDrag = (): void => {
+    setArmedIndex(null)
+    setDragFrom(null)
+    setDragOver(null)
+  }
+
+  const handlePointKeyDown = (e: KeyboardEvent<HTMLInputElement>, id: string): void => {
+    if (e.key === 'Backspace' && e.currentTarget.value === '') {
+      e.preventDefault()
+      onPointRemove(id)
+    }
+  }
+
+  const handleAddKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === 'Enter') {
+      const text = newPoint.trim()
+      if (text !== '') {
+        onPointAdd(text)
+        setNewPoint('')
+      }
+    }
+  }
+
+  const handleTriggerKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === 'Enter') {
+      const text = newTrigger.trim()
+      if (text !== '') {
+        onTriggerAdd(text)
+        setNewTrigger('')
+      }
+    }
+  }
+
+  return (
+    <div className="editor-pane">
+      <div className="editor-header">
+        <Label crumb>EDITING</Label>
+        <div className="editor-header__actions">
+          <button className="editor-cancel" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="editor-save" onClick={onSave}>
+            Save
+          </button>
+        </div>
+      </div>
+
+      <div className="editor-body">
+        {/* -- question -- */}
+        <div className="editor-field">
+          <Label>QUESTION</Label>
+          <textarea
+            ref={questionRef}
+            className="editor-question pretty"
+            rows={1}
+            value={question}
+            onChange={(e) => onQuestionChange(e.target.value)}
+          />
+        </div>
+
+        {/* -- key points -- */}
+        <div className="editor-field">
+          <div className="editor-points-head">
+            <Label>KEY POINTS</Label>
+            <div className="editor-drag-hint">drag to reorder</div>
+          </div>
+          <div className="editor-points">
+            {points.map((p, i) => {
+              const dropping = dragOver === i && dragFrom !== null && dragFrom !== i
+              return (
+                <div
+                  key={p.id}
+                  className={dropping ? 'editor-point editor-point--dropping' : 'editor-point'}
+                  draggable={armedIndex === i}
+                  onDragStart={(e: DragEvent<HTMLDivElement>) => {
+                    if (armedIndex !== i) {
+                      e.preventDefault()
+                      return
+                    }
+                    setDragFrom(i)
+                    e.dataTransfer.effectAllowed = 'move'
+                    e.dataTransfer.setData('text/plain', '')
+                  }}
+                  onDragOver={(e: DragEvent<HTMLDivElement>) => {
+                    if (dragFrom === null) return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    if (dragOver !== i) setDragOver(i)
+                  }}
+                  onDrop={(e: DragEvent<HTMLDivElement>) => {
+                    e.preventDefault()
+                    if (dragFrom !== null && dragFrom !== i) onPointsReorder(dragFrom, i)
+                    resetDrag()
+                  }}
+                  onDragEnd={resetDrag}
+                >
+                  <div
+                    className="editor-point__handle"
+                    onMouseDown={() => setArmedIndex(i)}
+                    onMouseUp={() => setArmedIndex(null)}
+                  >
+                    ⠿
+                  </div>
+                  <input
+                    className="editor-point__input"
+                    type="text"
+                    value={p.text}
+                    onChange={(e) => onPointChange(p.id, e.target.value)}
+                    onKeyDown={(e) => handlePointKeyDown(e, p.id)}
+                  />
+                </div>
+              )
+            })}
+            <div className="editor-point-add">
+              <input
+                className="editor-point-add__input"
+                type="text"
+                placeholder="Add a point — keep it sayable in one breath"
+                value={newPoint}
+                onChange={(e) => setNewPoint(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* -- story -- */}
+        <div className="editor-field">
+          <Label>STORY</Label>
+          <div className="editor-story">
+            <div className="editor-story__main">
+              <div
+                className={
+                  story ? 'editor-story__name' : 'editor-story__name editor-story__name--none'
+                }
+              >
+                {story ? story.title : 'No story attached'}
+              </div>
+              <div className="editor-story__sub">
+                {story ? story.sub : 'pick one from the stories library'}
+              </div>
+            </div>
+            <button className="action editor-story__action" onClick={onSwapStory}>
+              {story ? 'Swap' : 'Pick'}
+            </button>
+          </div>
+        </div>
+
+        {/* -- trigger phrases -- */}
+        <div className="editor-field">
+          <Label>TRIGGER PHRASES</Label>
+          <div className="editor-triggers">
+            {triggers.map((t) => (
+              <PhraseChip key={t} onRemove={() => onTriggerRemove(t)}>
+                “{t}”
+              </PhraseChip>
+            ))}
+            <PhraseChip dashed>
+              <input
+                className="editor-trigger-input"
+                type="text"
+                placeholder="type a phrase…"
+                value={newTrigger}
+                onChange={(e) => setNewTrigger(e.target.value)}
+                onKeyDown={handleTriggerKeyDown}
+              />
+            </PhraseChip>
+          </div>
+          <div className="editor-triggers-help pretty">
+            Matching is fuzzy — phrases only help when the wording is unusual.
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default EditorPane

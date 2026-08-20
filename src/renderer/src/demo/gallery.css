@@ -1,0 +1,68 @@
+/* Static state gallery (?screen=…) — verification chrome only, not a screen. */
+
+.gallery {
+  min-height: 100vh;
+  background: var(--bg-app);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.gallery-frame {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-window);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.gallery-frame--bare {
+  background: none;
+  border: none;
+  overflow: visible;
+}
+
+/* 2c stand-in for the shared surface under the floating strip */
+.gallery-share {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(135deg, #f2f0eb 0 10px, #eeece6 10px 20px);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.gallery-share__label {
+  font: 500 11px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  color: rgba(0, 0, 0, 0.32);
+}
+
+.gallery-share__strip {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  /* the strip is content-box in the mock: 340px + 24 padding + 2 border */
+  width: 366px;
+}
+
+.gallery--index {
+  flex-direction: column;
+  gap: 10px;
+  color: var(--text-body);
+}
+
+.gallery-link {
+  color: var(--text-action);
+  font: 500 13px/1 var(--font-ui);
+  text-decoration: none;
+}
