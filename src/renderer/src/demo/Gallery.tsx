@@ -402,12 +402,14 @@ function Setup({ permissions }: { permissions: boolean }): JSX.Element {
           permissions
             ? {
                 ok: true,
+                failed: false,
                 title: 'Meeting audio · Google Meet tab',
                 why: 'so it hears their questions',
                 levels: [6, 13, 9, 14, 5]
               }
             : {
                 ok: false,
+                failed: true,
                 title: 'Meeting audio',
                 why: 'grant Screen Recording in System Settings → Privacy & Security',
                 levels: null
@@ -417,12 +419,14 @@ function Setup({ permissions }: { permissions: boolean }): JSX.Element {
           permissions
             ? {
                 ok: true,
+                failed: false,
                 title: 'Your mic · MacBook Pro',
                 why: 'so it can tick off points as you say them',
                 hasSignal: true
               }
             : {
                 ok: false,
+                failed: true,
                 title: 'Your mic',
                 why: 'grant Microphone access in System Settings → Privacy & Security',
                 hasSignal: false

@@ -37,6 +37,22 @@ export const TUNING = {
   /** an answer "ran long" past this many seconds of your own mic time */
   longAnswerSec: 150,
 
+  // --- input level / meters --------------------------------------------------
+  /** a source counts as hearing something above this smoothed level */
+  levelOpen: 0.02,
+  /** ...and only stops counting below this one. The gap is hysteresis: a
+   *  single threshold made the status dot flip on every inter-word gap */
+  levelClose: 0.012,
+  /** and it holds "live" this long after the last sound, because a pause in
+   *  speech is not the same thing as a dead microphone */
+  levelHoldMs: 2500,
+  /** meter ballistics: instant attack, this much exponential decay per second.
+   *  Fast enough to feel responsive, slow enough to read */
+  levelReleasePerSec: 3,
+  /** level updates published to the UI at most this often (~10Hz). Raw chunks
+   *  arrive at ~23Hz per stream and re-rendered the whole setup screen */
+  levelPublishMinIntervalMs: 100,
+
   // --- desktop plumbing ------------------------------------------------------
   /** strip snapshots: min interval between IPC sends (a trailing send always
    *  delivers the latest state, so bursts collapse to two messages) */

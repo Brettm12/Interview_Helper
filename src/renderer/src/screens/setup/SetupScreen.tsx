@@ -46,6 +46,13 @@ function Schematic({ kind }: { kind: 'docked' | 'strip' | 'second' }): JSX.Eleme
   )
 }
 
+/** green when hearing, red when there's no track at all, amber when merely
+ *  silent — three states, because they need three different reactions */
+function dotColor(row: { ok: boolean; failed: boolean }): string {
+  if (row.failed) return 'var(--status-error)'
+  return row.ok ? 'var(--status-live)' : 'var(--status-attention)'
+}
+
 export default function SetupScreen(props: SetupScreenProps): JSX.Element {
   const {
     eyebrow,
@@ -113,27 +120,22 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
           <Label>WHAT IT HEARS</Label>
           <div className="setup-hears">
             <div className="setup-hear">
-              <StatusDot
-                size={7}
-                color={meeting.ok ? 'var(--status-live)' : 'var(--status-attention)'}
-              />
+              <StatusDot size={7} color={dotColor(meeting)} />
               <div className="setup-hear__main">
                 <div className="setup-hear__title">{meeting.title}</div>
                 <div className="setup-hear__why">{meeting.why}</div>
               </div>
-              {meeting.levels != null && (
-                <LevelMeter heights={meeting.levels} live={meeting.ok} />
-              )}
+              {/* always mounted: unmounting it restarted the CSS animation and
+                  turned every state flip into a visible pop */}
+              <LevelMeter heights={meeting.levels ?? []} live={meeting.ok} />
             </div>
             <div className="setup-hear">
-              <StatusDot
-                size={7}
-                color={mic.ok ? 'var(--status-live)' : 'var(--status-attention)'}
-              />
+              <StatusDot size={7} color={dotColor(mic)} />
               <div className="setup-hear__main">
                 <div className="setup-hear__title">{mic.title}</div>
                 <div className="setup-hear__why">{mic.why}</div>
               </div>
+              <LevelMeter heights={mic.levels ?? []} live={mic.ok} />
               <span className="action setup-action" onClick={onTestMic}>
                 Test
               </span>

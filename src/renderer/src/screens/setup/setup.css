@@ -35,6 +35,7 @@
 
 .setup-cta {
   cursor: pointer;
+  transition: opacity 200ms ease-out;
 }
 
 .setup-cta--disabled {

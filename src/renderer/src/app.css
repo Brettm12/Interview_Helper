@@ -3,6 +3,7 @@
  * frame size, centered on the app background. */
 
 .app-root {
+  position: relative; /* positioning context for the ⌘⇧D diagnostics overlay */
   width: 100%;
   height: 100%;
 }

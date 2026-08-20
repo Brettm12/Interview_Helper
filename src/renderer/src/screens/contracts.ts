@@ -216,8 +216,11 @@ export interface EditorPaneProps {
 // ---- setup + armed ----------------------------------------------------------
 
 export interface AudioRowView {
-  /** permission + signal ok → green dot; otherwise amber + fix instruction */
+  /** hearing sound right now → green dot */
   ok: boolean
+  /** no audio track at all — a distinct, louder failure than "silent", so a
+   *  dead source can't be mistaken for a working one */
+  failed: boolean
   title: string
   why: string
 }
@@ -228,7 +231,7 @@ export interface SetupScreenProps {
   sub: string
   stats: { answers: number; stories: number; noStory: number }
   meeting: AudioRowView & { levels: number[] | null }
-  mic: AudioRowView & { hasSignal: boolean }
+  mic: AudioRowView & { hasSignal: boolean; levels?: number[] | null }
   keepTranscript: boolean
   onToggleTranscript: () => void
   placement: 'docked' | 'strip' | 'second-screen'
@@ -253,6 +256,38 @@ export interface ArmedCardProps {
   openers: string[]
   statusLeft: string
   onPause: () => void
+}
+
+// ---- diagnostics (⌘⇧D) ------------------------------------------------------
+
+export interface DiagnosticSourceView {
+  /** "Meeting audio" | "Your mic" */
+  name: string
+  state: 'idle' | 'no-track' | 'silent' | 'live'
+  /** real device name off the MediaStreamTrack, when known */
+  device: string | null
+  /** "−31 dB" — dB is the unit that makes "too quiet" legible */
+  levelDb: string
+  /** confirmed transcript segments so far; live with zero segments is the
+   *  signature of audio arriving but never getting through transcription */
+  segments: number
+  error: string | null
+}
+
+export interface DiagnosticsPanelProps {
+  sources: DiagnosticSourceView[]
+  models: {
+    whisper: string
+    whisperMissing: boolean
+    embeddings: string
+    embeddingsMissing: boolean
+    dir: string
+  }
+  /** last few transcript lines, newest last */
+  transcript: string[]
+  /** one plain sentence naming the most likely problem, or that all is well */
+  verdict: string
+  onClose: () => void
 }
 
 // ---- recap ------------------------------------------------------------------

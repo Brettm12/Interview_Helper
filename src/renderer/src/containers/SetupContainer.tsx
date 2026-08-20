@@ -7,17 +7,25 @@ import { useSettingsStore } from '../state/settingsStore'
 import { api } from '../lib/api'
 import { prepareAudio, startSession } from './runtime'
 
-// Pre-interview setup. The status dots are a live signal: green only when the
-// permission is granted AND the source reports a level; missing permission
-// turns the dot amber and the why-line becomes the fix instruction.
+// Pre-interview setup. The status dots are a live signal and have to be
+// honest: green only when a source is genuinely hearing something, amber when
+// it is silent, and a distinct failure when there is no audio track at all.
+// The levels arriving here are already smoothed and hysteretic (see
+// createLevelMeter in runtime.ts) — this component must not re-derive
+// liveness from an instantaneous value.
 
-const LEVEL_FLOOR = 0.02
 /** the design's five bar heights, scaled by the live level */
 const BAR_PATTERN = [6, 13, 9, 14, 5]
 
 export default function SetupContainer(): JSX.Element | null {
   const bank = useBankStore((s) => s.bank)
-  const audio = useAudioStore()
+  // selectors, not the whole store: an unselected subscription re-rendered
+  // this screen on every level tick of either stream
+  const meeting = useAudioStore((s) => s.meeting)
+  const mic = useAudioStore((s) => s.mic)
+  const permissions = useAudioStore((s) => s.permissions)
+  const meetingLabel = useAudioStore((s) => s.meetingLabel)
+  const micLabel = useAudioStore((s) => s.micLabel)
   const settings = useSettingsStore()
   const [placementError, setPlacementError] = useState<string | null>(null)
   const [modelsNotice, setModelsNotice] = useState<string | null>(null)
@@ -59,10 +67,12 @@ export default function SetupContainer(): JSX.Element | null {
     })
   }
 
-  const levels = useMemo(() => {
-    const scale = Math.min(1, audio.meetingLevel / 0.45)
-    return BAR_PATTERN.map((h) => Math.max(2, Math.round(h * (0.35 + 0.65 * scale))))
-  }, [audio.meetingLevel])
+  const meterFor = (level: number): number[] => {
+    const scale = Math.min(1, level / 0.45)
+    return BAR_PATTERN.map((h) => Math.max(2, h * (0.35 + 0.65 * scale)))
+  }
+  const meetingLevels = useMemo(() => meterFor(meeting.level), [meeting.level])
+  const micLevels = useMemo(() => meterFor(mic.level), [mic.level])
 
   if (!bank) return null
   const loop = bank.loops.find((l) => l.id === bank.activeLoopId) ?? bank.loops[0]
@@ -70,10 +80,31 @@ export default function SetupContainer(): JSX.Element | null {
   const noStoryIds = answers.filter((a) => a.storyId == null).map((a) => a.id)
   const storiesAttached = new Set(answers.map((a) => a.storyId).filter(Boolean)).size
 
-  const screenOk = audio.permissions.screen === 'granted'
-  const micOk = audio.permissions.microphone === 'granted'
-  const meetingLive = screenOk && audio.meetingLevel > LEVEL_FLOOR
-  const micLive = micOk && audio.micLevel > LEVEL_FLOOR
+  const screenOk = permissions.screen === 'granted'
+  const micOk = permissions.microphone === 'granted'
+  const meetingLive = meeting.state === 'live'
+  const micLive = mic.state === 'live'
+
+  // why-lines say which of the three failures this is, so a dead source can
+  // never be mistaken for a working one
+  const whyFor = (
+    s: typeof meeting,
+    permissionOk: boolean,
+    permissionFix: string,
+    working: string,
+    waiting: string
+  ): string => {
+    if (!permissionOk) return permissionFix
+    if (s.state === 'no-track') return s.error ?? 'no audio track — this source is not connected'
+    if (s.state === 'live') return working
+    return waiting
+  }
+
+  // A source that has ever been live is good enough to start: gating the CTA
+  // on the *current* level meant a click landing in a speech pause hit an
+  // undefined handler and was silently dropped.
+  const startable =
+    screenOk && micOk && meeting.state !== 'no-track' && mic.state !== 'no-track'
 
   const panel = usePanelStore.getState()
 
@@ -85,25 +116,30 @@ export default function SetupContainer(): JSX.Element | null {
       stats={{ answers: answers.length, stories: storiesAttached, noStory: noStoryIds.length }}
       meeting={{
         ok: meetingLive,
-        title: audio.meetingLabel,
-        why:
-          audio.meetingError ??
-          (screenOk
-            ? meetingLive
-              ? 'so it hears their questions'
-              : 'waiting for sound from the meeting'
-            : 'grant Screen Recording in System Settings → Privacy & Security'),
-        levels: meetingLive ? levels : null
+        failed: meeting.state === 'no-track',
+        title: meeting.deviceLabel ?? meetingLabel,
+        why: whyFor(
+          meeting,
+          screenOk,
+          'grant Screen Recording in System Settings → Privacy & Security',
+          'so it hears their questions',
+          'connected, but nothing audible yet'
+        ),
+        levels: meetingLevels
       }}
       mic={{
         ok: micLive,
-        title: audio.micLabel,
-        why:
-          audio.micError ??
-          (micOk
-            ? 'so it can tick off points as you say them'
-            : 'grant Microphone access in System Settings → Privacy & Security'),
-        hasSignal: micLive
+        failed: mic.state === 'no-track',
+        title: mic.deviceLabel ?? micLabel,
+        why: whyFor(
+          mic,
+          micOk,
+          'grant Microphone access in System Settings → Privacy & Security',
+          'so it can tick off points as you say them',
+          'connected, but nothing audible yet'
+        ),
+        hasSignal: micLive,
+        levels: micLevels
       }}
       keepTranscript={settings.keepTranscript}
       onToggleTranscript={() => void settings.update({ keepTranscript: !settings.keepTranscript })}
@@ -126,7 +162,7 @@ export default function SetupContainer(): JSX.Element | null {
           ? downloadModels
           : null
       }
-      canStart={meetingLive && micLive}
+      canStart={startable}
       onStart={() => startSession()}
       onEditBank={() => panel.setView('bank')}
       onFixNoStory={() => {

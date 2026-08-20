@@ -10,6 +10,7 @@ import {
 import { SessionEngine } from '../lib/engine'
 import { EmbeddingCache, nullEmbeddings } from '../lib/embeddings'
 import { createStripPublisher, deriveStripState } from '../lib/strip'
+import { LivenessGate, MeterBallistics, rms } from '../lib/dsp/level'
 import { TUNING } from '@shared/tuning'
 import { api } from '../lib/api'
 import { useAudioStore } from '../state/audioStore'
@@ -39,10 +40,40 @@ export function getEngine(): SessionEngine | null {
   return engine
 }
 
-function rms(samples: Float32Array): number {
-  let sum = 0
-  for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i]
-  return Math.sqrt(sum / samples.length)
+/**
+ * Per-stream level pipeline: raw block RMS → meter ballistics → hysteretic
+ * liveness → throttled publish.
+ *
+ * Chunks arrive ~23×/sec per stream. Writing each one straight to the store
+ * re-rendered the whole setup screen ~47×/sec and, worse, drove the status dot
+ * from an instantaneous 42ms window — so it flipped on every inter-word gap
+ * and read as activity even for a source that was never working.
+ */
+function createLevelMeter(stream: 'meeting' | 'mic'): (samples: Float32Array) => void {
+  const ballistics = new MeterBallistics(TUNING.levelReleasePerSec)
+  const gate = new LivenessGate({
+    openLevel: TUNING.levelOpen,
+    closeLevel: TUNING.levelClose,
+    holdMs: TUNING.levelHoldMs
+  })
+  let lastPublishedAt = -Infinity
+  let lastState: string | null = null
+
+  return (samples: Float32Array) => {
+    const now = Date.now()
+    const level = ballistics.push(rms(samples), now)
+    const live = gate.update(level, now)
+    const state = live ? 'live' : 'silent'
+    // publish on a material state change immediately, otherwise at ~10Hz
+    if (state === lastState && now - lastPublishedAt < TUNING.levelPublishMinIntervalMs) return
+    lastPublishedAt = now
+    lastState = state
+    const current = useAudioStore.getState()[stream]
+    // a capture failure owns the state until it clears — never overwrite
+    // 'no-track' with 'silent', which is what made a dead source look alive
+    if (current.state === 'no-track') return
+    useAudioStore.getState().publish(stream, { level, state })
+  }
 }
 
 /** single-subscriber Transcriber → fan-out, so the engine and the runtime can
@@ -62,10 +93,12 @@ export function prepareAudio(): void {
   if (audioPrepared) return
   audioPrepared = true
   const audio = useAudioStore.getState()
+  const meetingMeter = createLevelMeter('meeting')
+  const micMeter = createLevelMeter('mic')
   if (MOCK) {
     driver = createMockDriver()
-    driver.meetingSource.onChunk((c) => useAudioStore.getState().setLevel('meeting', rms(c.samples)))
-    driver.micSource.onChunk((c) => useAudioStore.getState().setLevel('mic', rms(c.samples)))
+    driver.meetingSource.onChunk((c) => meetingMeter(c.samples))
+    driver.micSource.onChunk((c) => micMeter(c.samples))
     driver.meetingSource.start()
     driver.micSource.start()
     audio.setLabels({ meeting: 'Meeting audio · Google Meet tab', mic: 'Your mic · MacBook Pro' })
@@ -73,11 +106,11 @@ export function prepareAudio(): void {
   }
   realSources = { meeting: new MeetingAudioSource(), mic: new MicAudioSource() }
   realSources.meeting.onChunk((c) => {
-    useAudioStore.getState().setLevel('meeting', rms(c.samples))
+    meetingMeter(c.samples)
     realTranscribers?.them.push(c)
   })
   realSources.mic.onChunk((c) => {
-    useAudioStore.getState().setLevel('mic', rms(c.samples))
+    micMeter(c.samples)
     realTranscribers?.you.push(c)
   })
   // failures land in the store; the setup row's why-line carries them and the
@@ -230,10 +263,10 @@ export function startSession(opts: StartOptions = {}): void {
   if (useMock) {
     if (!driver) {
       driver = createMockDriver()
-      driver.meetingSource.onChunk((c) =>
-        useAudioStore.getState().setLevel('meeting', rms(c.samples))
-      )
-      driver.micSource.onChunk((c) => useAudioStore.getState().setLevel('mic', rms(c.samples)))
+      const meetingMeter = createLevelMeter('meeting')
+      const micMeter = createLevelMeter('mic')
+      driver.meetingSource.onChunk((c) => meetingMeter(c.samples))
+      driver.micSource.onChunk((c) => micMeter(c.samples))
       driver.meetingSource.start()
       driver.micSource.start()
     }

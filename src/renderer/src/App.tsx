@@ -14,6 +14,7 @@ import SetupContainer from './containers/SetupContainer'
 import ArmedContainer from './containers/ArmedContainer'
 import BankContainer from './containers/BankContainer'
 import RecapContainer from './containers/RecapContainer'
+import DiagnosticsContainer from './containers/DiagnosticsContainer'
 import MockCallFrame from './screens/live/MockCallFrame'
 import './app.css'
 
@@ -192,6 +193,7 @@ export default function App(): JSX.Element {
   return (
     <div className={IN_ELECTRON ? 'app-root' : 'app-root app-root--web app-shell'}>
       <MainWindow />
+      <DiagnosticsContainer />
     </div>
   )
 }

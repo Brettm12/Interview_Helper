@@ -59,7 +59,14 @@ export function AutoPickBar({ pct }: { pct: number }) {
   )
 }
 
-/** 5-bar audio level meter (2.5px bars, bottom-aligned) */
+/** 5-bar audio level meter (2.5px bars, bottom-aligned).
+ *
+ *  Heights come from the real smoothed input level. There used to be a 1.1s
+ *  CSS "bob" animation running underneath, uncorrelated with the audio — it
+ *  beat against the React updates and, because the meter was unmounted
+ *  whenever the source went quiet, restarted from scratch on every flip. A
+ *  meter that moves with your voice is honest; one that bobs on a timer is
+ *  decoration that implies signal where there may be none. */
 export function LevelMeter({
   heights = [6, 13, 9, 14, 5],
   color = 'var(--status-live)',
@@ -69,13 +76,14 @@ export function LevelMeter({
   color?: string
   live?: boolean
 }) {
+  const bars = heights.length > 0 ? heights : [2, 2, 2, 2, 2]
   return (
-    <div className="level-meter">
-      {heights.map((h, i) => (
+    <div className={live ? 'level-meter' : 'level-meter level-meter--idle'}>
+      {bars.map((h, i) => (
         <div
           key={i}
-          className={live ? 'level-bar level-bar--live' : 'level-bar'}
-          style={{ height: h, background: color, animationDelay: live ? `${i * 0.13}s` : undefined }}
+          className="level-bar"
+          style={{ height: Math.max(2, h), background: color }}
         />
       ))}
     </div>
