@@ -1,10 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HelperApi } from '../shared/ipc'
+import type { HelperApi, StripState } from '../shared/ipc'
 
 const api: HelperApi = {
   bank: {
     load: () => ipcRenderer.invoke('bank:load'),
-    save: (bank) => ipcRenderer.invoke('bank:save', bank)
+    save: (bank) => ipcRenderer.invoke('bank:save', bank),
+    onChanged: (cb) => {
+      const listener = (): void => cb()
+      ipcRenderer.on('bank:did-change', listener)
+      return () => ipcRenderer.removeListener('bank:did-change', listener)
+    }
   },
   sessions: {
     save: (s) => ipcRenderer.invoke('sessions:save', s),
@@ -29,6 +34,19 @@ const api: HelperApi = {
   },
   exportFile: {
     saveNotes: (name, contents) => ipcRenderer.invoke('export:save-notes', name, contents)
+  },
+  strip: {
+    publish: (s) => ipcRenderer.send('strip:publish', s),
+    getState: () => ipcRenderer.invoke('strip:get'),
+    onState: (cb) => {
+      const listener = (_e: unknown, s: StripState): void => cb(s)
+      ipcRenderer.on('strip:state', listener)
+      return () => ipcRenderer.removeListener('strip:state', listener)
+    },
+    expand: () => ipcRenderer.invoke('strip:expand')
+  },
+  models: {
+    status: () => ipcRenderer.invoke('models:status')
   },
   onCommand: (cb) => {
     const listener = (_e: unknown, cmd: 'find' | 'toggle-collapse' | 'recap' | 'strip-expand') => cb(cmd)

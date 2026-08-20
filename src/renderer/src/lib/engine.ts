@@ -1,4 +1,4 @@
-import type { Answer, Segment, SessionQuestion, SessionRecord, Transcriber } from '@shared/types'
+import type { Answer, Candidate, Segment, SessionQuestion, SessionRecord, Transcriber } from '@shared/types'
 import { TUNING } from '@shared/tuning'
 import { HybridMatcher } from './matcher'
 import { EmbeddingCoverage } from './coverage'
@@ -31,6 +31,10 @@ export class SessionEngine {
   private youSegments: Segment[] = []
   private stopped = false
 
+  private snapshotTimer: ReturnType<typeof setInterval> | null = null
+  /** a confident swap deferred by the debounce window */
+  private pendingSwapTimer: ReturnType<typeof setTimeout> | null = null
+
   constructor(
     themTranscriber: Transcriber,
     youTranscriber: Transcriber,
@@ -41,6 +45,14 @@ export class SessionEngine {
     this.coverage = new EmbeddingCoverage(embeddings ?? null)
     themTranscriber.onSegment((s) => this.onThem(s))
     youTranscriber.onSegment((s) => this.onYou(s))
+    // interim snapshots: a crash mid-interview keeps the recap up to the last
+    // tick. The final end() save overwrites the snapshot (same id, upsert).
+    this.snapshotTimer = setInterval(() => {
+      const s = this.session
+      if (this.stopped || (s.status !== 'listening' && s.status !== 'paused')) return
+      if (s.questions.length === 0) return
+      void api.sessions.save(this.buildRecord(true)).catch(() => {})
+    }, TUNING.snapshotIntervalSec * 1000)
   }
 
   private get session() {
@@ -79,7 +91,34 @@ export class SessionEngine {
     if (entries.length === 0) return
     const utterance = this.window.map((w) => w.text).join(' ')
     // warm the embedding cache in the background; scoring stays synchronous
-    void this.embeddings?.ensure([utterance, ...entries.map((e) => e.question)])
+    const wasCold =
+      this.embeddings != null && this.embeddings.hasProvider && this.embeddings.get(utterance) == null
+    const warm = this.embeddings?.ensure([utterance, ...entries.map((e) => e.question)])
+    this.applyScores(utterance, seg, questionLike, false)
+    // once the vectors land, rescore the same window — a cold Dice-only
+    // decision can flip to a confident match seconds before the next segment
+    if (wasCold && warm) {
+      void warm.then(() => this.rescoreIfUnchanged(utterance, seg, questionLike))
+    }
+  }
+
+  private rescoreIfUnchanged(utterance: string, seg: Segment, questionLike: boolean): void {
+    if (this.stopped) return
+    const s = this.session
+    if (s.status !== 'listening' && s.status !== 'armed') return
+    if (s.match.state === 'pinned') return
+    if (this.window.map((w) => w.text).join(' ') !== utterance) return
+    this.applyScores(utterance, seg, questionLike, true)
+  }
+
+  private applyScores(
+    utterance: string,
+    seg: Segment,
+    questionLike: boolean,
+    isRescore: boolean
+  ): void {
+    const s = this.session
+    const entries = this.entries()
     const candidates = this.matcher.score(utterance, entries)
     const state = this.matcher.classify(candidates)
 
@@ -95,6 +134,13 @@ export class SessionEngine {
             viaFind: false,
             candidates
           })
+        } else {
+          // inside the debounce window: defer instead of dropping — a
+          // question asked right after a swap must not be lost
+          this.queueSwap(
+            { entryId: top.entryId, askedAt: seg.t, heard: seg.text, candidates },
+            this.lastSwapAt + TUNING.swapDebounceMs - wallNow
+          )
         }
       } else {
         s.setMatch({ candidates, state: 'confident' })
@@ -110,11 +156,27 @@ export class SessionEngine {
         autoPickAt: s.match.state === 'ambiguous' && s.match.autoPickAt ? s.match.autoPickAt : wallNow + TUNING.autoPickSec * 1000
       })
       this.armAutoPick()
-    } else if (state === 'none' && questionLike) {
+    } else if (state === 'none' && questionLike && !isRescore) {
       // heard a question that hit nothing in the bank — log it for the recap
+      // (a warm rescore that still lands on none must not double-record)
       this.recordQuestion(null, seg.t, seg.text, false)
       this.window = [seg] // start a fresh window at this question
     }
+  }
+
+  private queueSwap(
+    pending: { entryId: string; askedAt: number; heard: string; candidates: Candidate[] },
+    delayMs: number
+  ): void {
+    if (this.pendingSwapTimer) clearTimeout(this.pendingSwapTimer)
+    this.pendingSwapTimer = setTimeout(() => {
+      this.pendingSwapTimer = null
+      if (this.stopped) return
+      const m = this.session.match
+      if (m.state === 'pinned' || m.entryId === pending.entryId) return
+      this.lastSwapAt = this.now()
+      this.activateEntry(pending.entryId, { ...pending, viaFind: false })
+    }, delayMs)
   }
 
   private pruneWindow(nowSec: number): void {
@@ -156,6 +218,11 @@ export class SessionEngine {
   ): void {
     const s = this.session
     this.clearAutoPick()
+    // any activation supersedes a deferred swap
+    if (this.pendingSwapTimer) {
+      clearTimeout(this.pendingSwapTimer)
+      this.pendingSwapTimer = null
+    }
     // highlight the matched phrase on the transcript entry that triggered it
     if (opts.heard) {
       const entry = this.entries().find((e) => e.id === entryId)
@@ -295,9 +362,8 @@ export class SessionEngine {
     this.syncActiveQuestion()
   }
 
-  async end(): Promise<SessionRecord> {
-    this.stopped = true
-    this.clearAutoPick()
+  /** the SessionRecord as of now — shared by interim snapshots and end() */
+  buildRecord(incomplete: boolean): SessionRecord {
     const s = this.session
     const startedAt = s.startedAt ?? this.now()
     // finalize per-question mic time + transcript excerpts
@@ -310,6 +376,7 @@ export class SessionEngine {
         mine.length === 0
           ? 0
           : Math.round(mine[mine.length - 1].t - mine[0].t + estimateSpokenSeconds(mine[mine.length - 1].text))
+      // privacy: excerpts only when the recap transcript toggle is on
       const transcript = s.keepTranscript
         ? s.transcript
             .filter((e) => e.confirmed && e.t >= from && e.t < to)
@@ -317,14 +384,26 @@ export class SessionEngine {
         : undefined
       return { ...q, micSeconds, transcript }
     })
-    const record: SessionRecord = {
+    return {
       id: `session-${startedAt}`,
       loopId: s.loopId ?? '',
       startedAt,
       endedAt: startedAt + s.clockSec * 1000,
       transcriptKept: s.keepTranscript,
-      questions: finalized
+      questions: finalized,
+      ...(incomplete ? { incomplete: true } : {})
     }
+  }
+
+  async end(): Promise<SessionRecord> {
+    this.stopped = true
+    this.clearAutoPick()
+    if (this.snapshotTimer) clearInterval(this.snapshotTimer)
+    this.snapshotTimer = null
+    if (this.pendingSwapTimer) clearTimeout(this.pendingSwapTimer)
+    this.pendingSwapTimer = null
+    const s = this.session
+    const record = this.buildRecord(false)
     s.setLastSession(record)
     s.setStatus('idle')
     await api.sessions.save(record)
@@ -332,7 +411,7 @@ export class SessionEngine {
     const bankState = useBankStore.getState()
     const loop = bankState.bank?.loops.find((l) => l.id === record.loopId)
     const date = new Date(record.endedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-    for (const q of finalized) {
+    for (const q of record.questions) {
       if (q.entryId) {
         void bankState.markLastUsed(q.entryId, {
           loopName: loop?.shortName ?? 'session',

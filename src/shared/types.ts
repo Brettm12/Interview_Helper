@@ -95,6 +95,8 @@ export interface SessionRecord {
   endedAt: number
   transcriptKept: boolean
   questions: SessionQuestion[]
+  /** written by interim crash-resilience snapshots; the final save omits it */
+  incomplete?: boolean
 }
 
 // ---- Runtime plumbing (audio → transcript → match → coverage) ----
@@ -124,6 +126,9 @@ export interface AudioSource {
   start(): void
   stop(): void
   onChunk(cb: (c: AudioChunk) => void): void
+  /** acquisition/capture failure — surfaced on the setup screen (optional:
+   *  the mock never fails) */
+  onError?(cb: (e: Error) => void): void
 }
 
 export interface Transcriber {

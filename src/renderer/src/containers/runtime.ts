@@ -1,4 +1,5 @@
-import type { AudioSource, Segment, Transcriber } from '@shared/types'
+import type { Segment, Transcriber } from '@shared/types'
+import { MODELS_URL_PREFIX } from '@shared/ipc'
 import { createMockDriver, type MockDriver } from '../lib/drivers/mock'
 import {
   MeetingAudioSource,
@@ -8,9 +9,11 @@ import {
 } from '../lib/drivers/real'
 import { SessionEngine } from '../lib/engine'
 import { EmbeddingCache, nullEmbeddings } from '../lib/embeddings'
+import { createStripPublisher, deriveStripState } from '../lib/strip'
+import { TUNING } from '@shared/tuning'
 import { api } from '../lib/api'
 import { useAudioStore } from '../state/audioStore'
-import { useBankStore } from '../state/bankStore'
+import { useBankStore, answersForLoop } from '../state/bankStore'
 import { usePanelStore } from '../state/panelStore'
 import { useSessionStore } from '../state/sessionStore'
 import { useSettingsStore } from '../state/settingsStore'
@@ -20,11 +23,14 @@ import { useSettingsStore } from '../state/settingsStore'
 // Containers call the exported commands; everything else flows through stores.
 
 const MOCK = api.env.mock
+/** real Electron (preload present) vs the browser shim — window plumbing only
+ *  exists in Electron, even when the session itself is mocked */
+const IN_ELECTRON = typeof window !== 'undefined' && window.api !== undefined
 
 let driver: MockDriver | null = null
 let engine: SessionEngine | null = null
 let stopPlayback: (() => void) | null = null
-let realSources: { meeting: AudioSource; mic: AudioSource } | null = null
+let realSources: { meeting: MeetingAudioSource; mic: MicAudioSource } | null = null
 let realTranscribers: { them: WhisperTranscriber; you: WhisperTranscriber } | null = null
 let realEmbeddings: WorkerEmbeddings | null = null
 let audioPrepared = false
@@ -74,17 +80,12 @@ export function prepareAudio(): void {
     useAudioStore.getState().setLevel('mic', rms(c.samples))
     realTranscribers?.you.push(c)
   })
-  // failures leave the level at 0 → amber dot + fix instruction on setup
-  try {
-    realSources.mic.start()
-  } catch {
-    /* dot stays amber */
-  }
-  try {
-    realSources.meeting.start()
-  } catch {
-    /* dot stays amber */
-  }
+  // failures land in the store; the setup row's why-line carries them and the
+  // dot stays amber (level never rises)
+  realSources.meeting.onError((e) => useAudioStore.getState().setError('meeting', e.message))
+  realSources.mic.onError((e) => useAudioStore.getState().setError('mic', e.message))
+  realSources.mic.start()
+  realSources.meeting.start()
 }
 
 /** wire a mock driver's control events to the same commands the shortcuts use */
@@ -146,7 +147,69 @@ export function setCollapsed(collapsed: boolean): void {
   const panel = usePanelStore.getState()
   if (panel.collapsed === collapsed) return
   panel.setCollapsed(collapsed)
-  if (!MOCK) void api.windows.showStrip(collapsed)
+  // the strip is its own window whenever we're in Electron — even with the
+  // mock driver; only the browser build renders it inline
+  if (IN_ELECTRON) void api.windows.showStrip(collapsed)
+}
+
+// ---- strip window feed (Electron) ----
+// the session lives in this renderer; the strip window renders relayed
+// snapshots. Publish only material changes, throttled.
+
+let stripPublisherStop: (() => void) | null = null
+
+function startStripPublisher(): void {
+  if (!IN_ELECTRON || stripPublisherStop) return
+  const publisher = createStripPublisher({
+    send: (s) => api.strip.publish(s),
+    minIntervalMs: TUNING.stripPublishMinIntervalMs
+  })
+
+  let entryAtCollapse: string | null = null
+  let lastCollapsed = usePanelStore.getState().collapsed
+
+  const offer = (): void => {
+    const bank = useBankStore.getState().bank
+    if (!bank) return
+    const session = useSessionStore.getState()
+    publisher.offer(
+      deriveStripState({
+        entries: answersForLoop(bank, session.loopId ?? bank.activeLoopId),
+        match: session.match,
+        coverage: session.coverage,
+        entryAtCollapse,
+        protectionOn: useSettingsStore.getState().contentProtection
+      })
+    )
+  }
+
+  const unsubs = [
+    usePanelStore.subscribe((s) => {
+      if (s.collapsed !== lastCollapsed) {
+        lastCollapsed = s.collapsed
+        // record what was showing at collapse; anything different later is
+        // the "new question" nudge
+        entryAtCollapse = s.collapsed ? useSessionStore.getState().match.entryId : null
+        offer()
+      }
+    }),
+    useSessionStore.subscribe(offer),
+    useSettingsStore.subscribe(offer),
+    useBankStore.subscribe(offer)
+  ]
+  offer()
+
+  stripPublisherStop = () => {
+    unsubs.forEach((u) => u())
+    publisher.dispose()
+    stripPublisherStop = null
+  }
+}
+
+/** other windows saved the bank — reload so this one isn't stale. Returns the
+ *  unsubscribe; App mounts it once per window. */
+export function startBankSync(): () => void {
+  return api.bank.onChanged(() => void useBankStore.getState().load())
 }
 
 export interface StartOptions {
@@ -202,7 +265,9 @@ export function startSession(opts: StartOptions = {}): void {
     stopPlayback = d.play()
   } else {
     prepareAudio()
-    const modelPath = 'models' // resolved by the transformer env inside the worker
+    // main serves userData/models over the privileged scheme; the browser
+    // build never reaches this branch
+    const modelPath = IN_ELECTRON ? MODELS_URL_PREFIX : 'models'
     realTranscribers = {
       them: new WhisperTranscriber('them', modelPath),
       you: new WhisperTranscriber('you', modelPath)
@@ -220,8 +285,9 @@ export function startSession(opts: StartOptions = {}): void {
   }
 
   usePanelStore.getState().setView('armed')
+  startStripPublisher()
   usePanelStore.getState().setCollapsed(settings.placement === 'strip')
-  if (settings.placement === 'strip' && !MOCK) void api.windows.showStrip(true)
+  if (settings.placement === 'strip' && IN_ELECTRON) void api.windows.showStrip(true)
 }
 
 export async function endSession(): Promise<void> {
@@ -237,8 +303,9 @@ export async function endSession(): Promise<void> {
   realTranscribers = null
   realEmbeddings?.dispose()
   realEmbeddings = null
+  stripPublisherStop?.()
   usePanelStore.getState().setCollapsed(false)
-  if (!MOCK) void api.windows.showStrip(false)
+  if (IN_ELECTRON) void api.windows.showStrip(false)
 }
 
 /** ⌘⇧R: during a session this IS the session end; idle, it reopens the last recap */

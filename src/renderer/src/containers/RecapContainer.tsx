@@ -110,7 +110,7 @@ export default function RecapContainer(): JSX.Element | null {
 
   return (
     <RecapScreen
-      eyebrow={data.eyebrow}
+      eyebrow={record.incomplete ? `RECOVERED · ${data.eyebrow}` : data.eyebrow}
       title={loop?.name ?? 'Interview session'}
       sub={data.sub}
       stats={data.stats}

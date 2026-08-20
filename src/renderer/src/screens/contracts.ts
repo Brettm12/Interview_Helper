@@ -170,6 +170,29 @@ export interface BankScreenProps {
   onStories: () => void
 }
 
+// ---- stories library (pane 3) -----------------------------------------------
+
+export interface StoryRowView {
+  id: string
+  title: string
+  /** "3 metrics · used in 4 answers" */
+  sub: string
+}
+
+export interface StoriesPaneProps {
+  rows: StoryRowView[]
+  /** the story being edited, or null when just browsing the list */
+  draft: { storyId: string | null; title: string; body: string; metrics: string[] } | null
+  onSelect: (id: string) => void
+  onNew: () => void
+  onTitleChange: (t: string) => void
+  onBodyChange: (b: string) => void
+  onMetricAdd: (m: string) => void
+  onMetricRemove: (m: string) => void
+  onSave: () => void
+  onClose: () => void
+}
+
 // ---- entry editor -----------------------------------------------------------
 
 export interface EditorPaneProps {
@@ -212,6 +235,8 @@ export interface SetupScreenProps {
   onPlacement: (p: 'docked' | 'strip' | 'second-screen') => void
   /** one-line graceful error, e.g. only one display for second-screen */
   placementError: string | null
+  /** on-device models missing → matching runs on the lexical fallback */
+  modelsNotice?: string | null
   canStart: boolean
   onStart: () => void
   onEditBank: () => void

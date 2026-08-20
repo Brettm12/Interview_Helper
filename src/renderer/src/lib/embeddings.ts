@@ -21,6 +21,11 @@ export class EmbeddingCache {
     return this.provider?.ready ?? false
   }
 
+  /** false for the null cache — there is nothing to warm up */
+  get hasProvider(): boolean {
+    return this.provider != null
+  }
+
   get(text: string): Float32Array | null {
     return this.vectors.get(text) ?? null
   }

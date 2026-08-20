@@ -1,13 +1,16 @@
-import { app, dialog, globalShortcut, ipcMain } from 'electron'
+import { app, desktopCapturer, dialog, globalShortcut, ipcMain, net, protocol, session } from 'electron'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { repository } from './persistence'
 import { permissionStatus, requestMicrophone, openScreenRecordingSettings } from './permissions'
 import {
+  allWindows,
   broadcast,
   createMainWindow,
   displayCount,
   getMainWindow,
+  getStripWindow,
   openSecondScreenBank,
   setContentProtection,
   setView,
@@ -15,7 +18,14 @@ import {
   stripBounds
 } from './windows'
 import type { Settings } from '../shared/types'
-import type { ViewName } from '../shared/ipc'
+import type { StripState, ViewName } from '../shared/ipc'
+
+// userData/models is served to the renderer (and its workers) over a
+// privileged custom scheme — @xenova/transformers fetches model files, and a
+// bare filesystem path is not fetchable from the renderer.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'lih-models', privileges: { supportFetchAPI: true, bypassCSP: true } }
+])
 
 // no dock bounce / focus steal when helper windows appear
 if (process.platform === 'darwin') {
@@ -25,7 +35,13 @@ if (process.platform === 'darwin') {
 
 function registerIpc(): void {
   ipcMain.handle('bank:load', () => repository.loadBank())
-  ipcMain.handle('bank:save', (_e, bank) => repository.saveBank(bank))
+  ipcMain.handle('bank:save', async (e, bank) => {
+    await repository.saveBank(bank)
+    // other windows reload so edits made on a second screen aren't stale
+    for (const win of allWindows()) {
+      if (win.webContents.id !== e.sender.id) win.webContents.send('bank:did-change')
+    }
+  })
 
   ipcMain.handle('sessions:save', (_e, s) => repository.saveSession(s))
   ipcMain.handle('sessions:list', () => repository.listSessions())
@@ -67,6 +83,30 @@ function registerIpc(): void {
     await fs.writeFile(filePath, contents, 'utf8')
     return filePath
   })
+
+  // ---- strip window bridge ----
+  // the session-owning renderer publishes snapshots; main relays the latest to
+  // the strip window (and primes fresh strip windows on request)
+  let lastStripState: StripState | null = null
+  ipcMain.on('strip:publish', (_e, s: StripState) => {
+    lastStripState = s
+    getStripWindow()?.webContents.send('strip:state', s)
+  })
+  ipcMain.handle('strip:get', () => lastStripState)
+  ipcMain.handle('strip:expand', () => broadcast('command', 'strip-expand'))
+
+  // ---- on-device models ----
+  const modelsDir = join(app.getPath('userData'), 'models')
+  const exists = (p: string): Promise<boolean> =>
+    fs.access(p).then(
+      () => true,
+      () => false
+    )
+  ipcMain.handle('models:status', async () => ({
+    dir: modelsDir,
+    whisper: await exists(join(modelsDir, 'Xenova/whisper-tiny.en/config.json')),
+    embeddings: await exists(join(modelsDir, 'Xenova/all-MiniLM-L6-v2/config.json'))
+  }))
 }
 
 function registerShortcuts(): void {
@@ -78,6 +118,31 @@ function registerShortcuts(): void {
 }
 
 app.whenReady().then(async () => {
+  // system-audio loopback: route the renderer's getDisplayMedia through the
+  // primary screen with loopback audio. Loopback is Windows-only in this
+  // Electron; elsewhere the stream arrives without an audio track and the
+  // capture path surfaces the platform instruction (see drivers/real.ts).
+  session.defaultSession.setDisplayMediaRequestHandler(
+    (_request, callback) => {
+      desktopCapturer
+        .getSources({ types: ['screen'] })
+        // 'loopback' (not 'loopbackWithMute') — the candidate must keep
+        // hearing the meeting
+        .then((sources) => callback({ video: sources[0], audio: 'loopback' }))
+        .catch(() => callback({} as Electron.Streams)) // empty → getDisplayMedia rejects
+    },
+    { useSystemPicker: false }
+  )
+
+  // serve userData/models over the privileged scheme registered above
+  const modelsDir = join(app.getPath('userData'), 'models')
+  protocol.handle('lih-models', (req) => {
+    const rel = decodeURIComponent(new URL(req.url).pathname)
+    const file = join(modelsDir, rel)
+    if (!file.startsWith(modelsDir)) return new Response(null, { status: 403 })
+    return net.fetch(pathToFileURL(file).toString())
+  })
+
   const settings = await repository.loadSettings()
   setContentProtection(settings.contentProtection)
   registerIpc()

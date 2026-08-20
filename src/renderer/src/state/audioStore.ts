@@ -13,10 +13,14 @@ interface AudioState {
   micLevel: number
   meetingLabel: string
   micLabel: string
+  /** capture failures, surfaced as the setup rows' why-lines */
+  meetingError: string | null
+  micError: string | null
 
   refreshPermissions(): Promise<void>
   setLevel(stream: 'meeting' | 'mic', level: number): void
   setLabels(labels: { meeting?: string; mic?: string }): void
+  setError(stream: 'meeting' | 'mic', message: string | null): void
 }
 
 export const useAudioStore = create<AudioState>((set) => ({
@@ -25,6 +29,8 @@ export const useAudioStore = create<AudioState>((set) => ({
   micLevel: 0,
   meetingLabel: 'Meeting audio · system loopback',
   micLabel: 'Your mic',
+  meetingError: null,
+  micError: null,
 
   refreshPermissions: async () => {
     const permissions = await api.permissions.status()
@@ -38,5 +44,8 @@ export const useAudioStore = create<AudioState>((set) => ({
     set((s) => ({
       meetingLabel: labels.meeting ?? s.meetingLabel,
       micLabel: labels.mic ?? s.micLabel
-    }))
+    })),
+
+  setError: (stream, message) =>
+    set(stream === 'meeting' ? { meetingError: message } : { micError: message })
 }))

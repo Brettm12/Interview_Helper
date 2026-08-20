@@ -1,5 +1,6 @@
 import { BrowserWindow, screen, shell } from 'electron'
 import { join } from 'node:path'
+import { repository } from './persistence'
 import type { Settings } from '../shared/types'
 import type { ViewName } from '../shared/ipc'
 
@@ -65,6 +66,12 @@ export function getMainWindow(): BrowserWindow | null {
 
 export function getStripWindow(): BrowserWindow | null {
   return stripWindow
+}
+
+export function allWindows(): BrowserWindow[] {
+  return [mainWindow, stripWindow, secondScreenWindow].filter(
+    (w): w is BrowserWindow => w != null && !w.isDestroyed()
+  )
 }
 
 export async function createMainWindow(): Promise<BrowserWindow> {
@@ -145,6 +152,18 @@ export async function showStrip(show: boolean, stripPosition: Settings['stripPos
       backgroundColor: undefined
     })
     applyHelperBehaviour(stripWindow)
+    // the strip remembers its position — persist on drag, debounced
+    let moveTimer: ReturnType<typeof setTimeout> | null = null
+    stripWindow.on('moved', () => {
+      if (moveTimer) clearTimeout(moveTimer)
+      moveTimer = setTimeout(() => {
+        const pos = stripBounds()
+        if (!pos) return
+        void repository
+          .loadSettings()
+          .then((s) => repository.saveSettings({ ...s, stripPosition: pos }))
+      }, 500)
+    })
     await loadInto(stripWindow, { window: 'strip' })
   }
   mainWindow?.hide()

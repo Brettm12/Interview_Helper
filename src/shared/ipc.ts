@@ -16,10 +16,34 @@ export interface DisplayInfo {
   count: number
 }
 
+/** snapshot of the strip's render state, computed by the session-owning
+ *  renderer and relayed by main to the strip window */
+export interface StripState {
+  variant: 'current' | 'queued' | 'new-question'
+  text: string
+  /** "3/4" */
+  counter: string | null
+  protectionOn: boolean
+}
+
+export interface ModelsStatus {
+  /** userData/models — shown in the setup notice */
+  dir: string
+  /** Xenova/whisper-tiny.en present */
+  whisper: boolean
+  /** Xenova/all-MiniLM-L6-v2 present */
+  embeddings: boolean
+}
+
+/** localModelPath prefix served by main's privileged custom protocol */
+export const MODELS_URL_PREFIX = 'lih-models://models'
+
 export interface HelperApi {
   bank: {
     load(): Promise<Bank>
     save(bank: Bank): Promise<void>
+    /** another window saved the bank — reload to stay fresh */
+    onChanged(cb: () => void): () => void
   }
   sessions: {
     save(s: SessionRecord): Promise<void>
@@ -46,6 +70,19 @@ export interface HelperApi {
   exportFile: {
     /** write markdown next to the user's documents; returns the path */
     saveNotes(defaultName: string, contents: string): Promise<string | null>
+  }
+  /** strip window bridge: the session-owning renderer publishes snapshots,
+   *  main relays them to the strip window */
+  strip: {
+    publish(s: StripState): void
+    /** primes a fresh strip window with the last published state */
+    getState(): Promise<StripState | null>
+    onState(cb: (s: StripState) => void): () => void
+    /** ask the session-owning window to expand back to the panel */
+    expand(): Promise<void>
+  }
+  models: {
+    status(): Promise<ModelsStatus>
   }
   /** global shortcuts + strip actions forwarded from main */
   onCommand(cb: (cmd: 'find' | 'toggle-collapse' | 'recap' | 'strip-expand') => void): () => void

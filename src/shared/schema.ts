@@ -80,7 +80,8 @@ export const SessionRecordSchema = z.object({
   startedAt: z.number(),
   endedAt: z.number(),
   transcriptKept: z.boolean(),
-  questions: z.array(SessionQuestionSchema)
+  questions: z.array(SessionQuestionSchema),
+  incomplete: z.boolean().optional()
 })
 
 export const SessionsFileSchema = z.array(SessionRecordSchema)

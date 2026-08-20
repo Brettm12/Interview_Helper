@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import type { Answer } from '@shared/types'
 import BankScreen from '../screens/bank/BankScreen'
 import EditorPane from '../screens/bank/EditorPane'
+import StoriesPane from '../screens/bank/StoriesPane'
 import type { BankDetailProps, BankGroupView } from '../screens/contracts'
 import { useBankStore, answersForLoop, storyById, storyUsage } from '../state/bankStore'
 import { normalize } from '../lib/text'
@@ -77,12 +78,48 @@ function EditorContainer(): JSX.Element | null {
   )
 }
 
+function StoriesContainer(): JSX.Element | null {
+  const bank = useBankStore((s) => s.bank)
+  const storyDraft = useBankStore((s) => s.storyDraft)
+  if (!bank) return null
+  const store = useBankStore.getState()
+
+  return (
+    <StoriesPane
+      rows={bank.stories.map((s) => {
+        const used = storyUsage(bank, s.id)
+        return {
+          id: s.id,
+          title: s.title,
+          sub: `${s.metrics.length} metric${s.metrics.length === 1 ? '' : 's'} · used in ${used} answer${used === 1 ? '' : 's'}`
+        }
+      })}
+      draft={storyDraft}
+      onSelect={(id) => store.selectStory(id)}
+      onNew={() => store.newStory()}
+      onTitleChange={(title) => store.updateStoryDraft({ title })}
+      onBodyChange={(body) => store.updateStoryDraft({ body })}
+      onMetricAdd={(m) => {
+        const d = useBankStore.getState().storyDraft
+        if (d && !d.metrics.includes(m)) store.updateStoryDraft({ metrics: [...d.metrics, m] })
+      }}
+      onMetricRemove={(m) => {
+        const d = useBankStore.getState().storyDraft
+        if (d) store.updateStoryDraft({ metrics: d.metrics.filter((x) => x !== m) })
+      }}
+      onSave={() => void store.saveStoryDraft()}
+      onClose={() => store.closeStories()}
+    />
+  )
+}
+
 export default function BankContainer(): JSX.Element | null {
   const bank = useBankStore((s) => s.bank)
   const selectedAnswerId = useBankStore((s) => s.selectedAnswerId)
   const searchQuery = useBankStore((s) => s.searchQuery)
   const draft = useBankStore((s) => s.draft)
   const filterIds = useBankStore((s) => s.filterIds)
+  const storiesOpen = useBankStore((s) => s.storiesOpen)
 
   const groups = useMemo<BankGroupView[]>(() => {
     if (!bank) return []
@@ -169,15 +206,15 @@ export default function BankContainer(): JSX.Element | null {
       groups={groups}
       selectedAnswerId={selectedAnswerId}
       detail={detail}
-      editing={draft != null}
-      editorSlot={<EditorContainer />}
+      editing={draft != null || storiesOpen}
+      editorSlot={draft != null ? <EditorContainer /> : <StoriesContainer />}
       searchQuery={searchQuery}
       onSearch={(q) => store.setSearch(q)}
       onSelectLoop={(id) => store.selectLoop(id)}
       onSelectAnswer={(id) => store.selectAnswer(id)}
       onNewAnswer={() => store.startNew()}
       onImport={() => {}}
-      onStories={() => {}}
+      onStories={() => store.openStories()}
     />
   )
 }

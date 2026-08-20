@@ -1,5 +1,6 @@
 import type { AudioChunk, AudioSource, Segment, Transcriber } from '@shared/types'
 import type { EmbeddingProvider } from '../embeddings'
+import captureWorkletUrl from './capture.worklet.ts?worker&url'
 
 // Real capture path. Speaker attribution comes from stream identity:
 // system/meeting audio is `them`, the microphone is `you` — two transcriber
@@ -20,38 +21,61 @@ function downsampleTo16k(input: Float32Array, inputRate: number): Float32Array {
 
 abstract class MediaStreamSource implements AudioSource {
   private cb: ((c: AudioChunk) => void) | null = null
+  private errCb: ((e: Error) => void) | null = null
   private ctx: AudioContext | null = null
-  private node: ScriptProcessorNode | null = null
+  private node: AudioWorkletNode | null = null
   private mediaStream: MediaStream | null = null
   private startedAt = 0
+  private disposed = false
 
   constructor(private streamName: 'meeting' | 'mic') {}
 
   protected abstract acquire(): Promise<MediaStream>
 
   start(): void {
-    void (async () => {
-      this.mediaStream = await this.acquire()
-      this.startedAt = Date.now()
-      this.ctx = new AudioContext()
-      const src = this.ctx.createMediaStreamSource(this.mediaStream)
-      this.node = this.ctx.createScriptProcessor(4096, 1, 1)
-      this.node.onaudioprocess = (e) => {
-        const inRate = this.ctx?.sampleRate ?? 48000
-        const samples = downsampleTo16k(e.inputBuffer.getChannelData(0).slice(), inRate)
-        this.cb?.({
-          stream: this.streamName,
-          samples,
-          sampleRate: TARGET_RATE,
-          t: (Date.now() - this.startedAt) / 1000
-        })
-      }
-      src.connect(this.node)
-      this.node.connect(this.ctx.destination)
-    })()
+    // failures surface through onError — never as an unhandled rejection
+    void this.wire().catch((err) => {
+      this.errCb?.(err instanceof Error ? err : new Error(String(err)))
+    })
+  }
+
+  private async wire(): Promise<void> {
+    this.mediaStream = await this.acquire()
+    if (this.disposed) {
+      this.mediaStream.getTracks().forEach((t) => t.stop())
+      return
+    }
+    this.startedAt = Date.now()
+    this.ctx = new AudioContext()
+    // capture runs on the audio thread; ScriptProcessorNode (deprecated,
+    // main-thread) would jank the panel
+    await this.ctx.audioWorklet.addModule(captureWorkletUrl)
+    if (this.disposed) return
+    const src = this.ctx.createMediaStreamSource(this.mediaStream)
+    this.node = new AudioWorkletNode(this.ctx, 'capture', {
+      numberOfInputs: 1,
+      channelCount: 1
+    })
+    this.node.port.onmessage = (e: MessageEvent<Float32Array>) => {
+      const inRate = this.ctx?.sampleRate ?? 48000
+      this.cb?.({
+        stream: this.streamName,
+        samples: downsampleTo16k(e.data, inRate),
+        sampleRate: TARGET_RATE,
+        t: (Date.now() - this.startedAt) / 1000
+      })
+    }
+    // zero-gain sink keeps the graph pulled without echoing the meeting (or
+    // your own mic) out of the speakers
+    const sink = this.ctx.createGain()
+    sink.gain.value = 0
+    src.connect(this.node)
+    this.node.connect(sink)
+    sink.connect(this.ctx.destination)
   }
 
   stop(): void {
+    this.disposed = true
     this.node?.disconnect()
     this.mediaStream?.getTracks().forEach((t) => t.stop())
     void this.ctx?.close()
@@ -62,6 +86,10 @@ abstract class MediaStreamSource implements AudioSource {
 
   onChunk(cb: (c: AudioChunk) => void): void {
     this.cb = cb
+  }
+
+  onError(cb: (e: Error) => void): void {
+    this.errCb = cb
   }
 }
 
@@ -74,8 +102,10 @@ export class MicAudioSource extends MediaStreamSource {
   }
 }
 
-/** system-audio loopback; main process routes getDisplayMedia through
- *  setDisplayMediaRequestHandler with audio loopback */
+/** system-audio loopback; main routes getDisplayMedia through
+ *  setDisplayMediaRequestHandler with audio 'loopback' (Windows). On
+ *  platforms without loopback the stream arrives with no audio track and the
+ *  error below carries the fix. */
 export class MeetingAudioSource extends MediaStreamSource {
   constructor() {
     super('meeting')
@@ -84,6 +114,12 @@ export class MeetingAudioSource extends MediaStreamSource {
     const stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true })
     // the video track is only a capture-API requirement — drop it
     stream.getVideoTracks().forEach((t) => t.stop())
+    if (stream.getAudioTracks().length === 0) {
+      stream.getTracks().forEach((t) => t.stop())
+      throw new Error(
+        'no system-audio track — on this platform route the meeting through a loopback device (see README)'
+      )
+    }
     return stream
   }
 }

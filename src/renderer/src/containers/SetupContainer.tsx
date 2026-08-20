@@ -20,11 +20,22 @@ export default function SetupContainer(): JSX.Element | null {
   const audio = useAudioStore()
   const settings = useSettingsStore()
   const [placementError, setPlacementError] = useState<string | null>(null)
+  const [modelsNotice, setModelsNotice] = useState<string | null>(null)
 
   useEffect(() => {
     prepareAudio()
     void useAudioStore.getState().refreshPermissions()
     const id = window.setInterval(() => void useAudioStore.getState().refreshPermissions(), 3000)
+    // the mock session never touches the models — no notice to show there
+    if (!api.env.mock) {
+      void api.models.status().then((m) => {
+        setModelsNotice(
+          m.whisper && m.embeddings
+            ? null
+            : 'On-device models not installed — matching runs on the lexical fallback. Run npm run fetch-models.'
+        )
+      })
+    }
     return () => window.clearInterval(id)
   }, [])
 
@@ -55,19 +66,23 @@ export default function SetupContainer(): JSX.Element | null {
       meeting={{
         ok: meetingLive,
         title: audio.meetingLabel,
-        why: screenOk
-          ? meetingLive
-            ? 'so it hears their questions'
-            : 'waiting for sound from the meeting'
-          : 'grant Screen Recording in System Settings → Privacy & Security',
+        why:
+          audio.meetingError ??
+          (screenOk
+            ? meetingLive
+              ? 'so it hears their questions'
+              : 'waiting for sound from the meeting'
+            : 'grant Screen Recording in System Settings → Privacy & Security'),
         levels: meetingLive ? levels : null
       }}
       mic={{
         ok: micLive,
         title: audio.micLabel,
-        why: micOk
-          ? 'so it can tick off points as you say them'
-          : 'grant Microphone access in System Settings → Privacy & Security',
+        why:
+          audio.micError ??
+          (micOk
+            ? 'so it can tick off points as you say them'
+            : 'grant Microphone access in System Settings → Privacy & Security'),
         hasSignal: micLive
       }}
       keepTranscript={settings.keepTranscript}
@@ -85,6 +100,7 @@ export default function SetupContainer(): JSX.Element | null {
         void settings.update({ placement: p })
       }}
       placementError={placementError}
+      modelsNotice={modelsNotice}
       canStart={meetingLive && micLive}
       onStart={() => startSession()}
       onEditBank={() => panel.setView('bank')}

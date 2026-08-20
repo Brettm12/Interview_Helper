@@ -35,7 +35,15 @@ export const TUNING = {
 
   // --- recap flags -----------------------------------------------------------
   /** an answer "ran long" past this many seconds of your own mic time */
-  longAnswerSec: 150
+  longAnswerSec: 150,
+
+  // --- desktop plumbing ------------------------------------------------------
+  /** strip snapshots: min interval between IPC sends (a trailing send always
+   *  delivers the latest state, so bursts collapse to two messages) */
+  stripPublishMinIntervalMs: 100,
+  /** interim session snapshot cadence while listening — a crash mid-interview
+   *  keeps the recap up to the last snapshot */
+  snapshotIntervalSec: 20
 } as const
 
 export type Tuning = typeof TUNING

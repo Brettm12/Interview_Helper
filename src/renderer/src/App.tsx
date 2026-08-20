@@ -6,7 +6,7 @@ import { usePanelStore } from './state/panelStore'
 import { useSessionStore } from './state/sessionStore'
 import { useSettingsStore } from './state/settingsStore'
 import { formatClock } from './lib/recap'
-import { recapCommand, setCollapsed } from './containers/runtime'
+import { recapCommand, setCollapsed, startBankSync } from './containers/runtime'
 import LiveContainer from './containers/LiveContainer'
 import FindContainer from './containers/FindContainer'
 import StripContainer from './containers/StripContainer'
@@ -129,6 +129,17 @@ export default function App(): JSX.Element {
     void useBankStore.getState().load()
     void useSettingsStore.getState().load()
     void useAudioStore.getState().refreshPermissions()
+    // a crashed session left an interim snapshot — make its recap reachable
+    // (⌘⇧R / session end overwrite this once a new session runs)
+    if (WINDOW === 'main' && !SCREEN) {
+      void api.sessions.list().then((all) => {
+        const crashed = [...all].sort((a, b) => b.startedAt - a.startedAt).find((s) => s.incomplete)
+        if (crashed && !useSessionStore.getState().lastSession) {
+          useSessionStore.getState().setLastSession(crashed)
+        }
+      })
+    }
+    return startBankSync()
   }, [])
 
   // global shortcuts (Electron globalShortcut → 'command'; browser keydown shim)
@@ -164,7 +175,9 @@ export default function App(): JSX.Element {
   }
 
   if (WINDOW === 'strip') {
-    return <StripContainer overlay />
+    // the session lives in the main window's renderer — this window renders
+    // relayed snapshots
+    return <StripContainer overlay feed={IN_ELECTRON ? 'ipc' : 'local'} />
   }
   if (WINDOW === 'bank') {
     return <BankContainer />

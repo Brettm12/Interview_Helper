@@ -1,0 +1,166 @@
+/* Stories library (pane 3). No mock exists — values borrow the bank detail
+   header (14px 22px), the editor's field styles (3b), and the story-picker
+   row idiom so the pane reads as part of the same design. */
+
+.stories-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.stories-header {
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--border-section);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stories-header__actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.stories-close {
+  font: 500 11px/1 var(--font-ui);
+  color: var(--text-label);
+}
+
+.stories-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.stories-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.stories-row {
+  border: 1px solid var(--border-mid);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  padding: 13px 14px;
+  cursor: pointer;
+}
+
+.stories-row--selected {
+  border-color: var(--border-strong);
+  background: var(--bg-row-selected);
+}
+
+.stories-row__title {
+  font: 500 14px/1.3 var(--font-ui);
+  color: var(--text-primary);
+}
+
+.stories-row__sub {
+  font: 400 12.5px/1.4 var(--font-ui);
+  color: var(--text-label);
+  margin-top: 5px;
+}
+
+.stories-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.stories-field {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.stories-title-input {
+  border: 1px solid var(--border-mid);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  padding: 13px 14px;
+  font: 500 14px/1.3 var(--font-ui);
+  color: var(--text-primary);
+  caret-color: var(--text-primary);
+  cursor: text;
+}
+
+.stories-title-input:focus {
+  border-color: var(--border-strong);
+  background: var(--bg-row-selected);
+}
+
+.stories-body-input {
+  border: 1px solid var(--border-mid);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  padding: 14px 15px;
+  font: 400 14px/1.5 var(--font-ui);
+  color: var(--text-story);
+  caret-color: var(--text-primary);
+  resize: vertical;
+  min-height: 84px;
+  cursor: text;
+}
+
+.stories-body-input:focus {
+  border-color: var(--border-strong);
+}
+
+.stories-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.stories-metric {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.stories-metric__x {
+  color: var(--text-inverse);
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.stories-metric-input {
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  padding: 5px 8px;
+  width: 96px;
+  font: 500 10.5px/1 var(--font-mono);
+  color: var(--text-secondary);
+  caret-color: var(--text-primary);
+  background: transparent;
+  cursor: text;
+}
+
+.stories-save-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.stories-note {
+  font: 400 12px/1.5 var(--font-ui);
+  color: var(--text-label);
+}
+
+.stories-save {
+  font: 500 11px/1 var(--font-ui);
+  color: var(--text-inverse);
+  background: var(--accent-light);
+  padding: 7px 11px;
+  border-radius: 5px;
+  flex: none;
+}

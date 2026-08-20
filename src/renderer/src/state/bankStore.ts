@@ -16,6 +16,13 @@ export interface EditorDraft {
   seedTranscript?: string
 }
 
+export interface StoryDraft {
+  storyId: string | null // null → creating a new story
+  title: string
+  body: string
+  metrics: string[]
+}
+
 interface BankState {
   bank: Bank | null
   loaded: boolean
@@ -25,6 +32,9 @@ interface BankState {
   draft: EditorDraft | null
   /** filter applied when arriving via "fix these" / practice links */
   filterIds: string[] | null
+  /** pane 3 shows the shared stories library */
+  storiesOpen: boolean
+  storyDraft: StoryDraft | null
 
   load(): Promise<void>
   selectLoop(id: string): void
@@ -37,6 +47,13 @@ interface BankState {
   updateDraft(patch: Partial<EditorDraft>): void
   cancelEdit(): void
   saveEdit(): Promise<void>
+
+  openStories(): void
+  closeStories(): void
+  selectStory(id: string): void
+  newStory(): void
+  updateStoryDraft(patch: Partial<StoryDraft>): void
+  saveStoryDraft(): Promise<void>
 
   addTrigger(answerId: string, phrase: string): Promise<void>
   removeTrigger(answerId: string, phrase: string): Promise<void>
@@ -52,6 +69,8 @@ export const useBankStore = create<BankState>((set, get) => ({
   searchQuery: '',
   draft: null,
   filterIds: null,
+  storiesOpen: false,
+  storyDraft: null,
 
   load: async () => {
     const bank = await api.bank.load()
@@ -75,7 +94,7 @@ export const useBankStore = create<BankState>((set, get) => ({
     void api.bank.save(next)
   },
 
-  selectAnswer: (id) => set({ selectedAnswerId: id, draft: null }),
+  selectAnswer: (id) => set({ selectedAnswerId: id, draft: null, storiesOpen: false }),
   setSearch: (q) => set({ searchQuery: q }),
   setFilter: (ids) => set({ filterIds: ids }),
 
@@ -83,6 +102,7 @@ export const useBankStore = create<BankState>((set, get) => ({
     const a = get().bank?.answers.find((x) => x.id === answerId)
     if (!a) return
     set({
+      storiesOpen: false,
       draft: {
         answerId: a.id,
         question: a.question,
@@ -97,6 +117,7 @@ export const useBankStore = create<BankState>((set, get) => ({
   startNew: (prefill) => {
     const bank = get().bank
     set({
+      storiesOpen: false,
       draft: {
         answerId: null,
         question: prefill?.question ?? '',
@@ -184,6 +205,49 @@ export const useBankStore = create<BankState>((set, get) => ({
       )
     }
     set({ bank: next })
+    await api.bank.save(next)
+  },
+
+  // ---- shared stories library (pane 3) ----
+
+  openStories: () => set({ storiesOpen: true, draft: null, storyDraft: null }),
+  closeStories: () => set({ storiesOpen: false, storyDraft: null }),
+
+  selectStory: (id) => {
+    const story = get().bank?.stories.find((s) => s.id === id)
+    if (!story) return
+    set({
+      storyDraft: {
+        storyId: story.id,
+        title: story.title,
+        body: story.body,
+        metrics: [...story.metrics]
+      }
+    })
+  },
+
+  newStory: () => set({ storyDraft: { storyId: null, title: '', body: '', metrics: [] } }),
+
+  updateStoryDraft: (patch) => {
+    const d = get().storyDraft
+    if (d) set({ storyDraft: { ...d, ...patch } })
+  },
+
+  saveStoryDraft: async () => {
+    const { bank, storyDraft } = get()
+    if (!bank || !storyDraft || storyDraft.title.trim() === '') return
+    const value = {
+      title: storyDraft.title.trim(),
+      body: storyDraft.body.trim(),
+      metrics: storyDraft.metrics
+    }
+    // stories are shared entities — editing one updates every answer that
+    // references it (answers point at the id, so nothing else changes)
+    const stories = storyDraft.storyId
+      ? bank.stories.map((s) => (s.id === storyDraft.storyId ? { ...s, ...value } : s))
+      : [...bank.stories, { id: `story-new-${Date.now()}-${draftSeq++}`, ...value }]
+    const next = { ...bank, stories }
+    set({ bank: next, storyDraft: null })
     await api.bank.save(next)
   },
 

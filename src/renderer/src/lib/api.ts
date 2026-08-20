@@ -40,6 +40,9 @@ function browserShim(): HelperApi {
   const write = (key: string, value: unknown) => storage.setItem(key, JSON.stringify(value))
 
   const commandSubs = new Set<(cmd: 'find' | 'toggle-collapse' | 'recap' | 'strip-expand') => void>()
+  // mirrors main's bank:did-change relay so the reload path is unit-testable;
+  // in the single browser window the saver simply re-loads its own save
+  const bankSubs = new Set<() => void>()
   if (typeof window !== 'undefined')
     window.addEventListener('keydown', (e) => {
     const mod = e.metaKey || e.ctrlKey
@@ -60,7 +63,14 @@ function browserShim(): HelperApi {
   return {
     bank: {
       load: async () => read<Bank>('lih.bank', seed as unknown as Bank),
-      save: async (bank) => write('lih.bank', bank)
+      save: async (bank) => {
+        write('lih.bank', bank)
+        bankSubs.forEach((cb) => cb())
+      },
+      onChanged: (cb) => {
+        bankSubs.add(cb)
+        return () => bankSubs.delete(cb)
+      }
     },
     sessions: {
       save: async (s) => {
@@ -105,6 +115,19 @@ function browserShim(): HelperApi {
         URL.revokeObjectURL(a.href)
         return name
       }
+    },
+    strip: {
+      // web renders the strip inline from local stores — nothing to bridge
+      publish: () => {},
+      getState: async () => null,
+      onState: () => () => {},
+      expand: async () => {
+        commandSubs.forEach((cb) => cb('strip-expand'))
+      }
+    },
+    models: {
+      // mock mode never loads models
+      status: async () => ({ dir: '', whisper: false, embeddings: false })
     },
     onCommand: (cb) => {
       commandSubs.add(cb)
