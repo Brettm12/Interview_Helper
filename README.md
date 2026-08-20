@@ -19,9 +19,13 @@ npm run dev:mock   # Electron, scripted mock session — no mic, no meeting
 npm run dev        # Electron, real audio capture path
 npm run dev:web    # browser-only demo of the same app (localhost:5199)
 
-npm test           # vitest: matcher thresholds, coverage model, engine, recap
+npm test           # vitest: matcher, coverage, engine, recap, strip, find
 npm run typecheck  # both tsconfigs
 npm run build      # electron-vite production build
+
+npm run fetch-models   # one-time model download for the real capture path
+npm run verify:pixels  # screenshot-diff every screen against docs/reference
+npm run e2e            # drive the full scripted session in a headless browser
 ```
 
 `dev:mock` plays a complete session hands-free: arm it from the setup screen
@@ -46,14 +50,20 @@ Two separate grants, both under **System Settings → Privacy & Security**:
 
 - **Microphone** — your own mic, for ticking off points as you say them.
   macOS prompts on first use; the setup screen's "Test" re-requests it.
-- **Screen Recording** — required for system-audio loopback (the meeting's
-  audio). macOS never prompts for this one: add the app manually, then
-  relaunch it.
+- **Screen Recording** — required for screen capture (which carries the
+  meeting audio on Windows). macOS never prompts for this one: add the app
+  manually, then relaunch it.
 
 The setup screen's two status dots reflect the real permission + signal state:
 green means granted *and* hearing sound; amber means missing, and the row's
 why-line becomes the fix instruction. "Start listening" stays disabled until
 both sources report a level.
+
+**Meeting audio by platform.** Electron's loopback audio capture is
+Windows-only. On macOS, route the meeting's output through a loopback audio
+device (e.g. BlackHole: set it as part of a multi-output device, and the
+capture picks it up); the setup row surfaces exactly this instruction when
+the captured stream arrives without an audio track.
 
 ## Where things live
 
@@ -82,6 +92,13 @@ both sources report a level.
 - **Design reference** — `docs/handoff/` (spec + original mock),
   `docs/reference/` (per-screen fragments), `docs/CONVENTIONS.md` (build
   rules), `DECISIONS.md` (every call the spec didn't make).
+- **Verification** — `tools/verify/` holds the pixel-diff harness
+  (`verify:pixels`, gating six screens at ≤0.1% against the reference) and
+  the scripted end-to-end drive (`e2e`); `.github/workflows/ci.yml` runs
+  typecheck → unit tests → both on every push.
+- **Stories library** — the bank sidebar's "Stories library" opens a pane
+  for the shared stories themselves (title, body, metric chips); saving one
+  updates every answer that references it.
 
 ## Desktop behaviour
 
@@ -98,9 +115,11 @@ only one display is connected.
 ## Offline models (real capture path)
 
 Transcription uses Whisper (`Xenova/whisper-tiny.en`) and matching uses
-MiniLM (`Xenova/all-MiniLM-L6-v2`) via `@xenova/transformers`, loaded from a
-local model directory only (`env.allowRemoteModels = false`) — fetch the two
-model folders once before interview day and the app never needs the network.
-Until the models are warm, matching and coverage run on the lexical fallback
+MiniLM (`Xenova/all-MiniLM-L6-v2`) via `@xenova/transformers`, loaded from
+the app's `userData/models` directory only (`env.allowRemoteModels = false`).
+Run `npm run fetch-models` once before interview day — the only step that
+ever touches the network — and the app serves the files to its workers over
+an internal protocol. Until the models are warm (or when they're absent —
+the setup screen says so), matching and coverage run on the lexical fallback
 paths (bigram Dice + trigger phrases), so the panel works from the first
 second.

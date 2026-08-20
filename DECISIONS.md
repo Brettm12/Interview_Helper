@@ -191,12 +191,75 @@ README prose and the reference HTML differ, the HTML won, per the brief.
   specified transcript-toggle addition; editor is within ~1.7px (the mock's
   fake-caret glyph inflates its question box).
 
+## Hardening round (post-handoff)
+
+- **Strip window bridge**: each Electron window is its own renderer with its
+  own stores, so the session-owning window derives a small `StripState`
+  snapshot (`lib/strip.ts`) and main relays it to the strip window
+  (`strip:publish` → `strip:state`, primed by `strip:get`). Only material
+  changes send, throttled leading+trailing at 100ms; expand goes back as the
+  `strip-expand` command so the session window stays the single owner of
+  collapse state.
+- **Cross-window bank freshness**: main broadcasts `bank:did-change` to every
+  window except the saver; windows reload in place. `load()` preserves the
+  selection and any open draft, so a remote save never clobbers in-progress
+  edits — a draft saved after a remote change last-writer-wins, matching the
+  single-file storage model.
+- **System-audio loopback**: `setDisplayMediaRequestHandler` hands
+  getDisplayMedia the primary screen with `audio: 'loopback'` (not
+  `loopbackWithMute` — the candidate must keep hearing the meeting). Electron
+  loopback is Windows-only, so a stream arriving without an audio track stops
+  cleanly and the setup row's why-line becomes the platform instruction
+  (macOS: loopback audio device, see README).
+- **AudioWorklet capture** replaces the deprecated main-thread
+  ScriptProcessorNode; ~2048-sample blocks post from the audio thread, and a
+  zero-gain sink keeps the graph pulled without echoing the meeting or the
+  mic out of the speakers (the old path connected capture to `destination`).
+  Acquisition failures surface via `AudioSource.onError` instead of dying as
+  unhandled rejections.
+- **Model delivery**: workers fetch model files, so main serves
+  `userData/models` over a privileged `lih-models://` protocol (a bare
+  filesystem path isn't fetchable from a renderer). `npm run fetch-models`
+  downloads the two model folders once; the setup screen shows a one-line
+  notice while they're absent (suppressed in mock mode, which never loads
+  models). The app degrades to lexical matching either way.
+- **Crash resilience**: an error boundary per window falls back to a static
+  points list read imperatively from the stores (zustand state survives a
+  render crash), with Try again / Reload. The engine snapshots the session
+  record every 20s (`incomplete: true`, same id as the final save, so end()
+  overwrites); on boot the newest incomplete record becomes the last session,
+  and its recap eyebrow reads "RECOVERED · …". Snapshots respect the
+  transcript toggle exactly like the final record.
+- **Rescore on embedding warm-up**: a window scored while the model was cold
+  is rescored once its vectors land, provided the window hasn't changed and
+  nothing is pinned; a rescore that still lands on "none" doesn't re-record
+  the unmatched question, and one that turns confident merges into the
+  already-recorded row via the existing 45s merge.
+- **Deferred swap**: a confident match that lands inside the 2.5s swap
+  debounce is queued and fires when the window expires (unless something else
+  activated meanwhile) — previously it was silently dropped, losing a
+  question asked right after a swap.
+- **Strip position** persists on drag (debounced 500ms), not only on hide.
+- **Electron mock mode** now shows the real strip window on collapse: window
+  plumbing is gated on being in Electron, not on which driver runs.
+- **Stories library**: the sidebar link opens a pane-3 surface (list +
+  title/body/metric-chip editor). No mock exists — it borrows the 3b editor's
+  field styles and the bank's row idiom. Saving updates every answer that
+  references the story; "used in N answers" stays live. Deleting stories is
+  deliberately out: answers reference them by id, and orphaning mid-prep is
+  worse than a longer list.
+- **Verification in-repo**: `tools/verify/` (pixel harness + e2e) with
+  `verify:pixels` gating live/unsure/find/bank/armed/strip at ≤0.1% diff
+  against the reference (setup/editor/strip-variants report-only for the
+  documented reasons); CI runs typecheck → unit tests → both.
+
 ## Known limitations (phase 4)
 
 - The real capture path (getUserMedia / getDisplayMedia loopback → Whisper +
-  MiniLM workers) is written against local model files and typechecks, but has
-  not run against real hardware in this environment; the model directory path
-  is a constant in `containers/runtime.ts` pending a packaging decision.
+  MiniLM workers) typechecks and is wired end to end, but has not run against
+  real hardware in this environment; the `lih-models://` delivery to
+  `@xenova/transformers` inside workers needs a runtime spike on a desktop
+  (fallback if it misbehaves: a localhost HTTP server in main).
 - macOS permission checks use Electron's `systemPreferences` via the main
   process; on other platforms they report granted and the dots follow signal
   level alone.

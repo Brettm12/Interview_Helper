@@ -1,0 +1,120 @@
+// Drives the full mock session end to end in the browser build: setup →
+// armed → confident match → coverage strikes → unsure + auto-pick → ⌘K
+// override → collapse/expand → session end → recap → persistence. Runs at
+// fixture speed (≈105s of scripted delays). Fails loudly on any missed stage.
+import { launchBrowser, spawnServer } from './lib.mjs'
+
+const PORT = 5199
+const URL = `http://127.0.0.1:${PORT}/`
+
+const server = await spawnServer(
+  'npx',
+  ['vite', '--config', 'web.vite.config.ts', '--mode', 'mock', '--port', String(PORT), '--strictPort'],
+  PORT
+)
+const browser = await launchBrowser()
+const page = await browser.newPage({ viewport: { width: 1560, height: 960 } })
+page.setDefaultTimeout(30000)
+
+let t0 = Date.now()
+const stage = (name) => console.log(`${((Date.now() - t0) / 1000).toFixed(1)}s  ${name}`)
+
+try {
+  await page.goto(URL, { waitUntil: 'networkidle' })
+  await page.evaluate(() => localStorage.clear())
+  await page.reload({ waitUntil: 'networkidle' })
+  t0 = Date.now()
+
+  await page.getByText('Senior People Partner · Meridian Health · Round 2').waitFor()
+  await page.getByText('no story yet — fix now').waitFor()
+  stage('setup renders with loop + warning stat')
+
+  await page.locator('.setup-toggle').click()
+  if (!(await page.locator('.setup-toggle--on').count())) throw new Error('transcript toggle did not turn on')
+  stage('transcript toggle on')
+
+  await page.locator('.setup-cta:not(.setup-cta--disabled)').waitFor()
+  stage('both sources report a level → Start enabled')
+  await page.locator('.setup-cta').click()
+
+  await page.getByText('ARMED · WAITING FOR THEM').waitFor()
+  stage('armed card')
+
+  await page.keyboard.press('Control+k')
+  await page.locator('.find-overlay').waitFor()
+  await page.keyboard.press('Escape')
+  await page.locator('.find-overlay').waitFor({ state: 'detached' })
+  stage('⌘K toggles find while armed')
+
+  await page
+    .getByText('Tell me about a time you handled a difficult employee relations case.')
+    .first()
+    .waitFor({ timeout: 20000 })
+  stage('confident match swaps the panel')
+
+  await page.locator('.point-row--covered').first().waitFor({ timeout: 40000 })
+  stage('first point struck through')
+
+  await page.getByText('TAP THE ONE THEY MEANT').waitFor({ timeout: 60000 })
+  const candidates = await page.locator('.live-cand').count()
+  if (candidates < 2) throw new Error(`expected ≥2 candidates, got ${candidates}`)
+  await page.locator('.autopick-track').waitFor()
+  stage(`unsure state with ${candidates} candidates + auto-pick bar`)
+
+  // auto-pick commits the leader into the matched panel (question in the
+  // live-question node, not just a candidate card)
+  await page
+    .locator('.live-question', { hasText: 'Walk me through how you run a harassment investigation.' })
+    .waitFor({ timeout: 15000 })
+  stage('auto-pick committed the leader')
+
+  await page.locator('.find-overlay').waitFor({ timeout: 90000 })
+  stage('fixture opened find')
+  await page
+    .locator('.live-question', { hasText: 'Tell me about rolling out a policy people hated.' })
+    .waitFor({ timeout: 15000 })
+  stage('find-pin overrode the matcher')
+
+  await page.locator('.strip').waitFor({ timeout: 30000 })
+  stage(`collapsed to strip ("${(await page.locator('.strip__text').textContent())?.trim()}")`)
+  await page.locator('.live-panel').waitFor({ timeout: 30000 })
+  stage('expanded back to the panel')
+
+  await page.getByText('SESSION ENDED', { exact: false }).waitFor({ timeout: 90000 })
+  await page.getByText('questions matched to your bank').waitFor()
+  stage('recap opened automatically')
+
+  const unmatched = await page.locator('.stat-card--warn .stat-card__num').textContent()
+  stage(`unmatched stat card: ${unmatched} (warning variant)`)
+
+  const fixTitles = await page.locator('.recap-fix__title').allTextContents()
+  if (fixTitles.length < 2) throw new Error('recap flagged fewer than two fixes')
+  stage(`${fixTitles.length} fixes flagged`)
+
+  await page.locator('.recap-row--expandable').first().click()
+  await page.locator('.recap-row__tline').first().waitFor()
+  stage('row expands to the transcript excerpt')
+
+  await page.getByText('Save to loop').click()
+  await page.getByText('Senior People Partner · Meridian Health · Round 2').waitFor()
+  stage('save-to-loop returns to setup')
+
+  const lastUsed = await page.evaluate(() => {
+    const bank = JSON.parse(localStorage.getItem('lih.bank'))
+    return bank.answers.find((x) => x.id === 'a-er-case').lastUsed
+  })
+  if (!lastUsed) throw new Error('lastUsed was not stamped on the matched entry')
+  const sessions = await page.evaluate(
+    () => JSON.parse(localStorage.getItem('lih.sessions') ?? '[]').length
+  )
+  if (sessions !== 1) throw new Error(`expected 1 persisted session, got ${sessions}`)
+  stage('lastUsed stamped + session persisted')
+
+  console.log('\nE2E PASS')
+} catch (err) {
+  console.error(`\nE2E FAIL: ${err.message}`)
+  process.exitCode = 1
+} finally {
+  await browser.close()
+  server.kill()
+}

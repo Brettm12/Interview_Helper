@@ -13,7 +13,11 @@
     "build:web": "vite build --config web.vite.config.ts --mode mock",
     "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "fetch-models": "node scripts/fetch-models.mjs",
+    "verify:pixels": "npm run build:web && node tools/verify/compare.mjs",
+    "e2e": "node tools/verify/e2e.mjs",
+    "e2e:electron": "npm run build && node tools/verify/e2e-electron.mjs"
   },
   "dependencies": {
     "@fontsource/instrument-serif": "^5.2.5",
@@ -33,6 +37,9 @@
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^33.2.0",
     "electron-vite": "^3.1.0",
+    "pixelmatch": "^7.2.0",
+    "playwright": "^1.62.1",
+    "pngjs": "^7.0.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.7",
     "vitest": "^3.0.5"
