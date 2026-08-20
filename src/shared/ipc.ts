@@ -38,6 +38,16 @@ export interface ModelsStatus {
 /** localModelPath prefix served by main's privileged custom protocol */
 export const MODELS_URL_PREFIX = 'lih-models://models'
 
+/** commands main pushes to every renderer — global shortcuts, the app menu
+ *  and the tray all funnel through here */
+export type AppCommand =
+  | 'find'
+  | 'toggle-collapse'
+  | 'recap'
+  | 'strip-expand'
+  | 'pause'
+  | 'diagnostics'
+
 export interface HelperApi {
   bank: {
     load(): Promise<Bank>
@@ -89,6 +99,6 @@ export interface HelperApi {
     onProgress(cb: (p: { done: number; total: number; file: string }) => void): () => void
   }
   /** global shortcuts + strip actions forwarded from main */
-  onCommand(cb: (cmd: 'find' | 'toggle-collapse' | 'recap' | 'strip-expand') => void): () => void
+  onCommand(cb: (cmd: AppCommand) => void): () => void
   readonly env: { mock: boolean; platform: string }
 }

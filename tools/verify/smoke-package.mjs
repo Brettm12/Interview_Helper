@@ -95,6 +95,57 @@ try {
   if (!fontOk) throw new Error('Instrument Serif did not load from the package')
   console.log('  ✓ bundled fonts resolve offline')
 
+  // --- ways out of the app ---
+  // every window is frameless and always-on-top, so without these there is
+  // genuinely no way to quit but Force Quit (regression from real use)
+  const menu = await app.evaluate(async ({ Menu }) => {
+    const m = Menu.getApplicationMenu()
+    if (!m) return null
+    const labels = []
+    const walk = (items) => {
+      for (const i of items) {
+        labels.push(i.label)
+        if (i.submenu) walk(i.submenu.items)
+      }
+    }
+    walk(m.items)
+    return labels
+  })
+  if (!menu) throw new Error('no application menu — Cmd+Q would not exist')
+  if (!menu.some((l) => /quit/i.test(l ?? ''))) {
+    throw new Error(`application menu has no Quit item: ${JSON.stringify(menu)}`)
+  }
+  console.log('  ✓ application menu offers Quit')
+
+  const shortcuts = await app.evaluate(async ({ globalShortcut }) => ({
+    quit: globalShortcut.isRegistered('CommandOrControl+Shift+Q'),
+    show: globalShortcut.isRegistered('CommandOrControl+Shift+P'),
+    // must NOT hijack plain Cmd+Q system-wide from every other app
+    plainQ: globalShortcut.isRegistered('CommandOrControl+Q')
+  }))
+  if (!shortcuts.quit) throw new Error('no global quit shortcut registered')
+  if (shortcuts.plainQ) throw new Error('plain Cmd+Q registered globally — that hijacks every other app')
+  console.log('  ✓ global quit shortcut, without hijacking system Cmd+Q')
+
+  // the zombie regression: hiding the main window and destroying the strip
+  // used to leave a running, invisible, unquittable process
+  const recovered = await app.evaluate(async ({ BrowserWindow }) => {
+    const [main] = BrowserWindow.getAllWindows()
+    main.hide()
+    return new Promise((resolve) => {
+      setTimeout(() => resolve(BrowserWindow.getAllWindows().some((w) => w.isVisible())), 300)
+    })
+  })
+  if (recovered !== false) throw new Error('expected the window to be hidden for the recovery check')
+  const restored = await app.evaluate(async ({ app: a, BrowserWindow }) => {
+    a.emit('activate')
+    return new Promise((resolve) => {
+      setTimeout(() => resolve(BrowserWindow.getAllWindows().some((w) => w.isVisible())), 500)
+    })
+  })
+  if (!restored) throw new Error('a hidden window could not be recovered — the zombie state is back')
+  console.log('  ✓ hidden window recoverable (no invisible-zombie state)')
+
   console.log('\nPACKAGE SMOKE PASS')
 } catch (err) {
   console.error(`\nPACKAGE SMOKE FAIL: ${err.message}`)

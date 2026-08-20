@@ -1,4 +1,4 @@
-import type { HelperApi } from '@shared/ipc'
+import type { AppCommand, HelperApi } from '@shared/ipc'
 import type { Bank, SessionRecord, Settings } from '@shared/types'
 import seed from '@shared/seed.json'
 
@@ -39,7 +39,7 @@ function browserShim(): HelperApi {
   }
   const write = (key: string, value: unknown) => storage.setItem(key, JSON.stringify(value))
 
-  const commandSubs = new Set<(cmd: 'find' | 'toggle-collapse' | 'recap' | 'strip-expand') => void>()
+  const commandSubs = new Set<(cmd: AppCommand) => void>()
   // mirrors main's bank:did-change relay so the reload path is unit-testable;
   // in the single browser window the saver simply re-loads its own save
   const bankSubs = new Set<() => void>()
@@ -57,6 +57,9 @@ function browserShim(): HelperApi {
     } else if (k === 'r' && e.shiftKey) {
       e.preventDefault()
       commandSubs.forEach((cb) => cb('recap'))
+    } else if (k === 'd' && e.shiftKey) {
+      e.preventDefault()
+      commandSubs.forEach((cb) => cb('diagnostics'))
     }
     })
 

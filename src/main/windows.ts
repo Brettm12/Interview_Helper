@@ -24,6 +24,17 @@ let mainWindow: BrowserWindow | null = null
 let stripWindow: BrowserWindow | null = null
 let secondScreenWindow: BrowserWindow | null = null
 let protectionOn = true
+let quitting = false
+
+/** main tells us a quit is under way so window teardown stops resurrecting
+ *  windows on the way out */
+export function setQuitting(): void {
+  quitting = true
+}
+
+function isQuitting(): boolean {
+  return quitting
+}
 
 function rendererUrl(query: Record<string, string>): { url?: string; file?: string; query: Record<string, string> } {
   const dev = process.env['ELECTRON_RENDERER_URL']
@@ -74,6 +85,23 @@ export function allWindows(): BrowserWindow[] {
   )
 }
 
+/** a window reference is only usable if it still exists — every caller below
+ *  goes through this, because a destroyed BrowserWindow throws on .show() */
+function live(win: BrowserWindow | null): BrowserWindow | null {
+  return win != null && !win.isDestroyed() ? win : null
+}
+
+/** Reveal the main window and give it focus. The recovery path for the tray,
+ *  the dock, and app.on('activate') — without it, a hidden main window plus a
+ *  closed strip leaves the app running with nothing on screen. */
+export function showMain(): void {
+  const win = live(mainWindow)
+  if (!win) return
+  live(stripWindow)?.hide()
+  win.show()
+  win.focus()
+}
+
 export async function createMainWindow(): Promise<BrowserWindow> {
   mainWindow = new BrowserWindow({
     ...baseWindowOptions(),
@@ -81,6 +109,8 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     resizable: true
   })
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+  // drop the reference so nothing later calls .show() on a destroyed window
+  mainWindow.on('closed', () => (mainWindow = null))
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
     return { action: 'deny' }
@@ -92,7 +122,8 @@ export async function createMainWindow(): Promise<BrowserWindow> {
 
 /** morph the main window frame for a view */
 export function setView(view: ViewName, placement?: Settings['placement']): void {
-  if (!mainWindow) return
+  const win = live(mainWindow)
+  if (!win) return
   const frame = VIEW_FRAMES[view]
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   const wa = display.workArea
@@ -101,41 +132,46 @@ export function setView(view: ViewName, placement?: Settings['placement']): void
     // docked right: a separate always-on-top panel against the right edge of
     // the display — it resizes nothing else
     const bounds = { x: wa.x + wa.width - 412, y: wa.y, width: 412, height: wa.height }
-    applyHelperBehaviour(mainWindow)
-    mainWindow.setBounds(bounds)
-    mainWindow.showInactive() // no focus steal from the meeting
+    applyHelperBehaviour(win)
+    win.setBounds(bounds)
+    win.showInactive() // no focus steal from the meeting
     return
   }
 
   if (view === 'armed') {
-    applyHelperBehaviour(mainWindow)
-    mainWindow.setBounds({
+    applyHelperBehaviour(win)
+    win.setBounds({
       x: wa.x + wa.width - frame.width - 14,
       y: wa.y + 14,
       width: frame.width,
       height: frame.height
     })
-    mainWindow.showInactive()
+    win.showInactive()
     return
   }
 
-  mainWindow.setAlwaysOnTop(false)
-  mainWindow.setBounds({
+  // setup / bank / recap are ordinary windows again — undo the helper
+  // behaviour, including workspace stickiness, which otherwise makes them
+  // follow the user across every Space forever
+  win.setAlwaysOnTop(false)
+  win.setVisibleOnAllWorkspaces(false)
+  win.setBounds({
     x: wa.x + Math.round((wa.width - frame.width) / 2),
     y: wa.y + Math.round((wa.height - frame.height) / 2),
     width: frame.width,
     height: frame.height
   })
-  mainWindow.show()
+  win.show()
 }
 
 export async function showStrip(show: boolean, stripPosition: Settings['stripPosition']): Promise<void> {
   if (!show) {
-    stripWindow?.hide()
-    mainWindow?.showInactive()
+    live(stripWindow)?.hide()
+    live(mainWindow)?.showInactive()
     return
   }
-  if (!stripWindow) {
+  if (!live(stripWindow)) {
+    stripWindow = null
     const display = screen.getPrimaryDisplay()
     const wa = display.workArea
     // 340px strip content + 24px padding + 2px border (the mock is content-box)
@@ -152,6 +188,12 @@ export async function showStrip(show: boolean, stripPosition: Settings['stripPos
       backgroundColor: undefined
     })
     applyHelperBehaviour(stripWindow)
+    // if the strip is destroyed by any route, drop the ref AND bring the main
+    // window back — otherwise the app is left running with nothing on screen
+    stripWindow.on('closed', () => {
+      stripWindow = null
+      if (!isQuitting()) showMain()
+    })
     // the strip remembers its position — persist on drag, debounced
     let moveTimer: ReturnType<typeof setTimeout> | null = null
     stripWindow.on('moved', () => {
@@ -166,13 +208,13 @@ export async function showStrip(show: boolean, stripPosition: Settings['stripPos
     })
     await loadInto(stripWindow, { window: 'strip' })
   }
-  mainWindow?.hide()
-  stripWindow.showInactive()
+  live(mainWindow)?.hide()
+  live(stripWindow)?.showInactive()
 }
 
 export function stripBounds(): { x: number; y: number } | null {
-  if (!stripWindow) return null
-  const b = stripWindow.getBounds()
+  if (!live(stripWindow)) return null
+  const b = stripWindow!.getBounds()
   return { x: b.x, y: b.y }
 }
 
@@ -201,18 +243,20 @@ export async function openSecondScreenBank(): Promise<{ ok: boolean; error?: str
 
 export function setContentProtection(on: boolean): void {
   protectionOn = on
-  for (const win of [mainWindow, stripWindow, secondScreenWindow]) {
-    win?.setContentProtection(on)
-  }
+  for (const win of allWindows()) win.setContentProtection(on)
 }
 
 export function displayCount(): number {
   return screen.getAllDisplays().length
 }
 
-/** broadcast a command (global shortcut, strip action) to every window */
+/** broadcast a command (global shortcut, tray, strip action) to every window */
 export function broadcast(channel: string, ...args: unknown[]): void {
-  for (const win of [mainWindow, stripWindow, secondScreenWindow]) {
-    win?.webContents.send(channel, ...args)
-  }
+  for (const win of allWindows()) win.webContents.send(channel, ...args)
+}
+
+/** true while any window is still around — `window-all-closed` never fires for
+ *  a merely *hidden* window, so quit decisions need this rather than a count */
+export function hasWindows(): boolean {
+  return allWindows().length > 0
 }

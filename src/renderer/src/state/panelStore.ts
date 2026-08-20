@@ -14,11 +14,14 @@ interface PanelState {
   view: ViewName
   collapsed: boolean
   transcriptVisible: boolean
+  /** ⌘⇧D — the "is it actually hearing anything?" overlay */
+  diagnosticsOpen: boolean
   find: FindSlice
 
   setView(v: ViewName): void
   setCollapsed(c: boolean): void
   toggleTranscript(): void
+  toggleDiagnostics(): void
   openFind(): void
   closeFind(): void
   setFindQuery(q: string): void
@@ -29,11 +32,13 @@ export const usePanelStore = create<PanelState>((set) => ({
   view: 'setup',
   collapsed: false,
   transcriptVisible: true,
+  diagnosticsOpen: false,
   find: { open: false, query: '', selectedIndex: 0 },
 
   setView: (view) => set({ view }),
   setCollapsed: (collapsed) => set({ collapsed }),
   toggleTranscript: () => set((s) => ({ transcriptVisible: !s.transcriptVisible })),
+  toggleDiagnostics: () => set((s) => ({ diagnosticsOpen: !s.diagnosticsOpen })),
   openFind: () => set({ find: { open: true, query: '', selectedIndex: 0 } }),
   closeFind: () => set((s) => ({ find: { ...s.find, open: false } })),
   setFindQuery: (query) => set((s) => ({ find: { ...s.find, query, selectedIndex: 0 } })),

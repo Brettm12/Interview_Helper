@@ -12,12 +12,16 @@ import {
   displayCount,
   getMainWindow,
   getStripWindow,
+  hasWindows,
   openSecondScreenBank,
   setContentProtection,
   setView,
+  setQuitting,
+  showMain,
   showStrip,
   stripBounds
 } from './windows'
+import { installAppMenu, installTray, type AppActions } from './appMenu'
 import type { Settings } from '../shared/types'
 import type { StripState, ViewName } from '../shared/ipc'
 
@@ -108,12 +112,19 @@ function registerIpc(): void {
   })
 }
 
-function registerShortcuts(): void {
+function registerShortcuts(actions: AppActions): void {
   // Global: during an interview the focus is on the meeting window, not on
   // this app — a shortcut that only works when the panel has focus is useless.
   globalShortcut.register('CommandOrControl+K', () => broadcast('command', 'find'))
   globalShortcut.register('CommandOrControl+Shift+H', () => broadcast('command', 'toggle-collapse'))
   globalShortcut.register('CommandOrControl+Shift+R', () => broadcast('command', 'recap'))
+  globalShortcut.register('CommandOrControl+Shift+D', () => broadcast('command', 'diagnostics'))
+  // Cmd+Shift+Q, not Cmd+Q: globalShortcut is system-wide, so registering
+  // plain Cmd+Q would steal Quit from every other app. Plain Cmd+Q still works
+  // via the app menu whenever this app has focus.
+  globalShortcut.register('CommandOrControl+Shift+Q', actions.quit)
+  // getting a lost window back without hunting for the tray
+  globalShortcut.register('CommandOrControl+Shift+P', actions.showPanel)
 }
 
 app.whenReady().then(async () => {
@@ -145,8 +156,30 @@ app.whenReady().then(async () => {
   const settings = await repository.loadSettings()
   setContentProtection(settings.contentProtection)
   registerIpc()
-  registerShortcuts()
+
+  const actions: AppActions = {
+    showPanel: () => showMain(),
+    toggleCollapse: () => broadcast('command', 'toggle-collapse'),
+    openFind: () => broadcast('command', 'find'),
+    openRecap: () => broadcast('command', 'recap'),
+    pause: () => broadcast('command', 'pause'),
+    quit: () => {
+      setQuitting()
+      app.quit()
+    }
+  }
+  installAppMenu(actions)
+  installTray(actions)
+  registerShortcuts(actions)
+
   await createMainWindow()
+})
+
+// clicking the dock icon (or the tray) must always be able to surface a window
+app.on('activate', () => showMain())
+
+app.on('before-quit', () => {
+  setQuitting()
 })
 
 app.on('will-quit', () => {
@@ -154,5 +187,7 @@ app.on('will-quit', () => {
 })
 
 app.on('window-all-closed', () => {
-  app.quit()
+  // a *hidden* window still counts as a window, so this only fires once
+  // everything is genuinely gone — quit rather than linger invisibly
+  if (!hasWindows()) app.quit()
 })

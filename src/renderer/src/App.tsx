@@ -6,7 +6,7 @@ import { usePanelStore } from './state/panelStore'
 import { useSessionStore } from './state/sessionStore'
 import { useSettingsStore } from './state/settingsStore'
 import { formatClock } from './lib/recap'
-import { recapCommand, setCollapsed, startBankSync } from './containers/runtime'
+import { pauseSession, recapCommand, setCollapsed, startBankSync } from './containers/runtime'
 import LiveContainer from './containers/LiveContainer'
 import FindContainer from './containers/FindContainer'
 import StripContainer from './containers/StripContainer'
@@ -161,6 +161,12 @@ export default function App(): JSX.Element {
           break
         case 'strip-expand':
           setCollapsed(false)
+          break
+        case 'pause':
+          pauseSession()
+          break
+        case 'diagnostics':
+          usePanelStore.getState().toggleDiagnostics()
           break
       }
     })

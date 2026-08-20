@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HelperApi, StripState } from '../shared/ipc'
+import type { AppCommand, HelperApi, StripState } from '../shared/ipc'
 
 const api: HelperApi = {
   bank: {
@@ -55,7 +55,7 @@ const api: HelperApi = {
     }
   },
   onCommand: (cb) => {
-    const listener = (_e: unknown, cmd: 'find' | 'toggle-collapse' | 'recap' | 'strip-expand') => cb(cmd)
+    const listener = (_e: unknown, cmd: AppCommand): void => cb(cmd)
     ipcRenderer.on('command', listener)
     return () => ipcRenderer.removeListener('command', listener)
   },
