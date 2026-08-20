@@ -11,13 +11,16 @@ export interface DiagnoseInput {
   mic: SourceStatus
   micPermission: boolean
   screenPermission: boolean
-  modelsMissing: boolean
+  /** which on-device models are absent. Separate flags because they fail
+   *  differently: no speech model means the smaller tier transcribes instead,
+   *  no matching model means matching drops to the lexical path */
+  missingModels: { speech: boolean; matching: boolean }
 }
 
 /** ordered most-actionable first: a hard failure beats a soft one, and a
  *  permission problem beats a signal problem because it explains it */
 export function diagnose(input: DiagnoseInput): string {
-  const { meeting, mic, micPermission, screenPermission, modelsMissing } = input
+  const { meeting, mic, micPermission, screenPermission, missingModels } = input
 
   if (!micPermission) {
     return 'Microphone permission is not granted, so nothing you say can be heard. Grant it in System Settings → Privacy & Security → Microphone.'
@@ -46,8 +49,14 @@ export function diagnose(input: DiagnoseInput): string {
   if (mic.state === 'live' && mic.segments === 0) {
     return 'Your microphone is producing audio but nothing has been transcribed yet. If this persists while you speak, transcription is not keeping up or the model failed to load.'
   }
-  if (modelsMissing) {
-    return 'On-device models are not installed, so matching is running on the lexical fallback. Download them from the setup screen for noticeably better question matching.'
+  if (missingModels.speech && missingModels.matching) {
+    return 'Neither on-device model is installed. Download them from the setup screen — until then transcription uses whatever smaller model is present and matching runs on the lexical fallback.'
+  }
+  if (missingModels.speech) {
+    return 'The selected speech model is not installed, so transcription has fallen back to the smaller one. Download it from the setup screen for noticeably better accuracy.'
+  }
+  if (missingModels.matching) {
+    return 'The matching model is not installed, so question matching is running on the lexical fallback. Download it from the setup screen.'
   }
   if (mic.state === 'silent' && meeting.state === 'silent') {
     return 'Both sources are connected but silent. That is expected before anyone speaks — say something and this should turn green.'

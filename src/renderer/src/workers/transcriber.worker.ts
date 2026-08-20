@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { TUNING } from '@shared/tuning'
+import { DEFAULT_WHISPER_MODEL, FALLBACK_WHISPER_MODEL } from '@shared/models'
 import { VadSegmenter, normalizeForAsr, type Utterance } from '@/lib/dsp/vad'
 import { cleanTranscript, isLikelyHallucination } from '@/lib/asrText'
 
@@ -38,7 +39,7 @@ type OutMsg =
   | { type: 'error'; message: string }
   | { type: 'segment'; speaker: 'you' | 'them'; text: string; confirmed: boolean; t: number }
 
-const DEFAULT_MODEL = 'Xenova/whisper-tiny.en'
+const DEFAULT_MODEL = DEFAULT_WHISPER_MODEL
 
 let speaker: 'you' | 'them' = 'them'
 let transcribe: ((audio: Float32Array, opts: object) => Promise<{ text: string }>) | null = null
@@ -57,7 +58,17 @@ async function init(modelPath: string, modelId: string): Promise<void> {
   const { pipeline, env } = await import('@xenova/transformers')
   env.allowRemoteModels = false
   env.localModelPath = modelPath
-  const asr = await pipeline('automatic-speech-recognition', modelId)
+  let asr: Awaited<ReturnType<typeof pipeline>>
+  try {
+    asr = await pipeline('automatic-speech-recognition', modelId)
+  } catch (err) {
+    // the chosen tier isn't on disk, or its download was interrupted.
+    // Transcribing with the smaller model beats transcribing nothing —
+    // silence is exactly the failure this whole round is about.
+    if (modelId === FALLBACK_WHISPER_MODEL) throw err
+    post({ type: 'error', message: `${modelId} failed to load — falling back to the smaller model` })
+    asr = await pipeline('automatic-speech-recognition', FALLBACK_WHISPER_MODEL)
+  }
   transcribe = (audio: Float32Array, opts: object) => asr(audio, opts) as Promise<{ text: string }>
   // compile the graph on silence now rather than partway through the first
   // answer, where the delay is indistinguishable from "it isn't working"

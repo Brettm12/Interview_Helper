@@ -34,15 +34,28 @@ export default function SetupContainer(): JSX.Element | null {
   const settings = useSettingsStore()
   const [placementError, setPlacementError] = useState<string | null>(null)
   const [modelsNotice, setModelsNotice] = useState<string | null>(null)
+  // a separate flag, not a string test: the notice wording varies by which
+  // model is missing, and gating the download action on its prefix meant the
+  // offer quietly vanished for two of the three cases
+  const [modelsIncomplete, setModelsIncomplete] = useState(false)
   const [downloading, setDownloading] = useState(false)
 
+  // the two models fail differently, so one shared notice would send you
+  // looking in the wrong place: a missing speech model means a smaller one
+  // transcribes, a missing matching model means matching goes lexical
   const refreshModels = (whisperModel: string): void => {
     if (api.env.mock) return
     void api.models.status(whisperModel).then((m) => {
+      const tier = whisperTier(whisperModel).label
+      setModelsIncomplete(!(m.whisper && m.embeddings))
       setModelsNotice(
         m.whisper && m.embeddings
           ? null
-          : 'On-device models not installed — matching runs on the lexical fallback until they are.'
+          : !m.whisper && !m.embeddings
+            ? 'On-device models not installed — matching runs on the lexical fallback until they are.'
+            : !m.whisper
+              ? `The ${tier} speech model is not downloaded — transcription will use the smaller one until it is.`
+              : 'The matching model is not installed — matching runs on the lexical fallback until it is.'
       )
     })
   }
@@ -81,6 +94,7 @@ export default function SetupContainer(): JSX.Element | null {
     setDownloading(true)
     void api.models.download(settings.whisperModel).then((r) => {
       setDownloading(false)
+      if (r.ok) setModelsIncomplete(false)
       setModelsNotice(
         r.ok
           ? 'On-device models installed — semantic matching is on.'
@@ -257,9 +271,7 @@ export default function SetupContainer(): JSX.Element | null {
       placementError={placementError}
       modelsNotice={modelsNotice}
       onDownloadModels={
-        !api.env.mock && !downloading && modelsNotice?.startsWith('On-device models not installed')
-          ? downloadModels
-          : null
+        !api.env.mock && !downloading && modelsIncomplete ? downloadModels : null
       }
       canStart={startable}
       onStart={() => startSession()}

@@ -297,6 +297,84 @@ README prose and the reference HTML differ, the HTML won, per the brief.
   match. Finder still shows the full `CFBundleName`. Only worth recording
   because tooling that looks for a binary named after the `.app` will miss.
 
+## Real-use round (audio quality, honest status, quitting)
+
+Everything here came from one real session on a Mac. None of it was
+reachable from the mock driver, which has no microphone, no room and no
+window lifecycle.
+
+- **The status dot was dishonest, and that is the worst bug in the list.**
+  It flickered several times per sentence because it was a bare threshold on
+  a 42ms instantaneous RMS window, and the flicker read as activity for a
+  meeting source that may never have worked at all. Liveness is now an
+  envelope follower into a hysteretic gate with a hold, published at ~10Hz,
+  and "no audio track" is a *third* state with its own colour — a source that
+  cannot work must never look like one that is merely quiet.
+- **The VAD threshold is adaptive, not a constant.** `SILENCE_RMS = 0.008`
+  meant a microphone quieter than that produced no transcript, no error and
+  no warning — indistinguishable from a silent room. The floor is estimated
+  continuously (primed from the room, slow rise, fast fall, frozen while
+  speech is open) with an absolute backstop 18dB lower than the old constant.
+- **Silence is kept, not excised.** Sub-threshold chunks used to be dropped
+  *before buffering*, so Whisper received speech spliced at every inter-word
+  gap with the low-energy phonemes clipped off both ends of every word. That
+  is close to a worst case for a model trained on continuous speech. Once a
+  segment opens, everything is kept until it closes, with 300ms of pre-roll
+  ahead of the onset and a trimmed tail pad after it.
+- **Proper resampling.** 48k → 16k was every third sample with no filter, so
+  everything from 8–24kHz folded onto the vowels. Now a windowed-sinc
+  polyphase resampler with a 75Hz high-pass ahead of it. `resample.test.ts`
+  reproduces the old decimator so the 40dB improvement is visible rather than
+  asserted.
+- **`channelCountMode: 'explicit'`.** With the default `'max'` the node's
+  `channelCount: 1` was ignored and the worklet only ever saw the left
+  channel — the right one was silently discarded rather than mixed.
+- **A serial queue instead of a `busy` flag.** The old guard *dropped*
+  whatever arrived during a decode, losing real speech exactly when the
+  machine was under load. Partials are bounded to a trailing window (they used
+  to re-transcribe the whole growing buffer, so each cost more than the last)
+  and are the only thing the queue is allowed to discard.
+- **Whisper's silence boilerplate is filtered.** Handed room tone the model
+  emits "Thank you.", "[BLANK_AUDIO]", music notes or a repetition loop, and
+  every one of those would be scored against the answer bank. The filler rule
+  keys off *voiced* time, not the words, so a real "thank you" survives.
+- **The meeting side takes a device, not just a screen capture.** Electron's
+  loopback capture is Windows-only; on macOS the meeting has to arrive
+  through a virtual cable as an ordinary input. Both sources now have a
+  picker, and a source with no track names a virtual cable it can see rather
+  than leaving you to guess. The loopback path asks for no echo cancellation,
+  AGC or noise suppression — the feed is already clean digital audio and AEC
+  would gate out the interviewer whenever you spoke. The microphone asks for
+  all three.
+- **"Test" records and transcribes.** It used to call `requestMicrophone()`
+  and do nothing when permission was already granted, which is the normal
+  case on that screen. A check that cannot fail is worse than no check.
+- **Pause stops the tracks.** It used to flip a status flag while the
+  microphone stayed open, which does not square with "audio stays on this
+  machine and nothing is recorded". The meters going dark is the proof.
+- **A ⌘⇧D diagnostics panel** reporting level, the estimated noise floor and
+  the threshold speech has to clear, segments transcribed, model state and
+  the last few lines heard — with one plain-language verdict on top. The mic
+  bug was invisible precisely because nothing reported any of this.
+- **base.en is the default speech model**, with the tier a persisted setting
+  and only the selected one downloaded. A word Whisper drops is a question the
+  matcher scores wrong, and a panel on the wrong answer costs more than
+  100MB. If the selected tier fails to load the worker falls back to tiny.en
+  and says so, because silence is the failure this whole round is about.
+- **Quitting exists.** Every window is frameless, so there was no close
+  button anywhere, no menu, no tray, and no quit shortcut — and `showStrip`
+  hid the main window rather than closing it, so destroying the strip left a
+  running, invisible, unquittable process that `window-all-closed` would
+  never fire for. There is now an application menu (a File menu on
+  non-macOS, where a frameless window renders no menu bar), a tray, ⌘⇧Q, and
+  an `activate` handler. `smoke-package.mjs` asserts all of it, including that
+  plain ⌘Q is *not* registered globally — that would hijack Quit in every
+  other app on the machine.
+- **Every new Settings field carries a zod `.default()`.** `readValidated`
+  falls back to `DEFAULT_SETTINGS` wholesale when parsing fails, so a new
+  required field would silently wipe an existing user's placement, transcript
+  preference and strip position on upgrade.
+
 ## Known limitations
 
 - The real capture path is wired end to end and its model delivery is now
@@ -310,5 +388,11 @@ README prose and the reference HTML differ, the HTML won, per the brief.
   level alone.
 - Electron's loopback audio capture is Windows-only, so macOS needs a
   loopback audio device (BlackHole or similar) for the meeting side. The app
-  detects the missing audio track and surfaces the instruction rather than
-  failing silently.
+  detects the missing audio track, names a virtual cable if it can see one,
+  and lets you select it as the meeting input — but whether that route
+  actually carries a real meeting has still only been reasoned about here,
+  not observed.
+- Transcription accuracy, the adaptive VAD's behaviour in a real room, and
+  the mic test's output can only be judged on a machine with audio hardware.
+  Every DSP claim above is unit-tested against synthesised signals, which
+  proves the maths and not the experience.

@@ -1,6 +1,7 @@
 {
   "comment": "On-device model manifest — the single source of truth for both `npm run fetch-models` and the in-app download on the setup screen. Quantized ONNX builds only; these are the exact files @xenova/transformers requests for these two pipelines.",
   "host": "https://huggingface.co",
+  "defaultTranscription": "Xenova/whisper-base.en",
   "models": [
     {
       "id": "Xenova/whisper-tiny.en",

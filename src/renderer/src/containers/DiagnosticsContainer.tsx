@@ -3,6 +3,8 @@ import DiagnosticsPanel from '../screens/diagnostics/DiagnosticsPanel'
 import { useAudioStore } from '../state/audioStore'
 import { usePanelStore } from '../state/panelStore'
 import { useSessionStore } from '../state/sessionStore'
+import { useSettingsStore } from '../state/settingsStore'
+import { whisperTier } from '@shared/models'
 import { diagnose, formatFloorDb, formatLevelDb } from '../lib/diagnose'
 import { api } from '../lib/api'
 
@@ -14,20 +16,26 @@ export default function DiagnosticsContainer(): JSX.Element | null {
   const meetingLabel = useAudioStore((s) => s.meetingLabel)
   const micLabel = useAudioStore((s) => s.micLabel)
   const transcript = useSessionStore((s) => s.transcript)
+  const whisperModel = useSettingsStore((s) => s.whisperModel)
   const [models, setModels] = useState<{ dir: string; whisper: boolean; embeddings: boolean } | null>(
     null
   )
 
   useEffect(() => {
     if (!open) return
-    void api.models.status().then(setModels)
-  }, [open])
+    // the status has to be about the model actually selected — "some Whisper
+    // is installed" is the answer that hid this class of failure before
+    void api.models.status(whisperModel).then(setModels)
+  }, [open, whisperModel])
 
   if (!open) return null
 
   const micPermission = permissions.microphone === 'granted'
   const screenPermission = permissions.screen === 'granted'
-  const modelsMissing = models != null && !(models.whisper && models.embeddings)
+  const missingModels = {
+    speech: models != null && !models.whisper,
+    matching: models != null && !models.embeddings
+  }
 
   return (
     <DiagnosticsPanel
@@ -52,7 +60,9 @@ export default function DiagnosticsContainer(): JSX.Element | null {
         }
       ]}
       models={{
-        whisper: models == null ? 'checking…' : models.whisper ? 'installed' : 'not installed',
+        whisper: `${whisperTier(whisperModel).label} · ${
+          models == null ? 'checking…' : models.whisper ? 'installed' : 'not installed'
+        }`,
         whisperMissing: models != null && !models.whisper,
         embeddings: models == null ? 'checking…' : models.embeddings ? 'installed' : 'not installed',
         embeddingsMissing: models != null && !models.embeddings,
@@ -62,7 +72,7 @@ export default function DiagnosticsContainer(): JSX.Element | null {
         .filter((t) => t.confirmed)
         .slice(-6)
         .map((t) => `${t.speaker}: ${t.text}`)}
-      verdict={diagnose({ meeting, mic, micPermission, screenPermission, modelsMissing })}
+      verdict={diagnose({ meeting, mic, micPermission, screenPermission, missingModels })}
       onClose={() => usePanelStore.getState().toggleDiagnostics()}
     />
   )

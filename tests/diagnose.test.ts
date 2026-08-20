@@ -20,7 +20,7 @@ const base = {
   mic: source(),
   micPermission: true,
   screenPermission: true,
-  modelsMissing: false
+  missingModels: { speech: false, matching: false }
 }
 
 describe('diagnose', () => {
@@ -34,7 +34,7 @@ describe('diagnose', () => {
       ...base,
       micPermission: false,
       mic: source({ state: 'no-track', error: 'boom' }),
-      modelsMissing: true
+      missingModels: { speech: true, matching: true }
     })
     expect(out).toMatch(/Microphone permission/i)
   })
@@ -68,11 +68,24 @@ describe('diagnose', () => {
   })
 
   it('mentions models only once the audio path is healthy', () => {
-    expect(diagnose({ ...base, modelsMissing: true })).toMatch(/models/i)
+    expect(diagnose({ ...base, missingModels: { speech: true, matching: true } })).toMatch(/model/i)
     // a hard audio failure outranks it
     expect(
-      diagnose({ ...base, modelsMissing: true, mic: source({ state: 'no-track' }) })
+      diagnose({ ...base, missingModels: { speech: true, matching: true }, mic: source({ state: 'no-track' }) })
     ).toMatch(/microphone failed/i)
+  })
+
+  it('says which model is missing, because they fail differently', () => {
+    // no speech model → a smaller one transcribes; no matching model →
+    // matching drops to the lexical path. Same notice for both would send you
+    // looking in the wrong place.
+    const speech = diagnose({ ...base, missingModels: { speech: true, matching: false } })
+    expect(speech).toMatch(/speech model/i)
+    expect(speech).toMatch(/fallen back to the smaller one/i)
+
+    const matching = diagnose({ ...base, missingModels: { speech: false, matching: true } })
+    expect(matching).toMatch(/matching model/i)
+    expect(matching).toMatch(/lexical/i)
   })
 })
 

@@ -29,6 +29,21 @@ function defaultDest() {
 const destFlag = process.argv.indexOf('--dest')
 const DEST = destFlag >= 0 ? process.argv[destFlag + 1] : defaultDest()
 
+// Only the Whisper tier actually in use, matching what the in-app downloader
+// fetches — nobody should pull 145MB of a model they never select. `--all`
+// gets every tier, and `--model <id>` picks one.
+const modelFlag = process.argv.indexOf('--model')
+const WHISPER = modelFlag >= 0 ? process.argv[modelFlag + 1] : manifest.defaultTranscription
+const ALL = process.argv.includes('--all')
+const wanted = manifest.models.filter(
+  (m) => ALL || m.use !== 'transcription' || m.id === WHISPER
+)
+if (wanted.length === manifest.models.filter((m) => m.use !== 'transcription').length) {
+  console.error(`No transcription model matches "${WHISPER}". Known ids:`)
+  for (const m of manifest.models.filter((x) => x.use === 'transcription')) console.error(`  ${m.id}`)
+  process.exit(1)
+}
+
 async function fetchFile(model, file) {
   const dest = join(DEST, model, file)
   if (existsSync(dest)) {
@@ -52,7 +67,7 @@ async function fetchFile(model, file) {
 
 console.log(`Fetching on-device models into ${DEST}\n`)
 try {
-  for (const model of manifest.models) {
+  for (const model of wanted) {
     console.log(`${model.id}  (${model.use})`)
     for (const file of model.files) await fetchFile(model.id, file)
   }

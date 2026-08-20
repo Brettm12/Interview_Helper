@@ -69,7 +69,7 @@ but a browser. `VITE_MOCK_SPEED=2` (any factor) compresses the playback.
 Every screen/state renders statically at its reference frame for design
 review: append `?screen=<name>` in `dev:web` — `live`, `unsure`, `find`,
 `strip`, `strip-queued`, `strip-new`, `bank`, `editor`, `setup`,
-`setup-noperm`, `armed`, `recap`, `recap-off`. No value lists an index page;
+`setup-noperm`, `setup-devices`, `armed`, `recap`, `recap-off`. No value lists an index page;
 any unknown name shows the list.
 
 ## macOS permissions
@@ -77,29 +77,64 @@ any unknown name shows the list.
 Two separate grants, both under **System Settings → Privacy & Security**:
 
 - **Microphone** — your own mic, for ticking off points as you say them.
-  macOS prompts on first use; the setup screen's "Test" re-requests it.
+  macOS prompts on first use; the setup screen's "Test" requests it if it
+  hasn't been granted.
 - **Screen Recording** — required for screen capture (which carries the
   meeting audio on Windows). macOS never prompts for this one: add the app
   manually, then relaunch it.
 
-The setup screen's two status dots reflect the real permission + signal state:
-green means granted *and* hearing sound; amber means missing, and the row's
-why-line becomes the fix instruction. "Start listening" stays disabled until
-both sources report a level.
+The setup screen's two status dots have three states, because the failures
+need three different reactions: **green** means granted and hearing sound,
+**amber** means connected but silent, and **red** means there is no audio
+track at all. A source that cannot work never looks like one that is merely
+quiet. The dots are driven by a smoothed level through a hysteretic gate with
+a hold, so they don't flicker on the gaps between your words, and "Start
+listening" is never disabled by a live signal — a click landing in a pause
+used to hit an undefined handler and be silently dropped.
 
 **Meeting audio by platform.** Electron's loopback audio capture is
-Windows-only. On macOS, route the meeting's output through a loopback audio
-device (e.g. BlackHole: set it as part of a multi-output device, and the
-capture picks it up); the setup row surfaces exactly this instruction when
-the captured stream arrives without an audio track.
+Windows-only. On macOS the meeting has to reach the app as an ordinary *input
+device*: install a virtual cable (BlackHole is the usual choice), route the
+meeting's output through it — typically as part of a Multi-Output Device so
+you can still hear the call — and then pick it in the **meeting row's device
+picker** on the setup screen. If the app can already see something that looks
+like a virtual cable, the row names it.
+
+Both rows are pickers: the microphone one exists because a default input that
+silently switches to a narrowband Bluetooth headset is otherwise invisible.
+The device name comes off the live track, so what you read is what is
+actually open.
+
+## Checking it works before the interview
+
+Two things to do on the setup screen, in this order:
+
+1. **Hit "Test".** It records five seconds through the real capture path,
+   transcribes it with the real model, and prints back what it heard on the
+   mic row. Compare that against what you said — that is the whole check, and
+   it exercises the exact path that runs during the call.
+2. **Press ⌘⇧D** for the diagnostics panel: input level in dB, the estimated
+   room-noise floor and the level your speech has to clear, how many segments
+   have been transcribed, which models are installed and the last few lines
+   heard — with one plain-language verdict on top naming the most likely
+   problem. If the mic is 8dB under the threshold, this is where it says so.
 
 ## Where things live
 
-- **Tuning constants** — `src/shared/tuning.ts`. Every matching and coverage
-  threshold (confidence bar, runner-up margin, trigger boost, fuzz, debounce,
-  auto-pick delay, coverage thresholds, long-answer flag) in one exported
-  object with a tuning comment per value. Change the number, not call sites;
-  `tests/matcher.test.ts` and `tests/coverage.test.ts` pin the behaviour.
+- **Tuning constants** — `src/shared/tuning.ts`. Every matching, coverage,
+  audio and voice-activity threshold in one exported object with a tuning
+  comment per value: the confidence bar, runner-up margin, trigger boost,
+  auto-pick delay and coverage thresholds; and on the audio side the resampler
+  kernel, the high-pass corner, the VAD's open/close margins over the noise
+  floor, pre-roll and hangover, segment caps, and the loudness targets applied
+  before Whisper. Change the number, not the call sites;
+  `tests/matcher.test.ts`, `tests/coverage.test.ts`, `tests/vad.test.ts`,
+  `tests/resample.test.ts` and `tests/level.test.ts` pin the behaviour.
+- **Audio DSP** — `src/renderer/src/lib/dsp/`: `resample.ts` (windowed-sinc
+  polyphase resampler + biquad high-pass), `vad.ts` (adaptive noise floor and
+  the segmenter), `level.ts` (meter ballistics and the liveness gate). All
+  pure and browser-free, so the behaviour that actually went wrong is testable
+  without audio hardware.
 - **Data** — three JSON files in Electron's `userData` directory (`bank.json`,
   `sessions.json`, `settings.json`), zod-validated on read, written atomically
   (temp file + rename), with a `.bak` of the last good read per file. Deleting
@@ -109,8 +144,9 @@ the captured stream arrives without an audio track.
 - **Architecture** — the UI never touches audio directly. Four interfaces in
   `src/shared/types.ts` (`AudioSource`, `Transcriber`, `Matcher`,
   `CoverageModel`) with two capture implementations: the real path
-  (`src/renderer/src/lib/drivers/real.ts` — getUserMedia mic +
-  getDisplayMedia loopback, Whisper + MiniLM in Web Workers) and the mock
+  (`src/renderer/src/lib/drivers/real.ts` — getUserMedia mic, meeting audio
+  from either a loopback input device or getDisplayMedia, Whisper + MiniLM in
+  Web Workers) and the mock
   driver (`drivers/mock.ts`) replaying `fixtures/demo-session.json`. Speaker
   attribution is stream identity: system audio is `them`, mic is `you` — one
   transcriber per stream, no diarisation. `lib/engine.ts` wires segments →
@@ -142,14 +178,26 @@ only one display is connected.
 
 ## Offline models (real capture path)
 
-Transcription uses Whisper (`Xenova/whisper-tiny.en`) and matching uses
-MiniLM (`Xenova/all-MiniLM-L6-v2`) via `@xenova/transformers`, loaded from
-the app's `userData/models` directory only (`env.allowRemoteModels = false`).
-Get them once before interview day — the only moment this app ever touches
-the network — either from the **setup screen** ("Download now" on the models
-notice, which shows per-file progress) or with `npm run fetch-models` from a
-checkout. Both write the same ~64MB into `userData/models`, and the app then
-serves them to its workers over an internal `lih-models://` protocol.
+Transcription uses Whisper and matching uses MiniLM
+(`Xenova/all-MiniLM-L6-v2`) via `@xenova/transformers`, loaded from the app's
+`userData/models` directory only (`env.allowRemoteModels = false`). Get them
+once before interview day — the only moment this app ever touches the network
+— either from the **setup screen** ("Download now" on the models notice,
+which shows per-file progress) or with `npm run fetch-models` from a
+checkout. Both write into `userData/models`, and the app then serves them to
+its workers over an internal `lih-models://` protocol.
+
+There are two Whisper tiers, picked on the setup screen and persisted:
+
+| tier | size | when |
+| --- | --- | --- |
+| `Xenova/whisper-base.en` (default) | ~145MB | noticeably more accurate, still real-time on a modern machine |
+| `Xenova/whisper-tiny.en` | ~40MB | lower latency on an older machine, misses more words |
+
+Only the selected tier is downloaded. `npm run fetch-models` follows the same
+rule; pass `--model <id>` for a specific tier or `--all` for both. If the
+selected model can't be loaded, the transcriber falls back to `tiny.en` and
+says so rather than going silent.
 
 Until the models are present (or while they're still warming up), matching
 and coverage run on the lexical fallback paths — bigram Dice plus your
