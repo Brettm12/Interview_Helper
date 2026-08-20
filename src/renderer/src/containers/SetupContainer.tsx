@@ -21,23 +21,43 @@ export default function SetupContainer(): JSX.Element | null {
   const settings = useSettingsStore()
   const [placementError, setPlacementError] = useState<string | null>(null)
   const [modelsNotice, setModelsNotice] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     prepareAudio()
     void useAudioStore.getState().refreshPermissions()
     const id = window.setInterval(() => void useAudioStore.getState().refreshPermissions(), 3000)
     // the mock session never touches the models — no notice to show there
+    let offProgress: (() => void) | null = null
     if (!api.env.mock) {
       void api.models.status().then((m) => {
         setModelsNotice(
           m.whisper && m.embeddings
             ? null
-            : 'On-device models not installed — matching runs on the lexical fallback. Run npm run fetch-models.'
+            : 'On-device models not installed — matching runs on the lexical fallback until they are.'
         )
       })
+      offProgress = api.models.onProgress((p) =>
+        setModelsNotice(`Downloading models — ${p.done}/${p.total} · ${p.file}`)
+      )
     }
-    return () => window.clearInterval(id)
+    return () => {
+      window.clearInterval(id)
+      offProgress?.()
+    }
   }, [])
+
+  const downloadModels = (): void => {
+    setDownloading(true)
+    void api.models.download().then((r) => {
+      setDownloading(false)
+      setModelsNotice(
+        r.ok
+          ? 'On-device models installed — semantic matching is on.'
+          : `Model download failed: ${r.error ?? 'unknown error'}`
+      )
+    })
+  }
 
   const levels = useMemo(() => {
     const scale = Math.min(1, audio.meetingLevel / 0.45)
@@ -101,6 +121,11 @@ export default function SetupContainer(): JSX.Element | null {
       }}
       placementError={placementError}
       modelsNotice={modelsNotice}
+      onDownloadModels={
+        !api.env.mock && !downloading && modelsNotice?.startsWith('On-device models not installed')
+          ? downloadModels
+          : null
+      }
       canStart={meetingLive && micLive}
       onStart={() => startSession()}
       onEditBank={() => panel.setView('bank')}

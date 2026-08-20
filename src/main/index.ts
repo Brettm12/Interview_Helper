@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { repository } from './persistence'
+import { downloadModels, modelsDir, modelsStatus } from './models'
 import { permissionStatus, requestMicrophone, openScreenRecordingSettings } from './permissions'
 import {
   allWindows,
@@ -96,17 +97,15 @@ function registerIpc(): void {
   ipcMain.handle('strip:expand', () => broadcast('command', 'strip-expand'))
 
   // ---- on-device models ----
-  const modelsDir = join(app.getPath('userData'), 'models')
-  const exists = (p: string): Promise<boolean> =>
-    fs.access(p).then(
-      () => true,
-      () => false
-    )
-  ipcMain.handle('models:status', async () => ({
-    dir: modelsDir,
-    whisper: await exists(join(modelsDir, 'Xenova/whisper-tiny.en/config.json')),
-    embeddings: await exists(join(modelsDir, 'Xenova/all-MiniLM-L6-v2/config.json'))
-  }))
+  ipcMain.handle('models:status', () => modelsStatus())
+  ipcMain.handle('models:download', async (e) => {
+    try {
+      await downloadModels((p) => e.sender.send('models:progress', p))
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
 }
 
 function registerShortcuts(): void {
@@ -135,11 +134,11 @@ app.whenReady().then(async () => {
   )
 
   // serve userData/models over the privileged scheme registered above
-  const modelsDir = join(app.getPath('userData'), 'models')
+  const dir = modelsDir()
   protocol.handle('lih-models', (req) => {
     const rel = decodeURIComponent(new URL(req.url).pathname)
-    const file = join(modelsDir, rel)
-    if (!file.startsWith(modelsDir)) return new Response(null, { status: 403 })
+    const file = join(dir, rel)
+    if (!file.startsWith(dir)) return new Response(null, { status: 403 })
     return net.fetch(pathToFileURL(file).toString())
   })
 

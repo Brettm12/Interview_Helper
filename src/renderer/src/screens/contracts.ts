@@ -237,6 +237,8 @@ export interface SetupScreenProps {
   placementError: string | null
   /** on-device models missing → matching runs on the lexical fallback */
   modelsNotice?: string | null
+  /** offered next to the notice; null while a download is running or done */
+  onDownloadModels?: (() => void) | null
   canStart: boolean
   onStart: () => void
   onEditBank: () => void

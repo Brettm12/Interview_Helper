@@ -1,0 +1,84 @@
+appId: com.brettm12.live-interview-helper
+productName: Live Interview Helper
+copyright: © Brett McCosham
+
+directories:
+  output: release
+  buildResources: build
+
+# electron-vite emits everything the app runs into out/. The renderer bundle
+# already contains transformers + onnxruntime-web (~1.4MB), and main
+# externalizes only zod — so the heavy native ONNX builds and sharp (pulled in
+# transitively for image models this app never uses) are ~200MB of dead
+# weight. Excluding them is what keeps the package small.
+files:
+  - out/**
+  - package.json
+  # allowlist, not denylist: everything the renderer uses is already inside
+  # the Vite bundle, and main externalizes only zod. Later patterns win.
+  - '!node_modules/**'
+  - node_modules/zod/**
+
+asar: true
+
+# nothing in the shipped app is a native module (the renderer bundle is pure
+# JS/WASM and main externalizes only zod), so skip the rebuild pass entirely —
+# it otherwise rebuilds sharp, which only the icon script uses
+npmRebuild: false
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+  # local builds are unsigned; see README for the Gatekeeper step. Set an
+  # identity here (and flip hardenedRuntime on) when signing for real.
+  identity: null
+  hardenedRuntime: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    # macOS kills the app on a mic request without this string
+    NSMicrophoneUsageDescription: >-
+      Live Interview Helper listens to your microphone so it can tick off the
+      key points as you say them. Audio is processed on this machine and never
+      leaves it.
+    # screen capture carries the meeting's audio; screen-recording access is
+    # granted through System Settings rather than a prompt
+    NSScreenCaptureUsageDescription: >-
+      Live Interview Helper captures system audio so it can hear the
+      interviewer's questions. Nothing is recorded unless you turn on the
+      recap.
+    # the panel is a floating helper, not a document app
+    LSUIElement: false
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  contents:
+    - x: 140
+      y: 180
+      type: file
+    - x: 400
+      y: 180
+      type: link
+      path: /Applications
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-${version}-setup.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+
+linux:
+  target:
+    - AppImage
+  category: Office
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+# no auto-update server — this is a local-first personal app
+publish: null

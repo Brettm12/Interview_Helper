@@ -60,6 +60,7 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
     onPlacement,
     placementError,
     modelsNotice,
+    onDownloadModels,
     canStart,
     onStart,
     onEditBank,
@@ -155,7 +156,19 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
           <div className="setup-privacy pretty">
             Audio stays on this machine. Nothing is recorded unless you turn on the recap.
           </div>
-          {modelsNotice != null && <div className="setup-privacy pretty">{modelsNotice}</div>}
+          {modelsNotice != null && (
+            <div className="setup-privacy pretty">
+              {modelsNotice}
+              {onDownloadModels != null && (
+                <>
+                  {' '}
+                  <span className="action setup-models-action" onClick={onDownloadModels}>
+                    Download now
+                  </span>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="setup-group">

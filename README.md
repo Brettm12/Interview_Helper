@@ -10,7 +10,33 @@ pre-interview setup screen, and a post-interview recap.
 Everything runs on this machine. The bank, matching, transcription, and the
 session transcript never touch the network; a dead connection changes nothing.
 
-## Running it
+## Building the app
+
+To get a real double-clickable app rather than a terminal command:
+
+```bash
+npm install
+npm run package        # builds for the machine you're on
+```
+
+The result lands in `release/`: a `.dmg` on macOS, an installer `.exe` on
+Windows, an `.AppImage` on Linux. `npm run package:mac|:win|:linux` targets a
+specific platform, though each has to be built on that platform (a `.dmg`
+can only be produced on a Mac).
+
+**First launch on macOS.** The build is unsigned — I have no Developer ID —
+so Gatekeeper will refuse it on a double-click. Right-click the app →
+**Open** → **Open**, once; after that it launches normally. (If you'd rather
+sign it, set `mac.identity` in `electron-builder.yml` and flip
+`hardenedRuntime` back on; `build/entitlements.mac.plist` is already written
+for the microphone and the WASM models.)
+
+The app stores everything under `~/Library/Application Support/Live Interview
+Helper/` on macOS (`%APPDATA%` on Windows, `~/.config` on Linux): the bank,
+your sessions, settings, and the downloaded models. Deleting that folder
+resets the app and nothing else.
+
+## Running from source
 
 ```bash
 npm install
@@ -26,6 +52,8 @@ npm run build      # electron-vite production build
 npm run fetch-models   # one-time model download for the real capture path
 npm run verify:pixels  # screenshot-diff every screen against docs/reference
 npm run e2e            # drive the full scripted session in a headless browser
+npm run e2e:electron   # multi-window check: the strip window over IPC
+npm run smoke:package  # launch-test the packaged build in release/
 ```
 
 `dev:mock` plays a complete session hands-free: arm it from the setup screen
@@ -117,9 +145,13 @@ only one display is connected.
 Transcription uses Whisper (`Xenova/whisper-tiny.en`) and matching uses
 MiniLM (`Xenova/all-MiniLM-L6-v2`) via `@xenova/transformers`, loaded from
 the app's `userData/models` directory only (`env.allowRemoteModels = false`).
-Run `npm run fetch-models` once before interview day — the only step that
-ever touches the network — and the app serves the files to its workers over
-an internal protocol. Until the models are warm (or when they're absent —
-the setup screen says so), matching and coverage run on the lexical fallback
-paths (bigram Dice + trigger phrases), so the panel works from the first
-second.
+Get them once before interview day — the only moment this app ever touches
+the network — either from the **setup screen** ("Download now" on the models
+notice, which shows per-file progress) or with `npm run fetch-models` from a
+checkout. Both write the same ~64MB into `userData/models`, and the app then
+serves them to its workers over an internal `lih-models://` protocol.
+
+Until the models are present (or while they're still warming up), matching
+and coverage run on the lexical fallback paths — bigram Dice plus your
+trigger phrases — so the panel works from the first second either way. The
+setup screen tells you which mode you're in.

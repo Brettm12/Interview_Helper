@@ -1,0 +1,29 @@
+{
+  "comment": "On-device model manifest — the single source of truth for both `npm run fetch-models` and the in-app download on the setup screen. Quantized ONNX builds only; these are the exact files @xenova/transformers requests for these two pipelines.",
+  "host": "https://huggingface.co",
+  "models": [
+    {
+      "id": "Xenova/whisper-tiny.en",
+      "use": "transcription",
+      "files": [
+        "config.json",
+        "generation_config.json",
+        "preprocessor_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "onnx/encoder_model_quantized.onnx",
+        "onnx/decoder_model_merged_quantized.onnx"
+      ]
+    },
+    {
+      "id": "Xenova/all-MiniLM-L6-v2",
+      "use": "matching + coverage",
+      "files": [
+        "config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "onnx/model_quantized.onnx"
+      ]
+    }
+  ]
+}

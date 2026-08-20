@@ -1,18 +1,22 @@
 #!/usr/bin/env node
 // One-shot model fetch — the only step that ever needs the network. Downloads
-// the Whisper + MiniLM model files into the app's userData/models directory so
-// the app itself can stay fully offline. Usage:
+// the Whisper + MiniLM files into the app's userData/models directory so the
+// app itself stays fully offline. The packaged app can do this from its setup
+// screen instead; this script is for running from a source checkout.
 //   npm run fetch-models [-- --dest /path/to/models]
-import { createWriteStream, existsSync, mkdirSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { rename, unlink } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
-// matches Electron's app.getPath('userData') for package.json name
-// "live-interview-helper" (no productName set)
-const APP_NAME = 'live-interview-helper'
+const here = dirname(fileURLToPath(import.meta.url))
+const manifest = JSON.parse(readFileSync(join(here, '..', 'src', 'shared', 'models.json'), 'utf8'))
+
+// must match Electron's app.getPath('userData'), which uses productName
+const APP_NAME = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8')).productName
 
 function defaultDest() {
   if (process.platform === 'darwin')
@@ -25,24 +29,6 @@ function defaultDest() {
 const destFlag = process.argv.indexOf('--dest')
 const DEST = destFlag >= 0 ? process.argv[destFlag + 1] : defaultDest()
 
-const MODELS = {
-  'Xenova/whisper-tiny.en': [
-    'config.json',
-    'generation_config.json',
-    'preprocessor_config.json',
-    'tokenizer.json',
-    'tokenizer_config.json',
-    'onnx/encoder_model_quantized.onnx',
-    'onnx/decoder_model_merged_quantized.onnx'
-  ],
-  'Xenova/all-MiniLM-L6-v2': [
-    'config.json',
-    'tokenizer.json',
-    'tokenizer_config.json',
-    'onnx/model_quantized.onnx'
-  ]
-}
-
 async function fetchFile(model, file) {
   const dest = join(DEST, model, file)
   if (existsSync(dest)) {
@@ -50,23 +36,25 @@ async function fetchFile(model, file) {
     return
   }
   mkdirSync(dirname(dest), { recursive: true })
-  const url = `https://huggingface.co/${model}/resolve/main/${file}`
+  const url = `${manifest.host}/${model}/resolve/main/${file}`
   const res = await fetch(url)
   if (!res.ok || !res.body) throw new Error(`${res.status} ${res.statusText} — ${url}`)
   const tmp = `${dest}.part`
-  await pipeline(Readable.fromWeb(res.body), createWriteStream(tmp))
-  await rename(tmp, dest).catch(async (err) => {
+  try {
+    await pipeline(Readable.fromWeb(res.body), createWriteStream(tmp))
+    await rename(tmp, dest)
+  } catch (err) {
     await unlink(tmp).catch(() => {})
     throw err
-  })
+  }
   console.log(`  ↓ ${model}/${file}`)
 }
 
 console.log(`Fetching on-device models into ${DEST}\n`)
 try {
-  for (const [model, files] of Object.entries(MODELS)) {
-    console.log(model)
-    for (const file of files) await fetchFile(model, file)
+  for (const model of manifest.models) {
+    console.log(`${model.id}  (${model.use})`)
+    for (const file of model.files) await fetchFile(model.id, file)
   }
   console.log('\nDone. The app never needs the network again.')
 } catch (err) {

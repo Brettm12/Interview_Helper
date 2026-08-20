@@ -253,13 +253,62 @@ README prose and the reference HTML differ, the HTML won, per the brief.
   against the reference (setup/editor/strip-variants report-only for the
   documented reasons); CI runs typecheck → unit tests → both.
 
-## Known limitations (phase 4)
+## Packaging (electron-builder)
 
-- The real capture path (getUserMedia / getDisplayMedia loopback → Whisper +
-  MiniLM workers) typechecks and is wired end to end, but has not run against
-  real hardware in this environment; the `lih-models://` delivery to
-  `@xenova/transformers` inside workers needs a runtime spike on a desktop
-  (fallback if it misbehaves: a localhost HTTP server in main).
+- **`productName: "Live Interview Helper"`** makes the app read properly in
+  Finder, but it also becomes `app.getName()` and therefore the `userData`
+  directory. `scripts/fetch-models.mjs` reads `productName` from
+  `package.json` rather than hard-coding a path, so the CLI and the app agree
+  on where models live — verified end to end (the app reported the exact
+  directory the script wrote to).
+- **`@xenova/transformers` is a devDependency, not a runtime one.** Vite
+  bundles it into the renderer chunk at build time (1.4MB), so nothing
+  imports it at runtime. Keeping it in `dependencies` dragged ~200MB of
+  unused native ONNX builds and `sharp` into the package and triggered a
+  native rebuild pass on every build.
+- **`files` is an allowlist**, not a denylist: `out/**`, `package.json`, and
+  `node_modules/zod` (the only module main externalizes). That's the whole
+  app — 5.6MB asar versus 13MB when excluding heavy packages one by one,
+  because transitive deps kept slipping through.
+- **`npmRebuild: false`** — nothing shipped is a native module, so the
+  rebuild pass only ever rebuilt `sharp`, which exists solely for the icon
+  script.
+- **Unsigned by default** (`mac.identity: null`, `hardenedRuntime: false`).
+  Signing needs a Developer ID; the README documents the one-time
+  right-click → Open. `build/entitlements.mac.plist` is written and wired up
+  so turning signing on is a two-line change — it grants audio input plus the
+  JIT/unsigned-memory entitlements ONNX Runtime's WASM backend needs under the
+  hardened runtime.
+- **`NSMicrophoneUsageDescription` and `NSScreenCaptureUsageDescription`** go
+  in via `mac.extendInfo`. The first is not optional: macOS terminates an app
+  that requests the mic without it. Both strings say the audio stays on the
+  machine, matching the setup screen's promise.
+- **Icon generated from the design tokens** (`build/make-icon.mjs`, one
+  1024px PNG that electron-builder converts to `.icns`/`.ico`): the panel
+  background, the listening-green dot converted from the app's own
+  `oklch(0.72 0.15 145)`, and three point rows with the covered ones struck
+  through. Checked at 64px so it survives a dock icon.
+- **In-app model download.** A packaged user has no npm scripts, so the setup
+  screen's models notice offers "Download now" with per-file progress, driven
+  by the same `src/shared/models.json` manifest as the CLI script. Without it
+  a packaged install could never get semantic matching.
+- The macOS binary is named `Live Interview` — macOS caps
+  `CFBundleExecutable` at 15 characters and electron-builder truncates to
+  match. Finder still shows the full `CFBundleName`. Only worth recording
+  because tooling that looks for a binary named after the `.app` will miss.
+
+## Known limitations
+
+- The real capture path is wired end to end and its model delivery is now
+  verified in a packaged build — a Web Worker fetched the full 23MB ONNX over
+  `lih-models://`, which was the open question — but it has never run against
+  a real microphone or meeting here: this container has no audio hardware.
+  Transcription quality and the loopback route are still unproven on a
+  desktop.
 - macOS permission checks use Electron's `systemPreferences` via the main
   process; on other platforms they report granted and the dots follow signal
   level alone.
+- Electron's loopback audio capture is Windows-only, so macOS needs a
+  loopback audio device (BlackHole or similar) for the meeting side. The app
+  detects the missing audio track and surfaces the instruction rather than
+  failing silently.

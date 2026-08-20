@@ -329,3 +329,9 @@
   color: var(--text-action);
   cursor: pointer;
 }
+
+/* offered inline in the models notice when they aren't installed yet */
+.setup-models-action {
+  color: var(--text-action);
+  cursor: pointer;
+}

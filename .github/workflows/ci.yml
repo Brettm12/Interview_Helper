@@ -25,6 +25,10 @@ jobs:
       # multi-window plumbing: the strip window must render relayed state
       - run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: npm run e2e:electron
+      # the packaged app must actually launch: asar contents, preload path,
+      # bundled fonts and seed data
+      - run: npm run package:linux
+      - run: npm run smoke:package
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

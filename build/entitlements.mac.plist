@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Used only when the app is signed with a real identity (see
+       electron-builder.yml). Unsigned local builds ignore these. -->
+
+  <!-- the candidate's own mic, for coverage -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+
+  <!-- Whisper + MiniLM run as WASM in a worker; ONNX Runtime needs JIT and
+       unsigned executable memory under the hardened runtime -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+
+  <!-- Electron loads its own framework libraries -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

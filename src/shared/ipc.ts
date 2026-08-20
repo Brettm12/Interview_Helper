@@ -83,6 +83,10 @@ export interface HelperApi {
   }
   models: {
     status(): Promise<ModelsStatus>
+    /** fetch the on-device models — the only network call the app makes */
+    download(): Promise<{ ok: boolean; error?: string }>
+    /** progress while a download runs: "3/11 · Xenova/whisper-tiny.en/…" */
+    onProgress(cb: (p: { done: number; total: number; file: string }) => void): () => void
   }
   /** global shortcuts + strip actions forwarded from main */
   onCommand(cb: (cmd: 'find' | 'toggle-collapse' | 'recap' | 'strip-expand') => void): () => void

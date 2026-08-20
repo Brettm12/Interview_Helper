@@ -46,7 +46,13 @@ const api: HelperApi = {
     expand: () => ipcRenderer.invoke('strip:expand')
   },
   models: {
-    status: () => ipcRenderer.invoke('models:status')
+    status: () => ipcRenderer.invoke('models:status'),
+    download: () => ipcRenderer.invoke('models:download'),
+    onProgress: (cb) => {
+      const listener = (_e: unknown, p: { done: number; total: number; file: string }): void => cb(p)
+      ipcRenderer.on('models:progress', listener)
+      return () => ipcRenderer.removeListener('models:progress', listener)
+    }
   },
   onCommand: (cb) => {
     const listener = (_e: unknown, cmd: 'find' | 'toggle-collapse' | 'recap' | 'strip-expand') => cb(cmd)
