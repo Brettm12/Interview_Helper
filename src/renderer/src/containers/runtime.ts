@@ -10,7 +10,8 @@ import {
 import { SessionEngine } from '../lib/engine'
 import { EmbeddingCache, nullEmbeddings } from '../lib/embeddings'
 import { createStripPublisher, deriveStripState } from '../lib/strip'
-import { LivenessGate, MeterBallistics, rms } from '../lib/dsp/level'
+import { LivenessGate, MeterBallistics, dbfs, rms } from '../lib/dsp/level'
+import { NoiseFloor } from '../lib/dsp/vad'
 import { TUNING } from '@shared/tuning'
 import { api } from '../lib/api'
 import { useAudioStore } from '../state/audioStore'
@@ -56,13 +57,22 @@ function createLevelMeter(stream: 'meeting' | 'mic'): (samples: Float32Array) =>
     closeLevel: TUNING.levelClose,
     holdMs: TUNING.levelHoldMs
   })
+  // the same estimator the segmenter runs, fed at the same 20ms cadence, so
+  // the floor shown in diagnostics is the floor transcription is actually
+  // gating against rather than a lookalike
+  const floor = new NoiseFloor()
+  const frameSize = Math.round((TUNING.asrSampleRate * TUNING.vadFrameMs) / 1000)
+  let live = false
   let lastPublishedAt = -Infinity
   let lastState: string | null = null
 
   return (samples: Float32Array) => {
     const now = Date.now()
+    for (let i = 0; i + frameSize <= samples.length; i += frameSize) {
+      floor.update(dbfs(rms(samples.subarray(i, i + frameSize))), live)
+    }
     const level = ballistics.push(rms(samples), now)
-    const live = gate.update(level, now)
+    live = gate.update(level, now)
     const state = live ? 'live' : 'silent'
     // publish on a material state change immediately, otherwise at ~10Hz
     if (state === lastState && now - lastPublishedAt < TUNING.levelPublishMinIntervalMs) return
@@ -72,7 +82,7 @@ function createLevelMeter(stream: 'meeting' | 'mic'): (samples: Float32Array) =>
     // a capture failure owns the state until it clears — never overwrite
     // 'no-track' with 'silent', which is what made a dead source look alive
     if (current.state === 'no-track') return
-    useAudioStore.getState().publish(stream, { level, state })
+    useAudioStore.getState().publish(stream, { level, state, floorDbfs: floor.value })
   }
 }
 
@@ -86,6 +96,18 @@ function tee(t: Transcriber): Transcriber & { subscribe(cb: (s: Segment) => void
     onSegment: (cb) => subs.push(cb),
     subscribe: (cb) => subs.push(cb)
   }
+}
+
+/** "live, but zero segments" is the signature of audio arriving and never
+ *  surviving transcription — the one failure diagnostics can't infer from
+ *  levels alone, so the count has to come from the transcriber itself */
+function countSegments(
+  t: { subscribe(cb: (s: Segment) => void): void },
+  stream: 'meeting' | 'mic'
+): void {
+  t.subscribe((s) => {
+    if (s.confirmed) useAudioStore.getState().countSegment(stream)
+  })
 }
 
 /** start the capture sources so the setup screen's dots/meters go live */
@@ -273,6 +295,8 @@ export function startSession(opts: StartOptions = {}): void {
     const d = driver
     const them = tee(d.meetingTranscriber)
     const you = tee(d.micTranscriber)
+    countSegments(them, 'meeting')
+    countSegments(you, 'mic')
     engine = new SessionEngine(them, you, nullEmbeddings())
     // the fixture knows which phrase each question matched on — apply it to the
     // transcript entry when the engine's trigger-substring pass didn't
@@ -307,7 +331,11 @@ export function startSession(opts: StartOptions = {}): void {
     }
     realEmbeddings = new WorkerEmbeddings(modelPath)
     const cache = new EmbeddingCache(realEmbeddings)
-    engine = new SessionEngine(realTranscribers.them, realTranscribers.you, cache)
+    const them = tee(realTranscribers.them)
+    const you = tee(realTranscribers.you)
+    countSegments(them, 'meeting')
+    countSegments(you, 'mic')
+    engine = new SessionEngine(them, you, cache)
     // pre-warm the bank's questions and points while the interviewer is still
     // on small talk
     const answers = bank.answers.filter((a) => a.loopIds.includes(bank.activeLoopId))

@@ -11,6 +11,7 @@ const source = (over: Partial<SourceStatus> = {}): SourceStatus => ({
   deviceLabel: null,
   error: null,
   segments: 3,
+  floorDbfs: -70,
   ...over
 })
 

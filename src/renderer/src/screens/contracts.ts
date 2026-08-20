@@ -268,6 +268,10 @@ export interface DiagnosticSourceView {
   device: string | null
   /** "−31 dB" — dB is the unit that makes "too quiet" legible */
   levelDb: string
+  /** "−62 dB · speech opens at −53 dB": the room noise estimate and the bar
+   *  your voice has to clear. Reading these two next to the level is what
+   *  turns "it isn't working" into "you're 8 dB under the threshold". */
+  floorDb: string
   /** confirmed transcript segments so far; live with zero segments is the
    *  signature of audio arriving but never getting through transcription */
   segments: number

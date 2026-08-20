@@ -30,6 +30,10 @@ export interface SourceStatus {
   error: string | null
   /** rolling count of confirmed transcript segments, for diagnostics */
   segments: number
+  /** estimated room-noise floor in dBFS, or null before enough audio has
+   *  arrived to estimate one. This is the number that makes "my mic is too
+   *  quiet" a fact rather than a guess: speech has to clear it by vadOpenDb. */
+  floorDbfs: number | null
 }
 
 const EMPTY: SourceStatus = {
@@ -37,7 +41,8 @@ const EMPTY: SourceStatus = {
   level: 0,
   deviceLabel: null,
   error: null,
-  segments: 0
+  segments: 0,
+  floorDbfs: null
 }
 
 interface AudioState {

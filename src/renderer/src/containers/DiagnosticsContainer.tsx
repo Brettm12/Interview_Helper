@@ -3,7 +3,7 @@ import DiagnosticsPanel from '../screens/diagnostics/DiagnosticsPanel'
 import { useAudioStore } from '../state/audioStore'
 import { usePanelStore } from '../state/panelStore'
 import { useSessionStore } from '../state/sessionStore'
-import { diagnose, formatLevelDb } from '../lib/diagnose'
+import { diagnose, formatFloorDb, formatLevelDb } from '../lib/diagnose'
 import { api } from '../lib/api'
 
 export default function DiagnosticsContainer(): JSX.Element | null {
@@ -37,6 +37,7 @@ export default function DiagnosticsContainer(): JSX.Element | null {
           state: meeting.state,
           device: meeting.deviceLabel ?? meetingLabel,
           levelDb: formatLevelDb(meeting),
+          floorDb: formatFloorDb(meeting),
           segments: meeting.segments,
           error: meeting.error
         },
@@ -45,6 +46,7 @@ export default function DiagnosticsContainer(): JSX.Element | null {
           state: mic.state,
           device: mic.deviceLabel ?? micLabel,
           levelDb: formatLevelDb(mic),
+          floorDb: formatFloorDb(mic),
           segments: mic.segments,
           error: mic.error
         }

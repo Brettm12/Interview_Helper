@@ -1,23 +1,14 @@
 import type { AudioChunk, AudioSource, Segment, Transcriber } from '@shared/types'
 import type { EmbeddingProvider } from '../embeddings'
 import captureWorkletUrl from './capture.worklet.ts?worker&url'
+import { Biquad, Resampler } from '../dsp/resample'
+import { TUNING } from '@shared/tuning'
 
 // Real capture path. Speaker attribution comes from stream identity:
 // system/meeting audio is `them`, the microphone is `you` — two transcriber
 // instances, one per stream. All processing stays on this machine.
 
-const TARGET_RATE = 16000
-
-function downsampleTo16k(input: Float32Array, inputRate: number): Float32Array {
-  if (inputRate === TARGET_RATE) return input
-  const ratio = inputRate / TARGET_RATE
-  const outLength = Math.floor(input.length / ratio)
-  const out = new Float32Array(outLength)
-  for (let i = 0; i < outLength; i++) {
-    out[i] = input[Math.floor(i * ratio)]
-  }
-  return out
-}
+const TARGET_RATE = TUNING.asrSampleRate
 
 abstract class MediaStreamSource implements AudioSource {
   private cb: ((c: AudioChunk) => void) | null = null
@@ -25,8 +16,12 @@ abstract class MediaStreamSource implements AudioSource {
   private ctx: AudioContext | null = null
   private node: AudioWorkletNode | null = null
   private mediaStream: MediaStream | null = null
-  private startedAt = 0
   private disposed = false
+  private resampler: Resampler | null = null
+  private highpass: Biquad | null = null
+  /** output samples emitted so far — the session clock is derived from this
+   *  rather than Date.now(), so main-thread jank cannot shift timestamps */
+  private producedSamples = 0
 
   constructor(private streamName: 'meeting' | 'mic') {}
 
@@ -45,25 +40,38 @@ abstract class MediaStreamSource implements AudioSource {
       this.mediaStream.getTracks().forEach((t) => t.stop())
       return
     }
-    this.startedAt = Date.now()
     this.ctx = new AudioContext()
     // capture runs on the audio thread; ScriptProcessorNode (deprecated,
     // main-thread) would jank the panel
     await this.ctx.audioWorklet.addModule(captureWorkletUrl)
     if (this.disposed) return
     const src = this.ctx.createMediaStreamSource(this.mediaStream)
+    const inRate = this.ctx.sampleRate
+    this.highpass = Biquad.highpass(inRate, TUNING.inputHighpassHz)
+    this.resampler = new Resampler(inRate, TARGET_RATE, {
+      zeroCrossings: TUNING.resamplerZeroCrossings,
+      rolloff: TUNING.resamplerRolloff,
+      phases: TUNING.resamplerPhases
+    })
     this.node = new AudioWorkletNode(this.ctx, 'capture', {
       numberOfInputs: 1,
-      channelCount: 1
+      channelCount: 1,
+      // 'explicit' is what actually makes the graph downmix to mono. Under the
+      // default 'max' the channelCount above is ignored and the worklet only
+      // ever saw the left channel — the right one was silently discarded.
+      channelCountMode: 'explicit',
+      channelInterpretation: 'speakers'
     })
     this.node.port.onmessage = (e: MessageEvent<Float32Array>) => {
-      const inRate = this.ctx?.sampleRate ?? 48000
-      this.cb?.({
-        stream: this.streamName,
-        samples: downsampleTo16k(e.data, inRate),
-        sampleRate: TARGET_RATE,
-        t: (Date.now() - this.startedAt) / 1000
-      })
+      if (!this.resampler || !this.highpass) return
+      // high-pass first so rumble never reaches the level estimate, then
+      // resample properly rather than dropping two of every three samples
+      const filtered = this.highpass.process(e.data)
+      const samples = this.resampler.process(filtered)
+      if (samples.length === 0) return
+      const t = this.producedSamples / TARGET_RATE
+      this.producedSamples += samples.length
+      this.cb?.({ stream: this.streamName, samples, sampleRate: TARGET_RATE, t })
     }
     // zero-gain sink keeps the graph pulled without echoing the meeting (or
     // your own mic) out of the speakers
@@ -76,6 +84,8 @@ abstract class MediaStreamSource implements AudioSource {
 
   stop(): void {
     this.disposed = true
+    this.resampler = null
+    this.highpass = null
     this.node?.disconnect()
     this.mediaStream?.getTracks().forEach((t) => t.stop())
     void this.ctx?.close()
@@ -130,7 +140,7 @@ export class WhisperTranscriber implements Transcriber {
   private cb: ((s: Segment) => void) | null = null
   ready = false
 
-  constructor(speaker: 'you' | 'them', modelPath: string) {
+  constructor(speaker: 'you' | 'them', modelPath: string, modelId?: string) {
     this.worker = new Worker(new URL('../../workers/transcriber.worker.ts', import.meta.url), {
       type: 'module'
     })
@@ -143,7 +153,7 @@ export class WhisperTranscriber implements Transcriber {
         console.warn('[transcriber]', msg.message)
       }
     }
-    this.worker.postMessage({ type: 'init', modelPath, speaker })
+    this.worker.postMessage({ type: 'init', modelPath, speaker, modelId })
   }
 
   push(chunk: AudioChunk): void {
@@ -154,6 +164,16 @@ export class WhisperTranscriber implements Transcriber {
 
   onSegment(cb: (s: Segment) => void): void {
     this.cb = cb
+  }
+
+  /** end of capture: transcribe whatever is mid-sentence instead of losing it */
+  flush(): void {
+    this.worker.postMessage({ type: 'flush' })
+  }
+
+  /** pause: throw away audio in progress, keep the loaded model */
+  reset(): void {
+    this.worker.postMessage({ type: 'reset' })
   }
 
   dispose(): void {

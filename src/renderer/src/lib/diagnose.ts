@@ -1,4 +1,5 @@
 import type { SourceStatus } from '../state/audioStore'
+import { TUNING } from '@shared/tuning'
 import { dbfs } from './dsp/level'
 
 // Turns capture state into one plain sentence naming the most likely problem.
@@ -34,7 +35,13 @@ export function diagnose(input: DiagnoseInput): string {
   // audio is arriving — is it usable?
   const micTooQuiet = mic.state === 'live' && dbfs(mic.level) < -45
   if (micTooQuiet) {
-    return `Your microphone is very quiet (${dbfs(mic.level).toFixed(0)} dB). Move closer, raise the input gain in System Settings → Sound, or pick a better input — quiet audio transcribes poorly.`
+    // the headroom over the room is the number that actually predicts whether
+    // speech will be detected — an absolute level alone doesn't
+    const headroom =
+      mic.floorDbfs == null
+        ? ''
+        : `, only ${Math.max(0, dbfs(mic.level) - mic.floorDbfs).toFixed(0)} dB above the room noise`
+    return `Your microphone is very quiet (${dbfs(mic.level).toFixed(0)} dB${headroom}). Move closer, raise the input gain in System Settings → Sound, or pick a better input — quiet audio transcribes poorly.`
   }
   if (mic.state === 'live' && mic.segments === 0) {
     return 'Your microphone is producing audio but nothing has been transcribed yet. If this persists while you speak, transcription is not keeping up or the model failed to load.'
@@ -59,4 +66,11 @@ export function formatLevelDb(status: SourceStatus): string {
   if (status.state === 'idle' || status.state === 'no-track') return '—'
   const db = dbfs(status.level)
   return db <= -119 ? 'silent' : `${db.toFixed(0)} dB`
+}
+
+/** "−62 dB · speech opens at −53 dB" — the room, and the bar to clear it */
+export function formatFloorDb(status: SourceStatus): string {
+  if (status.floorDbfs == null || status.state === 'idle' || status.state === 'no-track') return '—'
+  const openAt = Math.max(status.floorDbfs + TUNING.vadOpenDb, TUNING.vadAbsoluteOpenDbfs)
+  return `${status.floorDbfs.toFixed(0)} dB · speech opens at ${openAt.toFixed(0)} dB`
 }

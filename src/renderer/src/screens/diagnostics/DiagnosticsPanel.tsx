@@ -35,6 +35,7 @@ function Source({ source }: { source: DiagnosticSourceView }): JSX.Element {
       </div>
       <Row label="device" value={source.device ?? '—'} />
       <Row label="level" value={source.levelDb} />
+      <Row label="noise floor" value={source.floorDb} />
       <Row
         label="segments"
         value={String(source.segments)}
