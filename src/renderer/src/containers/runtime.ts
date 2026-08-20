@@ -279,6 +279,16 @@ export async function runMicTest(): Promise<void> {
   }
 
   prepareAudio()
+  // a source that never opened would spend 25 seconds arriving at "heard
+  // nothing", which names the symptom and hides the cause
+  const micState = useAudioStore.getState().mic
+  if (micState.state === 'no-track') {
+    audio.setMicTest({
+      state: 'failed',
+      error: micState.error ?? 'The microphone did not open. Pick a different input above.'
+    })
+    return
+  }
   audio.setMicTest({ state: 'recording' })
 
   const modelPath = IN_ELECTRON ? MODELS_URL_PREFIX : 'models'
