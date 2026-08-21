@@ -1,0 +1,46 @@
+{
+  "comment": "Calibration fixture for the real-MiniLM matching test. paraphrases: honest interviewer rewordings of seed questions — the matcher must put the right entry on top at ambiguous or better. offBank: questions the bank does not cover — must classify none. triggerAbuse: statements/questions that merely brush against trigger phrases — must never classify confident.",
+  "paraphrases": [
+    { "text": "Describe the toughest people issue you've ever had to sort out.", "entryId": "a-er-case" },
+    { "text": "Can you give me an example of a really messy employee situation you managed?", "entryId": "a-er-case" },
+    { "text": "Tell me about pushing back on someone senior and actually winning them over.", "entryId": "a-disagree" },
+    { "text": "Have you ever changed a leader's mind when you thought they were wrong?", "entryId": "a-disagree" },
+    { "text": "What's an error you made at work that genuinely cost something?", "entryId": "a-mistake" },
+    { "text": "Tell me about a time you got it badly wrong.", "entryId": "a-mistake" },
+    { "text": "When everything lands on your desk at the same time, how do you decide what happens first?", "entryId": "a-pressure" },
+    { "text": "How do you juggle several urgent people issues in the same week?", "entryId": "a-pressure" },
+    { "text": "Tell me about working with a stakeholder who was really hard to deal with.", "entryId": "a-stakeholder" },
+    { "text": "What are your steps when someone brings you a workplace harassment allegation?", "entryId": "a-invest-run" },
+    { "text": "Take me through your investigation process, from complaint to outcome.", "entryId": "a-invest-run" },
+    { "text": "What if someone confides a serious harassment complaint but begs you to keep it quiet?", "entryId": "a-informal" },
+    { "text": "Someone claims their boss is punishing them for speaking up — what do you do right away?", "entryId": "a-retaliation" },
+    { "text": "Walk me through your immediate response to a retaliation concern.", "entryId": "a-retaliation" },
+    { "text": "How do you help a manager whose team keeps quitting on them?", "entryId": "a-coach" },
+    { "text": "What do you do when a manager is overworking their team into the ground?", "entryId": "a-coach" },
+    { "text": "Tell me about a firing that got complicated.", "entryId": "a-term" },
+    { "text": "Describe a dismissal that didn't go smoothly.", "entryId": "a-term" },
+    { "text": "How do you keep policies consistent when every region has different employment law?", "entryId": "a-multi" },
+    { "text": "Tell me about launching a change nobody wanted.", "entryId": "a-policy" },
+    { "text": "How did you handle introducing an unpopular rule?", "entryId": "a-policy" },
+    { "text": "If an executive pressured you to make an exception to the rules, what would you do?", "entryId": "a-bend" },
+    { "text": "How would you respond if leadership asked you to look the other way?", "entryId": "a-bend" },
+    { "text": "Why do you want to work with us specifically?", "entryId": "a-why" },
+    { "text": "Where do you see yourself in five years?", "entryId": "a-career" },
+    { "text": "What are your long-term goals in HR?", "entryId": "a-career" }
+  ],
+  "offBank": [
+    { "text": "So, um, tell me a little about yourself and your background." },
+    { "text": "What salary range are you looking for in this role?" },
+    { "text": "Do you have any questions for us?" },
+    { "text": "What's your current notice period?" },
+    { "text": "How was your weekend — ready to get started?" }
+  ],
+  "triggerAbuse": [
+    { "text": "We're not asking you to bend the rules here, just to be pragmatic about the timeline." },
+    { "text": "I see from your CV that you handled a difficult employee relations case at your last company." },
+    { "text": "Harassment complaint numbers are down across the industry, which is interesting context." },
+    { "text": "We had a manager burning out their team last year — it was a mess, honestly." },
+    { "text": "Five tears in this job would break anyone, as my old boss used to say." },
+    { "text": "Tell us why you left your last role." }
+  ]
+}
