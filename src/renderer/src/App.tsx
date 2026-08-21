@@ -4,7 +4,7 @@ import { useAudioStore } from './state/audioStore'
 import { useBankStore } from './state/bankStore'
 import { usePanelStore } from './state/panelStore'
 import { useSessionStore } from './state/sessionStore'
-import { useSettingsStore } from './state/settingsStore'
+import { startSettingsSync, useSettingsStore } from './state/settingsStore'
 import { formatClock } from './lib/recap'
 import { pauseSession, recapCommand, setCollapsed, startBankSync } from './containers/runtime'
 import LiveContainer from './containers/LiveContainer'
@@ -140,7 +140,13 @@ export default function App(): JSX.Element {
         }
       })
     }
-    return startBankSync()
+    const stopBankSync = startBankSync()
+    // main and second windows also write settings (strip drag) — stay fresh
+    const stopSettingsSync = startSettingsSync()
+    return () => {
+      stopBankSync()
+      stopSettingsSync()
+    }
   }, [])
 
   // global shortcuts (Electron globalShortcut → 'command'; browser keydown shim)

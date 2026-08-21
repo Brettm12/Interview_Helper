@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import type { Answer, Bank, Story } from '@shared/types'
+import { BankSchema } from '@shared/schema'
 import { api } from '../lib/api'
+import { usePersistHealth } from './persistHealth'
 
 // Bank data + prep-surface UI state (selection, search, editing). Persisted
 // through the repository behind window.api; every mutation saves.
@@ -26,6 +28,11 @@ export interface StoryDraft {
 interface BankState {
   bank: Bank | null
   loaded: boolean
+  /** what loadBank actually returned — anything but 'file'/'new' means the
+   *  user is NOT looking at their own bank and must be told (REVIEW.md H8) */
+  loadSource: 'file' | 'bak' | 'seed' | 'new'
+  /** where the unreadable original was kept, when there was one */
+  quarantinedPath: string | null
   selectedAnswerId: string | null
   searchQuery: string
   /** non-null → pane 3 shows the editor */
@@ -56,6 +63,8 @@ interface BankState {
   closeImport(): void
   /** merge parsed entries into the active loop; returns how many landed */
   addAnswers(answers: Answer[]): Promise<number>
+  /** restore a full bank export verbatim — replaces everything (REVIEW.md M9) */
+  replaceBank(bank: Bank): Promise<void>
   selectStory(id: string): void
   newStory(): void
   updateStoryDraft(patch: Partial<StoryDraft>): void
@@ -68,9 +77,19 @@ interface BankState {
 
 let draftSeq = 0
 
+// every bank write goes through here: a failing save must become a visible
+// banner, not silent loss on relaunch (REVIEW.md H9). Never throws.
+const persist = (bank: Bank): Promise<void> =>
+  api.bank
+    .save(bank)
+    .then(() => usePersistHealth.getState().noteSuccess('bank'))
+    .catch((err) => usePersistHealth.getState().noteFailure('bank', err))
+
 export const useBankStore = create<BankState>((set, get) => ({
   bank: null,
   loaded: false,
+  loadSource: 'new',
+  quarantinedPath: null,
   selectedAnswerId: null,
   searchQuery: '',
   draft: null,
@@ -80,10 +99,13 @@ export const useBankStore = create<BankState>((set, get) => ({
   importOpen: false,
 
   load: async () => {
-    const bank = await api.bank.load()
+    const res = await api.bank.load()
+    const bank = res.bank
     set({
       bank,
       loaded: true,
+      loadSource: res.source,
+      quarantinedPath: res.quarantinedPath ?? null,
       selectedAnswerId:
         get().selectedAnswerId ?? bank.answers.find((a) => a.loopIds.includes(bank.activeLoopId))?.id ?? null
     })
@@ -98,7 +120,7 @@ export const useBankStore = create<BankState>((set, get) => ({
       selectedAnswerId: next.answers.find((a) => a.loopIds.includes(id))?.id ?? null,
       filterIds: null
     })
-    void api.bank.save(next)
+    void persist(next)
   },
 
   selectAnswer: (id) => set({ selectedAnswerId: id, draft: null, storiesOpen: false, importOpen: false }),
@@ -184,7 +206,7 @@ export const useBankStore = create<BankState>((set, get) => ({
     }
     const next = { ...bank, answers }
     set({ bank: next, draft: null, selectedAnswerId: selectedId })
-    await api.bank.save(next)
+    await persist(next)
   },
 
   addTrigger: async (answerId, phrase) => {
@@ -201,7 +223,7 @@ export const useBankStore = create<BankState>((set, get) => ({
       )
     }
     set({ bank: next })
-    await api.bank.save(next)
+    await persist(next)
   },
 
   removeTrigger: async (answerId, phrase) => {
@@ -214,7 +236,7 @@ export const useBankStore = create<BankState>((set, get) => ({
       )
     }
     set({ bank: next })
-    await api.bank.save(next)
+    await persist(next)
   },
 
   // ---- shared stories library (pane 3) ----
@@ -229,9 +251,35 @@ export const useBankStore = create<BankState>((set, get) => ({
     const bank = get().bank
     if (!bank || answers.length === 0) return 0
     const next: Bank = { ...bank, answers: [...bank.answers, ...answers] }
+    // validate BEFORE set(): an import that main's saver would reject used to
+    // poison the in-memory bank and every later save failed silently until
+    // restart (REVIEW.md M7)
+    const checked = BankSchema.safeParse(next)
+    if (!checked.success) {
+      usePersistHealth.getState().noteFailure('bank', new Error('import produced an invalid bank — nothing was changed'))
+      return 0
+    }
     set({ bank: next })
-    await api.bank.save(next)
+    await persist(next)
     return answers.length
+  },
+
+  replaceBank: async (bank) => {
+    // full restore of a backup export — parse first so a hand-edited file
+    // can't put an invalid bank in memory
+    const checked = BankSchema.safeParse(bank)
+    if (!checked.success) {
+      usePersistHealth.getState().noteFailure('bank', new Error('that backup is not a valid bank'))
+      return
+    }
+    const next = checked.data as Bank
+    set({
+      bank: next,
+      selectedAnswerId: next.answers.find((a) => a.loopIds.includes(next.activeLoopId))?.id ?? null,
+      draft: null,
+      filterIds: null
+    })
+    await persist(next)
   },
 
   selectStory: (id) => {
@@ -269,7 +317,7 @@ export const useBankStore = create<BankState>((set, get) => ({
       : [...bank.stories, { id: `story-new-${Date.now()}-${draftSeq++}`, ...value }]
     const next = { ...bank, stories }
     set({ bank: next, storyDraft: null })
-    await api.bank.save(next)
+    await persist(next)
   },
 
   markLastUsed: async (answerId, info) => {
@@ -280,7 +328,7 @@ export const useBankStore = create<BankState>((set, get) => ({
       answers: bank.answers.map((a) => (a.id === answerId ? { ...a, lastUsed: info } : a))
     }
     set({ bank: next })
-    await api.bank.save(next)
+    await persist(next)
   }
 }))
 

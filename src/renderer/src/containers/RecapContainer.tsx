@@ -12,7 +12,19 @@ import { api } from '../lib/api'
 
 export default function RecapContainer(): JSX.Element | null {
   const record = useSessionStore((s) => s.lastSession)
+  const saveError = useSessionStore((s) => s.saveError)
   const bank = useBankStore((s) => s.bank)
+
+  // a recovered (crashed-session) record has been surfaced now — clear the
+  // flag on disk so it stops shadowing newer recaps at every boot forever
+  // (REVIEW.md L9). The in-memory copy keeps it, so THIS view still says
+  // RECOVERED.
+  useEffect(() => {
+    if (record?.incomplete) {
+      const { incomplete: _surfaced, ...cleared } = record
+      void api.sessions.save(cleared).catch(() => {})
+    }
+  }, [record])
 
   const data = useMemo(
     () => (record && bank ? deriveRecap(record, bank) : null),
@@ -117,6 +129,7 @@ export default function RecapContainer(): JSX.Element | null {
       rows={rows}
       fixes={fixes}
       practiceCount={data.practiceEntryIds.length}
+      notice={saveError}
       onDeleteSession={doDelete}
       onSaveToLoop={() => {
         // the record was already persisted when the session ended — Save

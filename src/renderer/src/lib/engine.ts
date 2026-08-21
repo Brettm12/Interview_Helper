@@ -6,6 +6,7 @@ import type { EmbeddingCache } from './embeddings'
 import { useSessionStore } from '../state/sessionStore'
 import { useBankStore, answersForLoop } from '../state/bankStore'
 import { usePanelStore } from '../state/panelStore'
+import { usePersistHealth } from '../state/persistHealth'
 import { api } from './api'
 
 // The session engine wires transcriber segments → matcher → panel state, and
@@ -41,6 +42,10 @@ export class SessionEngine {
   private autoPickTimer: ReturnType<typeof setTimeout> | null = null
   private questionSeq = 0
   private youSegments: Segment[] = []
+  /** every confirmed line while the transcript toggle is on. The recap's
+   *  excerpts come from here — the UI's 200-line rolling ring emptied the
+   *  first half of a real-length interview (REVIEW.md H10). */
+  private keptLines: { speaker: 'you' | 'them'; text: string; t: number; highlight?: string }[] = []
   private stopped = false
   /** how many times each entry has been put on screen this session — the
    *  repeat prior reads this */
@@ -74,7 +79,10 @@ export class SessionEngine {
       const s = this.session
       if (this.stopped || (s.status !== 'listening' && s.status !== 'paused')) return
       if (s.questions.length === 0) return
-      void api.sessions.save(this.buildRecord(true)).catch(() => {})
+      void api.sessions
+        .save(this.buildRecord(true))
+        .then(() => usePersistHealth.getState().noteSuccess('sessions'))
+        .catch((err) => usePersistHealth.getState().noteFailure('sessions', err))
     }, TUNING.snapshotIntervalSec * 1000)
   }
 
@@ -90,6 +98,25 @@ export class SessionEngine {
   }
 
   // ---- interviewer stream ----
+
+  private keepLine(speaker: 'you' | 'them', seg: Segment): void {
+    if (!this.session.keepTranscript) return
+    this.keptLines.push({ speaker, text: seg.text, t: seg.t })
+    // ~9h of continuous confirmed speech — a leak guard, not a working limit
+    if (this.keptLines.length > 5000) this.keptLines.splice(0, this.keptLines.length - 5000)
+  }
+
+  /** attach the matched phrase to the kept line it fired on, so the recap can
+   *  show why (same annotation the UI ring gets) */
+  noteHighlight(text: string, highlight: string): void {
+    for (let i = this.keptLines.length - 1; i >= 0; i--) {
+      const line = this.keptLines[i]
+      if (line.speaker === 'them' && line.text === text) {
+        if (!line.highlight) line.highlight = highlight
+        return
+      }
+    }
+  }
 
   /** is the session accepting segments? While paused, only the trailing
    *  flush of speech from before the pause is let through (REVIEW.md M6) */
@@ -109,6 +136,7 @@ export class SessionEngine {
       this.onPartial(seg)
       return
     }
+    this.keepLine('them', seg)
     if (s.status === 'armed') s.setStatus('listening')
 
     this.window.push(seg)
@@ -367,6 +395,7 @@ export class SessionEngine {
     s.setClock(Math.max(s.clockSec, seg.t))
     s.appendTranscript({ speaker: 'you', text: seg.text, confirmed: seg.confirmed, t: seg.t })
     if (!seg.confirmed) return
+    this.keepLine('you', seg)
     this.youSegments.push(seg)
     this.window = [] // speaking is a turn boundary for the interviewer window
 
@@ -444,6 +473,7 @@ export class SessionEngine {
         updated[realIdx] = { ...updated[realIdx], highlight: phrase ?? undefined }
         useSessionStore.setState({ transcript: updated })
       }
+      if (phrase) this.noteHighlight(opts.heard, phrase)
     }
     s.setMatch({
       state: opts.viaFind ? 'pinned' : 'confident',
@@ -636,10 +666,13 @@ export class SessionEngine {
         mine.length === 0
           ? 0
           : Math.round(mine[mine.length - 1].t - mine[0].t + estimateSpokenSeconds(mine[mine.length - 1].text))
-      // privacy: excerpts only when the recap transcript toggle is on
+      // privacy: excerpts only when the recap transcript toggle is on.
+      // Sourced from the engine's own uncapped keep, not the UI's 200-line
+      // ring — the ring emptied the opening questions of any real-length
+      // interview (REVIEW.md H10).
       const transcript = s.keepTranscript
-        ? s.transcript
-            .filter((e) => e.confirmed && e.t >= from && e.t < to)
+        ? this.keptLines
+            .filter((e) => e.t >= from && e.t < to)
             .map((e) => ({ speaker: e.speaker, text: e.text, highlight: e.highlight }))
         : undefined
       return { ...q, micSeconds, transcript }
@@ -668,23 +701,35 @@ export class SessionEngine {
     const record = this.buildRecord(false)
     s.setLastSession(record)
     s.setStatus('idle')
-    await api.sessions.save(record)
-    // stamp lastUsed on every matched entry
-    const bankState = useBankStore.getState()
-    const loop = bankState.bank?.loops.find((l) => l.id === record.loopId)
-    const date = new Date(record.endedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-    for (const q of record.questions) {
-      if (q.entryId) {
-        void bankState.markLastUsed(q.entryId, {
-          loopName: loop?.shortName ?? 'session',
-          date,
-          covered: q.coveredPointIds.length,
-          total: q.totalPoints
-        })
+    try {
+      // a disk error here used to strand the app on the live view with the
+      // mic still hot: no recap, no capture teardown (REVIEW.md M5). The recap
+      // opens from memory regardless; the failure is reported on it.
+      await api.sessions.save(record)
+      s.setSaveError(null)
+    } catch (err) {
+      s.setSaveError(
+        `This session could not be saved — ${err instanceof Error ? err.message : String(err)}. ` +
+          'The recap below is from memory; export it before closing the app.'
+      )
+    } finally {
+      // stamp lastUsed on every matched entry (persist() surfaces any failure)
+      const bankState = useBankStore.getState()
+      const loop = bankState.bank?.loops.find((l) => l.id === record.loopId)
+      const date = new Date(record.endedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+      for (const q of record.questions) {
+        if (q.entryId) {
+          void bankState.markLastUsed(q.entryId, {
+            loopName: loop?.shortName ?? 'session',
+            date,
+            covered: q.coveredPointIds.length,
+            total: q.totalPoints
+          })
+        }
       }
+      usePanelStore.getState().setView('recap')
+      usePanelStore.getState().setCollapsed(false)
     }
-    usePanelStore.getState().setView('recap')
-    usePanelStore.getState().setCollapsed(false)
     return record
   }
 }

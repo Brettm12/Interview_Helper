@@ -1,4 +1,5 @@
-import type { Answer, Bank, Point } from '@shared/types'
+import type { Answer, Bank } from '@shared/types'
+import { BankSchema } from '@shared/schema'
 import { diceCoefficient, normalize } from './text'
 
 // Getting prepared material in and out.
@@ -29,6 +30,10 @@ export interface ImportPreview {
   duplicates: number
   /** why nothing could be read, when entries is empty */
   problem: string | null
+  /** the paste is a complete valid bank export — offer an exact restore
+   *  (sections, loops, ids, stories intact) instead of only the flattening
+   *  merge (REVIEW.md M9) */
+  fullBank: Bank | null
 }
 
 /** a question and its bullets are close enough to an existing entry that
@@ -118,30 +123,60 @@ function parseNotes(text: string): ParsedEntry[] {
   )
 }
 
-function parseJson(text: string): { entries: ParsedEntry[]; problem: string | null } {
+interface JsonParse {
+  entries: ParsedEntry[]
+  problem: string | null
+  fullBank: Bank | null
+}
+
+function parseJson(text: string): JsonParse {
   let data: unknown
   try {
     data = JSON.parse(text)
   } catch {
-    return { entries: [], problem: 'That looks like JSON but it could not be parsed.' }
+    return { entries: [], problem: 'That looks like JSON but it could not be parsed.', fullBank: null }
   }
-  const answers = (data as Partial<Bank>)?.answers
-  if (!Array.isArray(answers)) {
-    return { entries: [], problem: 'That JSON has no `answers` array — is it a bank export?' }
-  }
-  const stories = (data as Partial<Bank>)?.stories ?? []
-  const entries = answers
-    .filter((a): a is Answer => typeof a?.question === 'string' && a.question.trim().length > 0)
-    .map((a) => ({
-      question: a.question.trim(),
-      points: (a.points ?? []).map((p: Point) => p.text).filter(Boolean),
-      triggerPhrases: a.triggerPhrases ?? [],
-      storyTitle: stories.find((s) => s.id === a.storyId)?.title ?? null,
-      duplicateOf: null
-    }))
-  return {
-    entries,
-    problem: entries.length === 0 ? 'That bank export contains no answers.' : null
+  // a complete export validates against the real schema — that one can be
+  // restored exactly, instead of flattened to question+points (REVIEW.md M9)
+  const asBank = BankSchema.safeParse(data)
+  const fullBank = asBank.success ? (asBank.data as Bank) : null
+
+  // Every field is sanitised, not passed through: shapes the saver would
+  // reject used to sail through the preview, poison the in-memory bank, and
+  // turn every later save into a silent no-op (M7) — or throw mid-render and
+  // eat the paste via the error boundary (M8).
+  try {
+    const answers = (data as Partial<Bank>)?.answers
+    if (!Array.isArray(answers)) {
+      return { entries: [], problem: 'That JSON has no `answers` array — is it a bank export?', fullBank }
+    }
+    const rawStories = (data as Partial<Bank>)?.stories
+    const stories = Array.isArray(rawStories) ? rawStories : []
+    const entries = answers
+      .filter(
+        (a): a is Answer =>
+          typeof (a as Answer | null)?.question === 'string' &&
+          (a as Answer).question.trim().length > 0
+      )
+      .map((a) => ({
+        question: a.question.trim(),
+        points: (Array.isArray(a.points) ? a.points : [])
+          .map((p) => (typeof p === 'string' ? p : typeof p?.text === 'string' ? p.text : ''))
+          .filter(Boolean),
+        triggerPhrases: (Array.isArray(a.triggerPhrases) ? a.triggerPhrases : []).filter(
+          (t): t is string => typeof t === 'string'
+        ),
+        storyTitle:
+          stories.find((s) => typeof s?.title === 'string' && s.id === a.storyId)?.title ?? null,
+        duplicateOf: null
+      }))
+    return {
+      entries,
+      problem: entries.length === 0 ? 'That bank export contains no answers.' : null,
+      fullBank
+    }
+  } catch {
+    return { entries: [], problem: 'That JSON does not look like a bank export.', fullBank }
   }
 }
 
@@ -149,13 +184,20 @@ function parseJson(text: string): { entries: ParsedEntry[]; problem: string | nu
 export function parseBankText(text: string, existing: Answer[] = []): ImportPreview {
   const trimmed = text.trim()
   if (!trimmed) {
-    return { format: 'notes', entries: [], pointless: 0, duplicates: 0, problem: 'Nothing to import.' }
+    return {
+      format: 'notes',
+      entries: [],
+      pointless: 0,
+      duplicates: 0,
+      problem: 'Nothing to import.',
+      fullBank: null
+    }
   }
 
   const isJson = trimmed.startsWith('{') || trimmed.startsWith('[')
-  const { entries, problem } = isJson
+  const { entries, problem, fullBank } = isJson
     ? parseJson(trimmed)
-    : { entries: parseNotes(trimmed), problem: null }
+    : { entries: parseNotes(trimmed), problem: null, fullBank: null }
 
   for (const entry of entries) {
     entry.duplicateOf = findDuplicate(entry.question, existing)
@@ -169,7 +211,8 @@ export function parseBankText(text: string, existing: Answer[] = []): ImportPrev
       problem ??
       (entries.length === 0
         ? 'No questions found. Put each question on its own line (or as a heading) with its points as bullets underneath.'
-        : null)
+        : null),
+    fullBank
   }
 }
 

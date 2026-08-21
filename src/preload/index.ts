@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AppCommand, HelperApi, ModelProgress, StripState } from '../shared/ipc'
+import type { Settings } from '../shared/types'
 
 const api: HelperApi = {
   bank: {
@@ -18,7 +19,12 @@ const api: HelperApi = {
   },
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
-    save: (s) => ipcRenderer.invoke('settings:save', s)
+    update: (patch) => ipcRenderer.invoke('settings:update', patch),
+    onDidChange: (cb) => {
+      const listener = (_e: unknown, s: Settings): void => cb(s)
+      ipcRenderer.on('settings:did-change', listener)
+      return () => ipcRenderer.removeListener('settings:did-change', listener)
+    }
   },
   permissions: {
     status: () => ipcRenderer.invoke('permissions:status'),

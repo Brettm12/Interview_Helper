@@ -52,6 +52,9 @@ interface SessionState {
   questions: SessionQuestion[]
   /** finished record, feeds the recap screen */
   lastSession: SessionRecord | null
+  /** the final save failed — the recap shows this instead of pretending the
+   *  record is on disk (REVIEW.md M5) */
+  saveError: string | null
 
   arm(loopId: string, keepTranscript: boolean): void
   setStatus(s: SessionStatus): void
@@ -67,6 +70,7 @@ interface SessionState {
   pushHistory(row: HistoryRow): void
   upsertQuestion(q: SessionQuestion): void
   setLastSession(s: SessionRecord | null): void
+  setSaveError(message: string | null): void
   reset(): void
 }
 
@@ -84,9 +88,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   history: [],
   questions: [],
   lastSession: null,
+  saveError: null,
 
   arm: (loopId, keepTranscript) =>
     set({
+      saveError: null,
       status: 'armed',
       loopId,
       keepTranscript,
@@ -145,6 +151,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }),
 
   setLastSession: (lastSession) => set({ lastSession }),
+  setSaveError: (saveError) => set({ saveError }),
 
   reset: () =>
     set({

@@ -9,23 +9,27 @@ export const PointSchema = z.object({
   text: z.string()
 })
 
-export const AnswerSchema = z.object({
-  id: z.string(),
-  question: z.string(),
-  sectionId: z.string(),
-  loopIds: z.array(z.string()),
-  points: z.array(PointSchema),
-  storyId: z.string().nullable(),
-  triggerPhrases: z.array(z.string()),
-  lastUsed: z
-    .object({
-      loopName: z.string(),
-      date: z.string(),
-      covered: z.number(),
-      total: z.number()
-    })
-    .nullable()
-})
+// .passthrough(): unknown fields survive a round-trip through an old build
+// instead of being silently stripped on the next save (REVIEW.md L18)
+export const AnswerSchema = z
+  .object({
+    id: z.string(),
+    question: z.string(),
+    sectionId: z.string(),
+    loopIds: z.array(z.string()),
+    points: z.array(PointSchema),
+    storyId: z.string().nullable(),
+    triggerPhrases: z.array(z.string()),
+    lastUsed: z
+      .object({
+        loopName: z.string(),
+        date: z.string(),
+        covered: z.number(),
+        total: z.number()
+      })
+      .nullable()
+  })
+  .passthrough()
 
 export const StorySchema = z.object({
   id: z.string(),
@@ -48,13 +52,16 @@ export const LoopSchema = z.object({
   likelyOpeners: z.array(z.string())
 })
 
-export const BankSchema = z.object({
-  loops: z.array(LoopSchema),
-  sections: z.array(SectionSchema),
-  answers: z.array(AnswerSchema),
-  stories: z.array(StorySchema),
-  activeLoopId: z.string()
-})
+export const BankSchema = z
+  .object({
+    version: z.number().default(1),
+    loops: z.array(LoopSchema),
+    sections: z.array(SectionSchema),
+    answers: z.array(AnswerSchema),
+    stories: z.array(StorySchema),
+    activeLoopId: z.string()
+  })
+  .passthrough()
 
 export const TranscriptLineSchema = z.object({
   speaker: z.enum(['you', 'them']),
@@ -92,6 +99,7 @@ export const SessionsFileSchema = z.array(SessionRecordSchema)
 // required field would silently wipe an existing user's placement, transcript
 // preference and strip position on upgrade.
 export const SettingsSchema = z.object({
+  version: z.number().default(1),
   contentProtection: z.boolean(),
   keepTranscript: z.boolean(),
   placement: z.enum(['docked', 'strip', 'second-screen']),

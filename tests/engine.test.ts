@@ -4,6 +4,8 @@ import { MockTranscriber } from '@/lib/drivers/mock'
 import { deriveRecap } from '@/lib/recap'
 import { useSessionStore } from '@/state/sessionStore'
 import { useBankStore } from '@/state/bankStore'
+import { usePanelStore } from '@/state/panelStore'
+import { api } from '@/lib/api'
 import script from '@/fixtures/demo-session.json'
 import type { SessionRecord } from '@shared/types'
 
@@ -393,5 +395,69 @@ describe('question-record integrity under close-together events', () => {
     const qs = useSessionStore.getState().questions
     expect(qs).toHaveLength(2)
     expect(qs.every((q) => q.entryId === null)).toBe(true)
+  })
+})
+
+// ---- persistence semantics at the end of a session --------------------------
+
+describe('session record durability', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+    useSessionStore.getState().setSaveError(null)
+  })
+
+  const ER = 'Tell me about a time you handled a really difficult employee relations case.'
+
+  it('minute-5 excerpts survive an hour-long session (REVIEW.md H10)', async () => {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', true)
+
+    // the opening question at minute 5, then ~55 minutes of talking: far more
+    // confirmed lines than the UI's 200-entry rolling ring holds
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 300 })
+    you.emit({ speaker: 'you', text: 'It started with two complaints about one supervisor.', confirmed: true, t: 310 })
+    for (let i = 0; i < 500; i++) {
+      you.emit({ speaker: 'you', text: `context line ${i} of the answer`, confirmed: true, t: 320 + i * 6 })
+    }
+    expect(useSessionStore.getState().transcript.length).toBeLessThanOrEqual(200) // the UI ring stays capped
+
+    const record = await engine.end()
+    const q = record.questions.find((x) => x.entryId === 'a-er-case')
+    const texts = (q?.transcript ?? []).map((l) => l.text)
+    // the ring-based derivation returned [] here — the first half of the
+    // interview had scrolled out before the recap was built
+    expect(texts).toContain(ER)
+    expect(texts).toContain('It started with two complaints about one supervisor.')
+    expect(texts.length).toBeGreaterThan(490)
+  })
+
+  it('a failed final save still tears down into the recap, visibly (REVIEW.md M5)', async () => {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', true)
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 3 })
+
+    const originalSave = api.sessions.save
+    api.sessions.save = () => Promise.reject(new Error('ENOSPC: disk full'))
+    try {
+      const record = await engine.end() // must NOT throw
+      expect(record.questions.length).toBeGreaterThan(0)
+      const s = useSessionStore.getState()
+      expect(s.status).toBe('idle')
+      expect(s.lastSession?.id).toBe(record.id)
+      expect(s.saveError).toMatch(/disk full/)
+      expect(usePanelStore.getState().view).toBe('recap')
+    } finally {
+      api.sessions.save = originalSave
+    }
   })
 })

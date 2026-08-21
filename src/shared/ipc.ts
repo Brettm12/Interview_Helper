@@ -26,6 +26,19 @@ export interface StripState {
   protectionOn: boolean
 }
 
+/** What loadBank actually did — the renderer must be able to tell "your own
+ *  bank" apart from a fallback. A corrupt bank.json silently replaced by the
+ *  demo seed, then overwritten by the first save, destroyed real prep
+ *  (REVIEW.md H8). */
+export interface BankLoadResult {
+  bank: Bank
+  /** file = your bank; bak = restored from the automatic backup;
+   *  seed = starter bank after a failed read; new = first run, nothing to read */
+  source: 'file' | 'bak' | 'seed' | 'new'
+  /** where the unreadable original was moved, when there was one */
+  quarantinedPath?: string
+}
+
 export interface ModelsStatus {
   /** userData/models — shown in the setup notice */
   dir: string
@@ -68,7 +81,7 @@ export type AppCommand =
 
 export interface HelperApi {
   bank: {
-    load(): Promise<Bank>
+    load(): Promise<BankLoadResult>
     save(bank: Bank): Promise<void>
     /** another window saved the bank — reload to stay fresh */
     onChanged(cb: () => void): () => void
@@ -80,7 +93,13 @@ export interface HelperApi {
   }
   settings: {
     load(): Promise<Settings>
-    save(s: Settings): Promise<void>
+    /** patch semantics through main's read-merge-write: two writers (renderer
+     *  saves vs main's strip-drag persistence) used to race full-object saves
+     *  and silently revert each other (REVIEW.md L10). Resolves to the merged
+     *  result. */
+    update(patch: Partial<Settings>): Promise<Settings>
+    /** settings changed (any writer) — stores refresh from this push */
+    onDidChange(cb: (s: Settings) => void): () => void
   }
   permissions: {
     status(): Promise<PermissionsInfo>

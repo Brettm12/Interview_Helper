@@ -736,6 +736,8 @@ export function startSession(opts: StartOptions = {}): void {
         transcript[idx] = { ...transcript[idx], highlight: hl }
         useSessionStore.setState({ transcript })
       }
+      // the recap excerpt reads from the engine's own keep, not the UI ring
+      engine?.noteHighlight(seg.text, hl)
     })
     wireControlEvents(d)
     stopPlayback = d.play()
@@ -764,19 +766,25 @@ export async function endSession(): Promise<void> {
   stopPlayback?.()
   stopPlayback = null
   void api.session.setActive(false)
-  if (engine) {
-    const e = engine
-    engine = null
-    await e.end() // saves the record, flips the view to recap
+  try {
+    if (engine) {
+      const e = engine
+      engine = null
+      await e.end() // flips the view to recap; a failed save surfaces THERE
+    }
+  } finally {
+    // capture teardown runs no matter what end() hit — a save error used to
+    // leave the mic hot on the live view after the user ended the interview
+    // (REVIEW.md M5)
+    // the models stay loaded: a second session in the same run should cost
+    // nothing, and disposing them here is what made every arm pay a cold start
+    models?.transcription.setEnabled(false)
+    models?.transcription.clearSubscribers()
+    zeroClock(false)
+    stripPublisherStop?.()
+    usePanelStore.getState().setCollapsed(false)
+    if (IN_ELECTRON) void api.windows.showStrip(false)
   }
-  // the models stay loaded: a second session in the same run should cost
-  // nothing, and disposing them here is what made every arm pay a cold start
-  models?.transcription.setEnabled(false)
-  models?.transcription.clearSubscribers()
-  zeroClock(false)
-  stripPublisherStop?.()
-  usePanelStore.getState().setCollapsed(false)
-  if (IN_ELECTRON) void api.windows.showStrip(false)
 }
 
 /** ⌘⇧R: during a session this IS the session end; idle, it reopens the last

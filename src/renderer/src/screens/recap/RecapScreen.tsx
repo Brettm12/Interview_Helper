@@ -97,6 +97,7 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
     rows,
     fixes,
     practiceCount,
+    notice,
     onDeleteSession,
     onSaveToLoop,
     onExport,
@@ -105,6 +106,7 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
 
   return (
     <div className="recap-screen">
+      {notice != null && <div className="recap-notice pretty">{notice}</div>}
       <div className="recap-header">
         <div>
           <Label style={{ marginBottom: 10 }}>{eyebrow}</Label>

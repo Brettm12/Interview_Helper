@@ -155,6 +155,8 @@ export interface BankDetailProps {
 }
 
 export interface BankScreenProps {
+  /** failure strip: unreadable bank on load, or saves not landing (H8/H9) */
+  banner?: string | null
   loops: { id: string; shortName: string }[]
   selectedLoopId: string
   sections: { id: string; name: string; count: number }[]
@@ -200,6 +202,9 @@ export interface ImportPaneProps {
   skipDuplicates: boolean
   onSkipDuplicates: (skip: boolean) => void
   onImport: () => void
+  /** the paste is a complete bank backup — offered as an exact restore that
+   *  REPLACES the whole bank (REVIEW.md M9); null when it isn't one */
+  onRestore?: (() => void) | null
   onExport: (format: 'md' | 'json') => void
   /** "Added 12 answers", "Saved to ~/Documents/bank.md" */
   result: string | null
@@ -298,6 +303,8 @@ export interface SetupScreenProps {
   onPlacement: (p: 'docked' | 'strip' | 'second-screen') => void
   /** one-line graceful error, e.g. only one display for second-screen */
   placementError: string | null
+  /** persistence failure strip: unreadable bank, or saves not landing (H8/H9) */
+  alert?: string | null
   /** on-device models missing → matching runs on the lexical fallback */
   modelsNotice?: string | null
   /** offered next to the notice; null while a download is running or done */
@@ -402,6 +409,8 @@ export interface RecapScreenProps {
   fixes: RecapFixView[]
   /** "Practice the N I missed →"; 0 hides the link */
   practiceCount: number
+  /** the final save failed — this recap exists only in memory (REVIEW.md M5) */
+  notice?: string | null
   onDeleteSession: () => void
   onSaveToLoop: () => void
   onExport: () => void

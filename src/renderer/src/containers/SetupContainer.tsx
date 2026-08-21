@@ -3,6 +3,7 @@ import type { Settings } from '@shared/types'
 import SetupScreen from '../screens/setup/SetupScreen'
 import { useAudioStore } from '../state/audioStore'
 import { useBankStore, answersForLoop } from '../state/bankStore'
+import { usePersistHealth } from '../state/persistHealth'
 import { usePanelStore } from '../state/panelStore'
 import { useSettingsStore } from '../state/settingsStore'
 import { WHISPER_TIERS, whisperTier } from '@shared/models'
@@ -32,6 +33,8 @@ export default function SetupContainer(): JSX.Element | null {
   const devices = useAudioStore((s) => s.inputDevices)
   const micTest = useAudioStore((s) => s.micTest)
   const pipelineNotice = useAudioStore((s) => s.pipelineNotice)
+  const saveProblem = usePersistHealth((s) => s.problem)
+  const loadSource = useBankStore((s) => s.loadSource)
   const settings = useSettingsStore()
   const [placementError, setPlacementError] = useState<string | null>(null)
   const [modelsNotice, setModelsNotice] = useState<string | null>(null)
@@ -278,6 +281,12 @@ export default function SetupContainer(): JSX.Element | null {
         void settings.update({ placement: p })
       }}
       placementError={placementError}
+      alert={
+        saveProblem ??
+        (loadSource === 'bak' || loadSource === 'seed'
+          ? 'Your bank could not be read — check the Bank screen before starting.'
+          : null)
+      }
       modelsNotice={pipelineNotice ?? modelsNotice}
       onDownloadModels={
         !api.env.mock && !downloading && modelsIncomplete ? downloadModels : null

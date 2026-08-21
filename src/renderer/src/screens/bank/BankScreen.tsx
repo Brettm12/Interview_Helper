@@ -106,6 +106,7 @@ function BankDetail(props: BankDetailProps): JSX.Element {
 
 const BankScreen = (props: BankScreenProps): JSX.Element => {
   const {
+    banner,
     loops,
     selectedLoopId,
     sections,
@@ -127,6 +128,7 @@ const BankScreen = (props: BankScreenProps): JSX.Element => {
 
   return (
     <div className="bank">
+      {banner != null && <div className="bank-banner pretty">{banner}</div>}
       {/* ---- pane 1: loops + sections ---- */}
       <div className="bank-side">
         <div className="bank-side__title">Question bank</div>

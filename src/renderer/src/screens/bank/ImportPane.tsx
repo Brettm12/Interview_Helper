@@ -27,6 +27,7 @@ export default function ImportPane(props: ImportPaneProps): JSX.Element {
     skipDuplicates,
     onSkipDuplicates,
     onImport,
+    onRestore,
     onExport,
     result,
     onClose
@@ -62,6 +63,19 @@ export default function ImportPane(props: ImportPaneProps): JSX.Element {
         {preview != null && (
           <div className="importer__group">
             <Label>WHAT I FOUND</Label>
+            {onRestore != null && (
+              <>
+                <div className="importer__summary">This is a complete bank backup.</div>
+                <div className="importer__hint pretty">
+                  Restore keeps sections, loops, stories and history exactly as exported — and
+                  replaces your ENTIRE current bank. Merging below adds its questions to this loop
+                  instead.
+                </div>
+                <div className="cta importer__cta" onClick={onRestore}>
+                  Restore this backup
+                </div>
+              </>
+            )}
             {preview.problem != null ? (
               <div className="importer__problem pretty">{preview.problem}</div>
             ) : (

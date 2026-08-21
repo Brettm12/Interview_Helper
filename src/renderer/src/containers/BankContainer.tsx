@@ -6,6 +6,7 @@ import StoriesPane from '../screens/bank/StoriesPane'
 import ImportPane from '../screens/bank/ImportPane'
 import type { BankDetailProps, BankGroupView, ImportPreviewView } from '../screens/contracts'
 import { useBankStore, answersForLoop, storyById, storyUsage } from '../state/bankStore'
+import { usePersistHealth } from '../state/persistHealth'
 import { entriesToAnswers, parseBankText, serializeBank } from '../lib/bankIO'
 import { normalize } from '../lib/text'
 import { api } from '../lib/api'
@@ -182,6 +183,15 @@ function ImportContainer(): JSX.Element {
       .then((path) => setResult(path ? `Saved to ${path}` : null))
   }
 
+  // a complete backup can be restored exactly instead of flattened (M9)
+  const doRestore = (): void => {
+    if (!parsed?.fullBank) return
+    void store.replaceBank(parsed.fullBank).then(() => {
+      setResult('Bank restored from the backup.')
+      setText('')
+    })
+  }
+
   return (
     <ImportPane
       text={text}
@@ -193,6 +203,7 @@ function ImportContainer(): JSX.Element {
       skipDuplicates={skipDuplicates}
       onSkipDuplicates={setSkipDuplicates}
       onImport={doImport}
+      onRestore={parsed?.fullBank ? doRestore : null}
       onExport={doExport}
       result={result}
       onClose={() => store.closeImport()}
@@ -202,6 +213,9 @@ function ImportContainer(): JSX.Element {
 
 export default function BankContainer(): JSX.Element | null {
   const bank = useBankStore((s) => s.bank)
+  const loadSource = useBankStore((s) => s.loadSource)
+  const quarantinedPath = useBankStore((s) => s.quarantinedPath)
+  const saveProblem = usePersistHealth((s) => s.problem)
   const selectedAnswerId = useBankStore((s) => s.selectedAnswerId)
   const searchQuery = useBankStore((s) => s.searchQuery)
   const draft = useBankStore((s) => s.draft)
@@ -284,8 +298,20 @@ export default function BankContainer(): JSX.Element | null {
     }))
     .filter((s) => s.count > 0)
 
+  // failing saves outrank the load story: "not being saved" is the one to act
+  // on right now (REVIEW.md H8/H9)
+  const kept = quarantinedPath ? ` The unreadable file was kept at ${quarantinedPath}.` : ''
+  const banner =
+    saveProblem ??
+    (loadSource === 'bak'
+      ? `Your bank could not be read — restored from the automatic backup.${kept}`
+      : loadSource === 'seed'
+        ? `Your bank could not be read — this is the STARTER bank, not your prep.${kept} Restore a JSON export via Import.`
+        : null)
+
   return (
     <BankScreen
+      banner={banner}
       loops={bank.loops.map((l) => ({ id: l.id, shortName: l.shortName }))}
       selectedLoopId={bank.activeLoopId}
       sections={sections}

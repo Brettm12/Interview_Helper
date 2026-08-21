@@ -31,7 +31,8 @@ function browserShim(): HelperApi {
       ? localStorage
       : {
           getItem: (k: string) => mem.get(k) ?? null,
-          setItem: (k: string, v: string) => void mem.set(k, v)
+          setItem: (k: string, v: string) => void mem.set(k, v),
+          removeItem: (k: string) => void mem.delete(k)
         }
   const read = <T,>(key: string, fallback: T): T => {
     try {
@@ -41,12 +42,32 @@ function browserShim(): HelperApi {
       return fallback
     }
   }
-  const write = (key: string, value: unknown) => storage.setItem(key, JSON.stringify(value))
+  const write = (key: string, value: unknown): void => {
+    try {
+      storage.setItem(key, JSON.stringify(value))
+    } catch (err) {
+      // localStorage quota — sessions are the only unbounded key: prune the
+      // oldest half and retry once (REVIEW.md L20)
+      if (key === 'lih.sessions' && Array.isArray(value) && value.length > 1) {
+        const pruned = [...(value as SessionRecord[])]
+          .sort((a, b) => a.startedAt - b.startedAt)
+          .slice(Math.ceil(value.length / 2))
+        try {
+          storage.setItem(key, JSON.stringify(pruned))
+          return
+        } catch {
+          // fall through to the store-level save guard
+        }
+      }
+      throw err
+    }
+  }
 
   const commandSubs = new Set<(cmd: AppCommand) => void>()
   // mirrors main's bank:did-change relay so the reload path is unit-testable;
   // in the single browser window the saver simply re-loads its own save
   const bankSubs = new Set<() => void>()
+  const settingsSubs = new Set<(s: Settings) => void>()
   if (typeof window !== 'undefined')
     window.addEventListener('keydown', (e) => {
     const mod = e.metaKey || e.ctrlKey
@@ -69,7 +90,24 @@ function browserShim(): HelperApi {
 
   return {
     bank: {
-      load: async () => read<Bank>('lih.bank', seed as unknown as Bank),
+      load: async () => {
+        const raw = storage.getItem('lih.bank')
+        if (raw == null) return { bank: seed as unknown as Bank, source: 'new' as const }
+        try {
+          return { bank: JSON.parse(raw) as Bank, source: 'file' as const }
+        } catch {
+          // mirror main's quarantine: stash the unreadable payload under a
+          // timestamped key rather than silently overwriting it (REVIEW.md H8)
+          const quarantinedPath = `lih.bank.corrupt-${Date.now()}`
+          try {
+            storage.setItem(quarantinedPath, raw)
+            storage.removeItem('lih.bank')
+          } catch {
+            // stashing failed — leave the original in place
+          }
+          return { bank: seed as unknown as Bank, source: 'seed' as const, quarantinedPath }
+        }
+      },
       save: async (bank) => {
         write('lih.bank', bank)
         bankSubs.forEach((cb) => cb())
@@ -97,7 +135,20 @@ function browserShim(): HelperApi {
     },
     settings: {
       load: async () => ({ ...DEFAULT_SETTINGS, ...read<Partial<Settings>>('lih.settings', {}) }),
-      save: async (s) => write('lih.settings', s)
+      update: async (patch) => {
+        const merged = {
+          ...DEFAULT_SETTINGS,
+          ...read<Partial<Settings>>('lih.settings', {}),
+          ...patch
+        }
+        write('lih.settings', merged)
+        settingsSubs.forEach((cb) => cb(merged))
+        return merged
+      },
+      onDidChange: (cb) => {
+        settingsSubs.add(cb)
+        return () => settingsSubs.delete(cb)
+      }
     },
     permissions: {
       status: async () => ({ microphone: 'granted', screen: 'granted' }),

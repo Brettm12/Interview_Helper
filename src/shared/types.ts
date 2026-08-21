@@ -51,6 +51,10 @@ export interface Loop {
 }
 
 export interface Bank {
+  /** schema version, stamped on save so a future migration has something to
+   *  read — and unknown fields round-trip instead of being silently stripped
+   *  (REVIEW.md L18) */
+  version?: number
   loops: Loop[]
   sections: Section[]
   answers: Answer[]
@@ -147,6 +151,8 @@ export interface CoverageModel {
 // ---- Settings persisted alongside the bank ----
 
 export interface Settings {
+  /** schema version (REVIEW.md L18) */
+  version?: number
   /** exclude helper windows from screen capture */
   contentProtection: boolean
   /** keep a transcript for the recap (default off) */

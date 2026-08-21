@@ -90,6 +90,7 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
     placement,
     onPlacement,
     placementError,
+    alert,
     modelsNotice,
     onDownloadModels,
     onCancelDownload,
@@ -203,6 +204,7 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
           <div className="setup-privacy pretty">
             Audio stays on this machine. Nothing is recorded unless you turn on the recap.
           </div>
+          {alert != null && <div className="setup-alert pretty">{alert}</div>}
           {modelsNotice != null && (
             <div className="setup-privacy pretty">
               {modelsNotice}

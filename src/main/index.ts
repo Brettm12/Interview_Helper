@@ -69,7 +69,14 @@ function registerIpc(): void {
   ipcMain.handle('sessions:delete', (_e, id) => repository.deleteSession(id))
 
   ipcMain.handle('settings:load', () => repository.loadSettings())
-  ipcMain.handle('settings:save', (_e, s) => repository.saveSettings(s))
+  // patch semantics: read-merge-write in main, so the renderer's saves and
+  // main's own strip-drag writes stop racing full-object overwrites
+  // (REVIEW.md L10). Every writer's result is pushed back to every window.
+  ipcMain.handle('settings:update', async (_e, patch: Partial<Settings>) => {
+    const merged = await repository.updateSettings(patch)
+    broadcast('settings:did-change', merged)
+    return merged
+  })
 
   ipcMain.handle('permissions:status', () => permissionStatus())
   ipcMain.handle('permissions:request-mic', () => requestMicrophone())
@@ -84,11 +91,14 @@ function registerIpc(): void {
   })
   ipcMain.handle('windows:show-strip', async (_e, show: boolean) => {
     const settings = await repository.loadSettings()
-    await showStrip(show, settings.stripPosition)
     if (!show) {
       const pos = stripBounds()
-      if (pos) await repository.saveSettings({ ...settings, stripPosition: pos })
+      if (pos) {
+        const merged = await repository.updateSettings({ stripPosition: pos })
+        broadcast('settings:did-change', merged)
+      }
     }
+    await showStrip(show, settings.stripPosition)
   })
   ipcMain.handle('windows:open-second-screen-bank', () => openSecondScreenBank())
   ipcMain.handle('windows:set-content-protection', (_e, on: boolean) => setContentProtection(on))

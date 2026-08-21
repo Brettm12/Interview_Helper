@@ -221,9 +221,13 @@ export async function showStrip(show: boolean, stripPosition: Settings['stripPos
       moveTimer = setTimeout(() => {
         const pos = stripBounds()
         if (!pos) return
+        // patch through the same serialized path as every other settings
+        // writer — a full-object save here could revert a renderer edit
+        // landing in the same instant (REVIEW.md L10)
         void repository
-          .loadSettings()
-          .then((s) => repository.saveSettings({ ...s, stripPosition: pos }))
+          .updateSettings({ stripPosition: pos })
+          .then((merged) => broadcast('settings:did-change', merged))
+          .catch(() => {})
       }, 500)
     })
     await loadInto(stripWindow, { window: 'strip' })
