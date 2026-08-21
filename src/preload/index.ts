@@ -30,7 +30,11 @@ const api: HelperApi = {
     showStrip: (show) => ipcRenderer.invoke('windows:show-strip', show),
     openSecondScreenBank: () => ipcRenderer.invoke('windows:open-second-screen-bank'),
     setContentProtection: (on) => ipcRenderer.invoke('windows:set-content-protection', on),
-    displays: () => ipcRenderer.invoke('windows:displays')
+    displays: () => ipcRenderer.invoke('windows:displays'),
+    findClosed: () => ipcRenderer.invoke('windows:find-closed')
+  },
+  session: {
+    setActive: (active) => ipcRenderer.invoke('session:set-active', active)
   },
   exportFile: {
     saveNotes: (name, contents) => ipcRenderer.invoke('export:save-notes', name, contents)

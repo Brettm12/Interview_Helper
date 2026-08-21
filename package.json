@@ -25,7 +25,8 @@
     "package:mac": "npm run build && electron-builder --mac --publish never",
     "package:win": "npm run build && electron-builder --win --publish never",
     "package:linux": "npm run build && electron-builder --linux --publish never",
-    "smoke:package": "node tools/verify/smoke-package.mjs"
+    "smoke:package": "node tools/verify/smoke-package.mjs",
+    "probe:windows": "node tools/verify/windows-probe.mjs"
   },
   "dependencies": {
     "@fontsource/instrument-serif": "^5.2.5",

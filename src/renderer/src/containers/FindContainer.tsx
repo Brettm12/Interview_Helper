@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import type { Answer, Bank } from '@shared/types'
 import FindOverlay from '../screens/find/FindOverlay'
 import type { FindResultView } from '../screens/contracts'
@@ -6,6 +6,7 @@ import { useBankStore, answersForLoop, storyById } from '../state/bankStore'
 import { usePanelStore } from '../state/panelStore'
 import { useSessionStore } from '../state/sessionStore'
 import { diceCoefficient, normalize } from '../lib/text'
+import { api } from '../lib/api'
 import { getEngine } from './runtime'
 
 // ⌘K panic find: fuzzy across question text, key points, and story names.
@@ -45,6 +46,11 @@ export default function FindContainer(): JSX.Element | null {
   const find = usePanelStore((s) => s.find)
   const loopId = useSessionStore((s) => s.loopId)
 
+  // ⌘K stole focus so typing works (REVIEW.md C1); on close, hand it back
+  useEffect(() => {
+    if (!find.open) void api.windows.findClosed()
+  }, [find.open])
+
   const entries = useMemo(() => {
     if (!bank) return []
     return answersForLoop(bank, loopId ?? bank.activeLoopId)
@@ -72,10 +78,17 @@ export default function FindContainer(): JSX.Element | null {
 
   const panel = usePanelStore.getState()
 
-  const pin = (): void => {
-    const target = results[find.selectedIndex]
-    if (target) getEngine()?.pinEntry(target.id)
+  const pinEntry = (entryId: string): void => {
+    getEngine()?.pinEntry(entryId)
     panel.closeFind()
+  }
+
+  const pin = (): void => {
+    // the LIVE index, not this render's snapshot — reading the render-time
+    // value pinned whatever was selected before the last move (REVIEW.md C5)
+    const target = results[usePanelStore.getState().find.selectedIndex]
+    if (target) pinEntry(target.id)
+    else panel.closeFind()
   }
 
   return (
@@ -86,6 +99,7 @@ export default function FindContainer(): JSX.Element | null {
         results={views}
         selectedIndex={find.selectedIndex}
         onQueryChange={(q) => panel.setFindQuery(q)}
+        onPinEntry={pinEntry}
         onMove={(d) => panel.moveFind(d, results.length)}
         onPin={pin}
         onClose={() => panel.closeFind()}

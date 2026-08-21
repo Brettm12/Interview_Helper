@@ -18,7 +18,8 @@ function highlightTitle(title: string, query: string): ReactNode {
 }
 
 const FindOverlay = (props: FindOverlayProps): JSX.Element => {
-  const { query, matchCount, results, selectedIndex, onQueryChange, onMove, onPin, onClose } = props
+  const { query, matchCount, results, selectedIndex, onQueryChange, onPinEntry, onMove, onPin, onClose } =
+    props
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'ArrowDown') {
@@ -66,10 +67,7 @@ const FindOverlay = (props: FindOverlayProps): JSX.Element => {
               ]
                 .filter(Boolean)
                 .join(' ')}
-              onClick={() => {
-                onMove(i - selectedIndex)
-                onPin()
-              }}
+              onClick={() => onPinEntry(r.entryId)}
             >
               <div
                 className={

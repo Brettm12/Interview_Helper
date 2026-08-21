@@ -15,6 +15,7 @@ import {
   hasWindows,
   openSecondScreenBank,
   setContentProtection,
+  setSessionActive,
   setView,
   setQuitting,
   showMain,
@@ -31,6 +32,21 @@ import type { StripState, ViewName } from '../shared/ipc'
 protocol.registerSchemesAsPrivileged([
   { scheme: 'lih-models', privileges: { supportFetchAPI: true, bypassCSP: true } }
 ])
+
+// Test harnesses point this at a scratch directory so probes and e2e runs
+// never touch (or inherit) a real bank/settings. Not a user-facing flag.
+if (process.env.LIH_USER_DATA) {
+  app.setPath('userData', process.env.LIH_USER_DATA)
+}
+
+// One instance only. A second launch used to run fully — sharing the JSON
+// files last-writer-wins, with every global shortcut silently dead in the
+// instance the user was actually looking at (REVIEW.md M18).
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => showMain())
+}
 
 // no dock bounce / focus steal when helper windows appear
 if (process.platform === 'darwin') {
@@ -107,6 +123,26 @@ function registerIpc(): void {
   ipcMain.handle('strip:get', () => lastStripState)
   ipcMain.handle('strip:expand', () => broadcast('command', 'strip-expand'))
 
+  // ---- session lifecycle ----
+  // the renderer reports arm/end; the session chords register only for that
+  // span, and close interception guards the session window (H16/M19/H15)
+  ipcMain.handle('session:set-active', (_e, active: boolean) => {
+    setSessionActive(active === true)
+    if (active === true) {
+      const failed = registerSessionShortcuts()
+      return { failedShortcuts: failed }
+    }
+    unregisterSessionShortcuts()
+    return { failedShortcuts: [] }
+  })
+
+  // the find overlay closed — hand key focus back toward the meeting app
+  // (best effort; there is no reliable cross-platform "restore previous app")
+  ipcMain.handle('windows:find-closed', () => {
+    const win = getMainWindow()
+    if (win && !win.isDestroyed()) win.blur()
+  })
+
   // ---- on-device models ----
   ipcMain.handle('models:status', (_e, whisperModel?: string) => modelsStatus(whisperModel))
   ipcMain.handle('models:download', async (e, whisperModel?: string) => {
@@ -119,19 +155,64 @@ function registerIpc(): void {
   })
 }
 
-function registerShortcuts(actions: AppActions): void {
-  // Global: during an interview the focus is on the meeting window, not on
-  // this app — a shortcut that only works when the panel has focus is useless.
-  globalShortcut.register('CommandOrControl+K', () => broadcast('command', 'find'))
-  globalShortcut.register('CommandOrControl+Shift+H', () => broadcast('command', 'toggle-collapse'))
-  globalShortcut.register('CommandOrControl+Shift+R', () => broadcast('command', 'recap'))
-  globalShortcut.register('CommandOrControl+Shift+D', () => broadcast('command', 'diagnostics'))
+// Global: during an interview the focus is on the meeting window, not on
+// this app — a shortcut that only works when the panel has focus is useless.
+// But global registrations are system-wide, so the session chords (⌘K in
+// Slack/VS Code/Notion…) are only held WHILE a session runs, not for the
+// whole app lifetime (REVIEW.md M19). Registration results are checked and
+// surfaced — a silently-dead ⌘K is the panic path failing (REVIEW.md H15).
+
+/** ⌘K focuses the session window: the find overlay needs real keyboard
+ *  focus, or everything typed lands in the meeting app (REVIEW.md C1) */
+function openFindFocused(): void {
+  const win = getMainWindow()
+  if (win && !win.isDestroyed() && !win.isVisible()) {
+    // collapsed to the strip: surface the panel first (expand semantics)
+    showMain()
+  } else if (win && !win.isDestroyed()) {
+    win.show()
+    win.focus()
+  }
+  broadcast('command', 'find')
+}
+
+const SESSION_SHORTCUTS: [string, () => void][] = [
+  ['CommandOrControl+K', openFindFocused],
+  ['CommandOrControl+Shift+H', () => broadcast('command', 'toggle-collapse')],
+  ['CommandOrControl+Shift+R', () => broadcast('command', 'recap')],
+  ['CommandOrControl+Shift+D', () => broadcast('command', 'diagnostics')]
+]
+
+/** @returns accelerators that could NOT be registered (held by another app) */
+function registerSessionShortcuts(): string[] {
+  const failed: string[] = []
+  for (const [accel, handler] of SESSION_SHORTCUTS) {
+    let ok = false
+    try {
+      ok = globalShortcut.register(accel, handler)
+    } catch {
+      ok = false
+    }
+    if (!ok) failed.push(accel)
+  }
+  return failed
+}
+
+function unregisterSessionShortcuts(): void {
+  for (const [accel] of SESSION_SHORTCUTS) globalShortcut.unregister(accel)
+}
+
+function registerAppShortcuts(actions: AppActions): void {
   // Cmd+Shift+Q, not Cmd+Q: globalShortcut is system-wide, so registering
   // plain Cmd+Q would steal Quit from every other app. Plain Cmd+Q still works
   // via the app menu whenever this app has focus.
-  globalShortcut.register('CommandOrControl+Shift+Q', actions.quit)
+  if (!globalShortcut.register('CommandOrControl+Shift+Q', actions.quit)) {
+    console.warn('[shortcuts] CommandOrControl+Shift+Q is held by another app')
+  }
   // getting a lost window back without hunting for the tray
-  globalShortcut.register('CommandOrControl+Shift+P', actions.showPanel)
+  if (!globalShortcut.register('CommandOrControl+Shift+P', actions.showPanel)) {
+    console.warn('[shortcuts] CommandOrControl+Shift+P is held by another app')
+  }
 }
 
 app.whenReady().then(async () => {
@@ -167,7 +248,7 @@ app.whenReady().then(async () => {
   const actions: AppActions = {
     showPanel: () => showMain(),
     toggleCollapse: () => broadcast('command', 'toggle-collapse'),
-    openFind: () => broadcast('command', 'find'),
+    openFind: openFindFocused,
     openRecap: () => broadcast('command', 'recap'),
     pause: () => broadcast('command', 'pause'),
     quit: () => {
@@ -177,7 +258,7 @@ app.whenReady().then(async () => {
   }
   installAppMenu(actions)
   installTray(actions)
-  registerShortcuts(actions)
+  registerAppShortcuts(actions)
 
   await createMainWindow()
 })

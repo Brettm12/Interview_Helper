@@ -661,6 +661,20 @@ export function startSession(opts: StartOptions = {}): void {
   session.arm(bank.activeLoopId, settings.keepTranscript)
   zeroClock(true)
   startViewSync()
+  // a latent ⌘K pressed on the setup screen must not pop the overlay the
+  // moment the armed card mounts (REVIEW.md M20)
+  usePanelStore.getState().closeFind()
+  // session shortcuts are registered only for the session's span; an
+  // accelerator another app holds is reported, not silently dead (H15/M19)
+  void api.session.setActive(true).then(({ failedShortcuts }) => {
+    if (failedShortcuts.length > 0) {
+      useAudioStore
+        .getState()
+        .setPipelineNotice(
+          `${failedShortcuts.join(', ')} is held by another app — the shortcut works only while this panel is focused.`
+        )
+    }
+  })
 
   if (useMock) {
     if (!driver) {
@@ -724,6 +738,7 @@ export function startSession(opts: StartOptions = {}): void {
 export async function endSession(): Promise<void> {
   stopPlayback?.()
   stopPlayback = null
+  void api.session.setActive(false)
   if (engine) {
     const e = engine
     engine = null
@@ -739,11 +754,32 @@ export async function endSession(): Promise<void> {
   if (IN_ELECTRON) void api.windows.showStrip(false)
 }
 
-/** ⌘⇧R: during a session this IS the session end; idle, it reopens the last recap */
+/** ⌘⇧R: during a session this IS the session end; idle, it reopens the last
+ *  recap. Ending takes TWO presses within 2s — ⌘⇧R is also the browsers'
+ *  hard-reload chord, and a single reflexive press in a flaky CoderPad tab
+ *  used to end the interview session instantly (REVIEW.md H17). */
+const RECAP_CONFIRM_NOTICE = 'Press ⌘⇧R again to end the session and open the recap.'
+let recapConfirmTimer: ReturnType<typeof setTimeout> | null = null
+
 export function recapCommand(): void {
   const s = useSessionStore.getState()
   if (s.status === 'armed' || s.status === 'listening' || s.status === 'paused') {
-    void endSession()
+    if (recapConfirmTimer) {
+      clearTimeout(recapConfirmTimer)
+      recapConfirmTimer = null
+      if (useAudioStore.getState().pipelineNotice === RECAP_CONFIRM_NOTICE) {
+        useAudioStore.getState().setPipelineNotice(null)
+      }
+      void endSession()
+      return
+    }
+    useAudioStore.getState().setPipelineNotice(RECAP_CONFIRM_NOTICE)
+    recapConfirmTimer = setTimeout(() => {
+      recapConfirmTimer = null
+      if (useAudioStore.getState().pipelineNotice === RECAP_CONFIRM_NOTICE) {
+        useAudioStore.getState().setPipelineNotice(null)
+      }
+    }, 2000)
   } else if (s.lastSession) {
     usePanelStore.getState().setView('recap')
   }

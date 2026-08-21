@@ -94,6 +94,9 @@ export interface FindOverlayProps {
   results: FindResultView[]
   selectedIndex: number
   onQueryChange: (q: string) => void
+  /** click on a specific row pins THAT row — never the current selection,
+   *  which is one render behind the click (REVIEW.md C5) */
+  onPinEntry: (entryId: string) => void
   /** +1 / −1 */
   onMove: (delta: number) => void
   onPin: () => void

@@ -179,6 +179,7 @@ function Find(): JSX.Element {
         ]}
         selectedIndex={0}
         onQueryChange={noop}
+        onPinEntry={noop}
         onMove={noop}
         onPin={noop}
         onClose={noop}

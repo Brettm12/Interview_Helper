@@ -109,7 +109,11 @@ function browserShim(): HelperApi {
       showStrip: async () => {},
       openSecondScreenBank: async () => ({ ok: false, error: 'Only one display connected — second screen needs two.' }),
       setContentProtection: async () => {},
-      displays: async () => ({ count: 1 })
+      displays: async () => ({ count: 1 }),
+      findClosed: async () => {}
+    },
+    session: {
+      setActive: async () => ({ failedShortcuts: [] })
     },
     exportFile: {
       saveNotes: async (name, contents) => {

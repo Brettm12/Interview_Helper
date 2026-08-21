@@ -46,6 +46,19 @@ try {
   await page.locator('.find-overlay').waitFor({ state: 'detached' })
   stage('⌘K toggles find while armed')
 
+  // REVIEW.md C5: clicking a row that is NOT the current selection must pin
+  // THAT row — the old handler pinned whatever was selected before the click
+  await page.keyboard.press('Control+k')
+  await page.locator('.find-overlay').waitFor()
+  await page.keyboard.type('policy')
+  // 'rolling out a policy…' ranks first (selected); click the bend row below
+  await page.locator('.find-row', { hasText: 'bend a policy' }).click()
+  await page.locator('.find-overlay').waitFor({ state: 'detached' })
+  await page
+    .locator('.live-question', { hasText: 'What would you do if leadership asked you to bend a policy?' })
+    .waitFor({ timeout: 10000 })
+  stage('clicking a non-selected find row pinned that row (C5)')
+
   await page
     .getByText('Tell me about a time you handled a difficult employee relations case.')
     .first()

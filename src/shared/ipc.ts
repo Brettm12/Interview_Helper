@@ -80,6 +80,15 @@ export interface HelperApi {
     openSecondScreenBank(): Promise<{ ok: boolean; error?: string }>
     setContentProtection(on: boolean): Promise<void>
     displays(): Promise<DisplayInfo>
+    /** the ⌘K overlay closed — main blurs the panel so keys drift back toward
+     *  the meeting app (focus was stolen deliberately so typing works) */
+    findClosed(): Promise<void>
+  }
+  session: {
+    /** the renderer's session armed/ended. Main scopes the global session
+     *  shortcuts to this span and reports any accelerator another app holds —
+     *  a silently dead ⌘K is the panic path failing. */
+    setActive(active: boolean): Promise<{ failedShortcuts: string[] }>
   }
   exportFile: {
     /** save a text file next to the user's documents; returns the path.
