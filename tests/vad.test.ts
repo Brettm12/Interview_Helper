@@ -19,6 +19,19 @@ function tone(ms: number, dbfsLevel: number, freq = 200): Float32Array {
   return out
 }
 
+/** speech-like audio: a tone with syllable-rate amplitude modulation. Real
+ *  speech swings tens of dB between phonemes and pauses; a dead-flat tone is
+ *  indistinguishable from a beep or a fan, and the segmenter now treats a
+ *  cap-length flat segment as noise (REVIEW.md H7). */
+function speechy(ms: number, dbfsLevel: number): Float32Array {
+  const out = tone(ms, dbfsLevel)
+  for (let i = 0; i < out.length; i++) {
+    const mod = 0.55 + 0.45 * Math.sin((2 * Math.PI * 4 * i) / RATE) // 4Hz, ~20dB dips
+    out[i] *= mod
+  }
+  return out
+}
+
 /** steady noise at a given dBFS */
 function noise(ms: number, dbfsLevel: number): Float32Array {
   const amp = Math.pow(10, dbfsLevel / 20)
@@ -143,11 +156,46 @@ describe('VadSegmenter', () => {
   it('caps a monologue rather than buffering forever', () => {
     const v = new VadSegmenter()
     feed(v, noise(500, -70))
-    const done = feed(v, tone(TUNING.vadMaxSegmentSec * 1000 + 2000, -25))
+    const done = feed(v, speechy(TUNING.vadMaxSegmentSec * 1000 + 2000, -25))
     expect(done.length).toBeGreaterThanOrEqual(1)
     expect(done[0].truncated).toBe(true)
     const durationMs = (done[0].samples.length / RATE) * 1000
     expect(durationMs).toBeLessThanOrEqual(TUNING.vadMaxSegmentSec * 1000 + 50)
+  })
+
+  it('drops a cap-length flat segment as noise and adapts the floor at once (REVIEW.md H7)', () => {
+    const v = new VadSegmenter()
+    feed(v, noise(600, -70))
+    const before = v.floorDbfs
+    // a fan or AC compressor stepping on: loud enough to open the gate,
+    // dead flat for the whole cap
+    const out = feed(v, noise(TUNING.vadMaxSegmentSec * 1000 + 2000, -50))
+    expect(out).toHaveLength(0) // nothing reaches Whisper
+    expect(v.floorDbfs).toBeGreaterThan(before + 10) // adapted in ONE cap, not 0.36dB/cycle
+    // the continuing noise no longer holds the gate open
+    feed(v, noise(3000, -50))
+    expect(v.isOpen).toBe(false)
+  })
+
+  it('speech still opens and segments over the noise-adapted floor', () => {
+    const v = new VadSegmenter()
+    feed(v, noise(600, -70))
+    feed(v, noise(TUNING.vadMaxSegmentSec * 1000 + 2000, -50)) // fan adapts the floor
+    const done = feed(v, speechy(1200, -25), noise(1500, -50))
+    expect(done).toHaveLength(1)
+    expect(done[0].truncated).toBe(false)
+  })
+
+  it('reset() re-zeros the clock so timestamps do not double after resume (REVIEW.md H5)', () => {
+    const v = new VadSegmenter()
+    feed(v, noise(1000, -70))
+    feed(v, tone(700, -25), noise(1200, -70)) // a first run of ~3s
+    v.reset()
+    feed(v, noise(1000, -70))
+    const done = feed(v, tone(700, -25), noise(1200, -70))
+    expect(done).toHaveLength(1)
+    // counted from the reset (~1s in), not from the stream's birth (~4s)
+    expect(done[0].startT).toBeLessThan(1.1)
   })
 
   it('drops a blip without letting it stick to the next utterance', () => {

@@ -69,6 +69,7 @@ export default function LivePanel(props: LivePanelProps): JSX.Element {
     unsure,
     transcript,
     transcriptVisible,
+    notice,
     onToggleTranscript,
     onFind,
     onCollapse,
@@ -79,6 +80,7 @@ export default function LivePanel(props: LivePanelProps): JSX.Element {
 
   return (
     <div className="live-panel">
+      {notice && <div className="live-notice pretty">{notice}</div>}
       <div className="live-panel__header">
         <div className="live-panel__status">
           <StatusDot size={7} color={isUnsure ? 'var(--status-attention)' : 'var(--status-live)'} />

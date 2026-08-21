@@ -391,3 +391,14 @@
   background: var(--bg-panel);
   display: flex;
 }
+
+/* pipeline-problem strip (model failed / audio stalled) — never rendered in
+   any design-reference state, so the pixel gate never sees it */
+.live-notice {
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border-section);
+  background: var(--warn-bg);
+  color: var(--status-attention);
+  font: 400 12px/1.4 var(--font-ui);
+  text-wrap: pretty;
+}

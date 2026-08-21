@@ -58,6 +58,9 @@ export interface LivePanelProps {
   unsure: UnsureBodyProps | null
   transcript: TranscriptLineView | null
   transcriptVisible: boolean
+  /** pipeline problem (model failed, audio stalled) — renders a one-line
+   *  warning strip; null in every design-reference state */
+  notice?: string | null
   onToggleTranscript: () => void
   onFind: () => void
   onCollapse: () => void

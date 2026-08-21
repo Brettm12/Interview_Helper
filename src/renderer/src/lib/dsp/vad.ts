@@ -45,6 +45,15 @@ export class NoiseFloor {
     this.priming = Math.ceil(TUNING.vadFloorPrimeMs / frameMs)
   }
 
+  /** steady noise identified after the fact: pull the floor up to it at once.
+   *  Clamping still applies, and the fast-fall attack corrects any overshoot
+   *  within a few quiet frames. */
+  raiseTo(levelDb: number): void {
+    if (levelDb > this.floorDb) {
+      this.floorDb = Math.min(TUNING.vadFloorMaxDbfs, levelDb)
+    }
+  }
+
   update(levelDb: number, speaking: boolean): number {
     if (this.priming > 0) {
       // prime straight from the room: creeping up from the minimum takes
@@ -183,6 +192,24 @@ export class VadSegmenter {
     this.silenceMs = 0
     if (frames.length === 0) return null
 
+    // A segment that ran to the hard cap with an almost-flat level is a fan or
+    // AC compressor, not fifteen seconds of speech: speech swings tens of dB
+    // between phonemes and pauses, steady noise barely moves. The floor is
+    // frozen while a segment is open (so a long answer can't drag it up), which
+    // used to mean a sustained noise step ratcheted the floor up ~0.36dB per
+    // 15s cycle while every cycle fed Whisper a cap-length noise segment
+    // (REVIEW.md H7). Instead: recognise the flat segment, pull the floor up to
+    // it in one step, and emit nothing.
+    if (truncated) {
+      const dbs = frames.map((f) => f.db).sort((a, b) => a - b)
+      const p10 = dbs[Math.floor(dbs.length * 0.1)]
+      const p90 = dbs[Math.min(dbs.length - 1, Math.floor(dbs.length * 0.9))]
+      if (p90 - p10 < TUNING.vadNoiseSpreadDb) {
+        this.floor.raiseTo(dbs[Math.floor(dbs.length / 2)])
+        return null
+      }
+    }
+
     // trim trailing silence to a short pad: some helps Whisper finish the
     // last word, a lot invites hallucinated sign-offs
     const padFrames = Math.ceil(TUNING.vadTailPadMs / TUNING.vadFrameMs)
@@ -250,6 +277,11 @@ export class VadSegmenter {
     this.openHoldMs = 0
     this.speechMs = 0
     this.silenceMs = 0
+    // the clock too: the worker re-anchors its offset to the next chunk's
+    // session time on every reset, so startT must count from zero again —
+    // keeping the old total double-counted every timestamp after a
+    // pause/resume or a second session (REVIEW.md H5)
+    this.consumed = 0
   }
 }
 

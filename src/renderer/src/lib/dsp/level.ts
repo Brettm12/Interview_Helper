@@ -86,11 +86,21 @@ export class LivenessGate {
     private opts: { openLevel: number; closeLevel: number; holdMs: number }
   ) {}
 
-  update(level: number, nowMs: number): boolean {
-    if (level >= this.opts.openLevel) {
+  /** Optional per-call thresholds let the caller track a moving reference —
+   *  the setup dots follow the same adaptive noise floor the segmenter gates
+   *  against, so "silent" and "won't transcribe" can no longer disagree
+   *  (REVIEW.md L5). Units just have to be consistent between level and the
+   *  thresholds (linear or dB both work). */
+  update(
+    level: number,
+    nowMs: number,
+    openLevel = this.opts.openLevel,
+    closeLevel = this.opts.closeLevel
+  ): boolean {
+    if (level >= openLevel) {
       this.lastLoudMs = nowMs
       this.live = true
-    } else if (this.live && level < this.opts.closeLevel) {
+    } else if (this.live && level < closeLevel) {
       // only give up after the hold expires — a pause is not silence
       if (nowMs - this.lastLoudMs >= this.opts.holdMs) this.live = false
     }

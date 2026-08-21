@@ -22,8 +22,10 @@ export {}
 type InMsg =
   | { type: 'init'; modelPath: string; modelId?: string }
   | { type: 'audio'; stream: Stream; samples: Float32Array; t: number }
-  /** end of capture: emit whatever is still open rather than losing it */
-  | { type: 'flush' }
+  /** end of capture: emit whatever is still open rather than losing it.
+   *  With a stream, only that segmenter — the mic test detaching must not
+   *  splice the interviewer's open sentence (REVIEW.md L4). */
+  | { type: 'flush'; stream?: Stream }
   /** pause/resume: drop in-progress audio without tearing the model down */
   | { type: 'reset' }
 
@@ -193,9 +195,9 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
         onAudio(msg.stream, msg.samples, msg.t)
         break
       case 'flush':
-        // emit whatever is open, then clear the segmenters. Queued work still
-        // decodes — this is "capture stopped", not "throw it away".
-        for (const stream of STREAMS) {
+        // emit whatever is open, then clear the segmenter(s). Queued work
+        // still decodes — this is "capture stopped", not "throw it away".
+        for (const stream of msg.stream ? [msg.stream] : STREAMS) {
           const tail = vad[stream].flush()
           if (tail) emit(stream, tail)
           clearStream(stream)

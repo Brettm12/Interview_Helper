@@ -128,6 +128,11 @@ export const TUNING = {
    *  gate still carries pre-roll and tail padding, so total length alone
    *  would let clicks through */
   vadMinSpeechMs: 150,
+  /** a cap-truncated segment whose 10th–90th percentile level spread is under
+   *  this many dB is steady noise (fan, AC), not speech — speech swings tens
+   *  of dB between phonemes and pauses. The floor jumps to the segment's
+   *  median and the segment is discarded rather than decoded. */
+  vadNoiseSpreadDb: 6,
   /** the floor is primed directly from the room over this first window.
    *  Creeping up from the minimum at vadFloorRiseDbPerSec would take ~5s to
    *  reach a noisy office, and until it got there every rustle read as speech

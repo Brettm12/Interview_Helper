@@ -31,6 +31,64 @@ let stopPlayback: (() => void) | null = null
 let realSources: { meeting: MeetingAudioSource; mic: MicAudioSource } | null = null
 let audioPrepared = false
 
+// ---- capture watchdog ------------------------------------------------------
+// A source can die without any event reaching us (REVIEW.md C4): the one
+// symptom is chunks stopping. Track the last arrival per stream; a started
+// source that goes quiet for watchdogStallMs gets a visible error and one
+// automatic re-acquire attempt.
+const WATCHDOG_STALL_MS = 5000
+const WATCHDOG_RESTART_COOLDOWN_MS = 15000
+const lastChunkAt = { meeting: 0, mic: 0 }
+const stalled = { meeting: false, mic: false }
+let watchdogTimer: ReturnType<typeof setInterval> | null = null
+let watchdogRestartAt = 0
+
+function noteChunk(stream: 'meeting' | 'mic'): void {
+  lastChunkAt[stream] = Date.now()
+  if (stalled[stream]) {
+    stalled[stream] = false
+    const audio = useAudioStore.getState()
+    audio.setError(stream, null)
+    if (audio.pipelineNotice?.includes('stopped arriving')) audio.setPipelineNotice(null)
+  }
+}
+
+function startWatchdog(): void {
+  if (watchdogTimer) return
+  watchdogTimer = setInterval(() => {
+    if (!realSources) return
+    const now = Date.now()
+    for (const stream of ['meeting', 'mic'] as const) {
+      const status = useAudioStore.getState()[stream]
+      if (status.state === 'no-track' || status.state === 'idle') continue
+      if (lastChunkAt[stream] === 0 || now - lastChunkAt[stream] <= WATCHDOG_STALL_MS) continue
+      if (!stalled[stream]) {
+        stalled[stream] = true
+        const name = stream === 'meeting' ? 'Meeting audio' : 'Microphone audio'
+        useAudioStore
+          .getState()
+          .setError(stream, 'audio stopped arriving — device lost, or the machine slept.')
+        useAudioStore
+          .getState()
+          .setPipelineNotice(`${name} stopped arriving — check the device (⌘⇧D for details).`)
+      }
+      if (now - watchdogRestartAt > WATCHDOG_RESTART_COOLDOWN_MS) {
+        watchdogRestartAt = now
+        restartAudio()
+      }
+    }
+  }, 2000)
+}
+
+function stopWatchdog(): void {
+  if (watchdogTimer) clearInterval(watchdogTimer)
+  watchdogTimer = null
+  lastChunkAt.meeting = 0
+  lastChunkAt.mic = 0
+  stalled.meeting = false
+  stalled.mic = false
+}
+
 /**
  * The on-device models, loaded once and kept.
  *
@@ -84,11 +142,20 @@ function createLevelMeter(stream: 'meeting' | 'mic'): (samples: Float32Array) =>
 
   return (samples: Float32Array) => {
     const now = Date.now()
+    let maxFrameDb = -120
     for (let i = 0; i + frameSize <= samples.length; i += frameSize) {
-      floor.update(dbfs(rms(samples.subarray(i, i + frameSize))), live)
+      const db = dbfs(rms(samples.subarray(i, i + frameSize)))
+      if (db > maxFrameDb) maxFrameDb = db
+      floor.update(db, live)
     }
     const level = ballistics.push(rms(samples), now)
-    live = gate.update(level, now)
+    // liveness follows the same adaptive gate the segmenter uses, so the dot
+    // can never say "silent" about a mic that transcribes fine, or "live"
+    // about one below the speech threshold (REVIEW.md L5). Same hysteresis and
+    // hold, just in dB against the moving floor.
+    const openAtDb = Math.max(floor.value + TUNING.vadOpenDb, TUNING.vadAbsoluteOpenDbfs)
+    const closeAtDb = floor.value + TUNING.vadCloseDb
+    live = gate.update(maxFrameDb, now, openAtDb, closeAtDb)
     const state = live ? 'live' : 'silent'
     // publish on a material state change immediately, otherwise at ~10Hz
     if (state === lastState && now - lastPublishedAt < TUNING.levelPublishMinIntervalMs) return
@@ -186,10 +253,12 @@ export function prepareAudio(): void {
     mic: new MicAudioSource(settings.micDeviceId)
   }
   realSources.meeting.onChunk((c) => {
+    noteChunk('meeting')
     meetingMeter(c.samples)
     models?.transcription.push('them', stampClock('meeting', c))
   })
   realSources.mic.onChunk((c) => {
+    noteChunk('mic')
     micMeter(c.samples)
     models?.transcription.push('you', stampClock('mic', c))
   })
@@ -207,6 +276,7 @@ export function prepareAudio(): void {
   realSources.mic.onError((e) => useAudioStore.getState().setError('mic', e.message))
   realSources.mic.start()
   realSources.meeting.start()
+  startWatchdog()
   // labels arrive with the track, so the picker needs a refresh once
   // permission has actually been granted
   void useAudioStore.getState().refreshDevices()
@@ -235,7 +305,27 @@ export function ensureModels(): void {
   const transcription = new TranscriptionService(modelPath, modelId)
   const embeddings = new WorkerEmbeddings(modelPath)
   const cache = new EmbeddingCache(embeddings)
-  transcription.onStateChange(() => useAudioStore.getState().publish('mic', {}))
+  transcription.onStateChange((state) => {
+    useAudioStore.getState().publish('mic', {})
+    const audio = useAudioStore.getState()
+    if (state === 'failed') {
+      // mid-session, try to bring a crashed worker back before telling anyone
+      // it's over; a persistent load failure gets a permanent visible notice
+      // instead of dying in the console (REVIEW.md H2)
+      if (engine && transcription.restart()) {
+        audio.setPipelineNotice('Transcription crashed — restarting it now…')
+      } else {
+        audio.setPipelineNotice(
+          `The speech model failed to load${transcription.error ? ` — ${transcription.error}` : ''}. Re-download it from the setup screen.`
+        )
+      }
+    } else if (state === 'warm' && audio.pipelineNotice?.startsWith('Transcription crashed')) {
+      audio.setPipelineNotice(null)
+    }
+  })
+  // decode errors and falling-behind drops — the worker already narrates
+  // these; they just never reached a surface anyone watches
+  transcription.onError((message) => useAudioStore.getState().setPipelineNotice(message))
   models = { transcription, embeddings, cache, modelId }
   warmBank()
 }
@@ -265,6 +355,7 @@ export function stopAudio(): void {
   // the mock driver's scripted playback *is* the demo — stopping it would look
   // like a broken app rather than a paused one
   if (MOCK || !realSources) return
+  stopWatchdog()
   realSources.meeting.stop()
   realSources.mic.stop()
   realSources = null
@@ -292,6 +383,18 @@ export function restartAudio(): void {
 // you the words back — the same path that will run during the call.
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/** wait up to `ms`, bailing early (false) the moment a session starts — the
+ *  session owns the shared pipeline from that point, and the test's cleanup
+ *  must not touch it (REVIEW.md C3) */
+async function testWait(ms: number): Promise<boolean> {
+  const until = Date.now() + ms
+  while (Date.now() < until) {
+    if (engine) return false
+    await delay(Math.min(150, Math.max(1, until - Date.now())))
+  }
+  return true
+}
 
 export async function runMicTest(): Promise<void> {
   const audio = useAudioStore.getState()
@@ -355,21 +458,26 @@ export async function runMicTest(): Promise<void> {
   audio.setMicTest({ state: 'recording' })
 
   // the same warm model the session will use, rather than a throwaway probe:
-  // spawning one meant every test paid a cold load inside its own timeout
+  // spawning one meant every test paid a cold load inside its own timeout.
+  // Only the mic stream opens — decoding meeting audio during the test both
+  // wastes the decode budget and can starve the test past its deadline
+  // (REVIEW.md L4).
   const heard: string[] = []
   const off = svc.subscribe('you', (s) => {
     if (s.confirmed) heard.push(s.text)
   })
-  svc.setEnabled(true)
+  svc.setEnabled(true, ['you'])
 
   try {
-    await delay(TUNING.micTestRecordMs)
+    if (!(await testWait(TUNING.micTestRecordMs))) return
     useAudioStore.getState().setMicTest({ state: 'thinking' })
     // whatever is mid-sentence still counts — this is a five-second test and
     // losing the tail would report "heard nothing" for a working mic
-    svc.flush()
+    svc.flush('you')
     const deadline = Date.now() + TUNING.micTestDecodeMs
-    while (heard.length === 0 && Date.now() < deadline) await delay(150)
+    while (heard.length === 0 && Date.now() < deadline) {
+      if (!(await testWait(150))) return
+    }
     const text = heard.join(' ').trim()
     useAudioStore.getState().setMicTest(
       text
@@ -387,7 +495,14 @@ export async function runMicTest(): Promise<void> {
     })
   } finally {
     off()
-    svc.setEnabled(false)
+    // A session that started mid-test owns the pipeline now — disabling it
+    // here was REVIEW.md C3: the test's cleanup landed up to 25s after arming
+    // and silently killed transcription for the whole interview.
+    if (!engine) {
+      svc.setEnabled(false, ['you'])
+    } else if (useAudioStore.getState().micTest.state !== 'done') {
+      useAudioStore.getState().setMicTest({ state: 'idle', text: null, error: null })
+    }
   }
 }
 
@@ -527,6 +642,22 @@ export function startSession(opts: StartOptions = {}): void {
   const session = useSessionStore.getState()
   const useMock = MOCK || opts.dryRun === true
 
+  if (!useMock) {
+    // arming a dead pipeline used to look exactly like a working session
+    // (REVIEW.md H2) — refuse, visibly, while there is still time to fix it
+    prepareAudio()
+    ensureModels()
+    if (!models) return
+    if (models.transcription.state === 'failed') {
+      useAudioStore
+        .getState()
+        .setPipelineNotice(
+          `Not starting: the speech model failed to load${models.transcription.error ? ` — ${models.transcription.error}` : ''}. Re-download it below, then try again.`
+        )
+      return
+    }
+  }
+
   session.arm(bank.activeLoopId, settings.keepTranscript)
   zeroClock(true)
   startViewSync()
@@ -570,12 +701,10 @@ export function startSession(opts: StartOptions = {}): void {
     wireControlEvents(d)
     stopPlayback = d.play()
   } else {
-    prepareAudio()
-    ensureModels()
     const m = models
     if (!m) return
-    // already loaded (and the bank already embedded) from the setup screen —
-    // arming just opens the gate
+    // already loaded (and the bank warmed) from the setup screen — arming
+    // just opens the gate
     m.transcription.clearSubscribers()
     const them = tee(m.transcription.transcriberFor('them'))
     const you = tee(m.transcription.transcriberFor('you'))

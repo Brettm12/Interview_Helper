@@ -73,6 +73,10 @@ interface AudioState {
   /** every audio input, for the two device pickers */
   inputDevices: AudioDevice[]
   micTest: MicTest
+  /** one-line transcription-pipeline problem (model failed, falling behind,
+   *  capture stalled) — rendered in the live panel and the setup notice, so a
+   *  dead pipeline is never only visible in ⌘⇧D (REVIEW.md H2/C4) */
+  pipelineNotice: string | null
 
   refreshPermissions(): Promise<void>
   refreshDevices(): Promise<void>
@@ -82,6 +86,7 @@ interface AudioState {
   publish(stream: 'meeting' | 'mic', patch: Partial<SourceStatus>): void
   setLabels(labels: { meeting?: string; mic?: string }): void
   setError(stream: 'meeting' | 'mic', message: string | null): void
+  setPipelineNotice(notice: string | null): void
   countSegment(stream: 'meeting' | 'mic'): void
   reset(stream: 'meeting' | 'mic'): void
 }
@@ -94,6 +99,7 @@ export const useAudioStore = create<AudioState>((set) => ({
   micLabel: 'Your mic',
   inputDevices: [],
   micTest: NO_TEST,
+  pipelineNotice: null,
 
   refreshPermissions: async () => {
     const permissions = await api.permissions.status()
@@ -122,10 +128,14 @@ export const useAudioStore = create<AudioState>((set) => ({
       [stream]: {
         ...s[stream],
         error: message,
-        state: message ? 'no-track' : s[stream].state,
+        // clearing an error un-sticks 'no-track' (recovered source starts
+        // over as silent until sound actually arrives)
+        state: message ? 'no-track' : s[stream].state === 'no-track' ? 'silent' : s[stream].state,
         level: message ? 0 : s[stream].level
       }
     }) as Partial<AudioState>),
+
+  setPipelineNotice: (pipelineNotice) => set({ pipelineNotice }),
 
   countSegment: (stream) =>
     set((s) => ({ [stream]: { ...s[stream], segments: s[stream].segments + 1 } }) as Partial<AudioState>),

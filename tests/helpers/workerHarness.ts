@@ -32,15 +32,11 @@ export async function loadWorker(importer: () => Promise<unknown>): Promise<Work
     location: { href: 'lih-test://worker/' }
   }
   const g = globalThis as { self?: unknown }
-  const prev = g.self
+  // the module reads the global `self` again on every postMessage, so the shim
+  // must STAY installed for this worker's lifetime. Each loadWorker replaces
+  // it; vitest isolates test files in separate processes, so nothing leaks.
   g.self = shim
-  try {
-    await importer()
-  } finally {
-    // the module captured `self` at evaluation time; restore the global so
-    // parallel test files aren't affected
-    g.self = prev
-  }
+  await importer()
   const handler = shim.onmessage
   if (!handler) throw new Error('worker module did not set self.onmessage')
 

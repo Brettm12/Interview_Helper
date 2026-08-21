@@ -31,6 +31,7 @@ export default function SetupContainer(): JSX.Element | null {
   const micLabel = useAudioStore((s) => s.micLabel)
   const devices = useAudioStore((s) => s.inputDevices)
   const micTest = useAudioStore((s) => s.micTest)
+  const pipelineNotice = useAudioStore((s) => s.pipelineNotice)
   const settings = useSettingsStore()
   const [placementError, setPlacementError] = useState<string | null>(null)
   const [modelsNotice, setModelsNotice] = useState<string | null>(null)
@@ -269,7 +270,7 @@ export default function SetupContainer(): JSX.Element | null {
         void settings.update({ placement: p })
       }}
       placementError={placementError}
-      modelsNotice={modelsNotice}
+      modelsNotice={pipelineNotice ?? modelsNotice}
       onDownloadModels={
         !api.env.mock && !downloading && modelsIncomplete ? downloadModels : null
       }

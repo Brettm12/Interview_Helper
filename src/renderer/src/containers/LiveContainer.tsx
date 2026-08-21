@@ -9,6 +9,7 @@ import type {
   UnsureBodyProps
 } from '../screens/contracts'
 import { useSessionStore } from '../state/sessionStore'
+import { useAudioStore } from '../state/audioStore'
 import { useBankStore, answersForLoop, storyById } from '../state/bankStore'
 import { usePanelStore } from '../state/panelStore'
 import { formatClock } from '../lib/recap'
@@ -27,6 +28,9 @@ export default function LiveContainer(): JSX.Element | null {
   const transcriptVisible = usePanelStore((s) => s.transcriptVisible)
   const toggleTranscript = usePanelStore((s) => s.toggleTranscript)
   const openFind = usePanelStore((s) => s.openFind)
+  // pipeline problems must be visible where the user is actually looking
+  // mid-interview, not only in ⌘⇧D (REVIEW.md H2/C4)
+  const notice = useAudioStore((s) => s.pipelineNotice)
 
   // 10 Hz tick while the unsure countdown runs
   const [, setTick] = useState(0)
@@ -115,6 +119,7 @@ export default function LiveContainer(): JSX.Element | null {
       matched={matched}
       unsure={unsure}
       transcript={line}
+      notice={notice}
       transcriptVisible={transcriptVisible}
       onToggleTranscript={toggleTranscript}
       onFind={openFind}
