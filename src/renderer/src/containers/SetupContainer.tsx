@@ -75,8 +75,14 @@ export default function SetupContainer(): JSX.Element | null {
     let offProgress: (() => void) | null = null
     if (!api.env.mock) {
       refreshModels(useSettingsStore.getState().whisperModel)
+      // byte-level progress: "file 3/11" alone froze for minutes on the 100MB
+      // weight files, which reads as a hang (REVIEW.md M17)
+      const mb = (n: number): string => `${Math.max(1, Math.round(n / 1048576))} MB`
       offProgress = api.models.onProgress((p) =>
-        setModelsNotice(`Downloading models — ${p.done}/${p.total} · ${p.file}`)
+        setModelsNotice(
+          `Downloading models — file ${p.done}/${p.total} · ${p.file}` +
+            (p.totalBytes > 0 ? ` · ${mb(p.loadedBytes)} of ${mb(p.totalBytes)}` : '')
+        )
       )
     }
     return () => {
@@ -99,7 +105,9 @@ export default function SetupContainer(): JSX.Element | null {
       setModelsNotice(
         r.ok
           ? 'On-device models installed — semantic matching is on.'
-          : `Model download failed: ${r.error ?? 'unknown error'}`
+          : r.error === 'download cancelled'
+            ? 'Download cancelled — finished files are kept, and it resumes where it stopped.'
+            : `Model download failed: ${r.error ?? 'unknown error'}`
       )
     })
   }
@@ -274,6 +282,7 @@ export default function SetupContainer(): JSX.Element | null {
       onDownloadModels={
         !api.env.mock && !downloading && modelsIncomplete ? downloadModels : null
       }
+      onCancelDownload={downloading ? () => void api.models.cancelDownload() : null}
       canStart={startable}
       onStart={() => startSession()}
       onEditBank={() => panel.setView('bank')}

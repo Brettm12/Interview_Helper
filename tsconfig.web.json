@@ -16,5 +16,11 @@
       "@shared/*": ["./src/shared/*"]
     }
   },
-  "include": ["src/renderer/src/**/*", "src/shared/**/*", "tests/**/*"]
+  "include": [
+    "src/renderer/src/**/*",
+    "src/shared/**/*",
+    "src/main/models.ts",
+    "src/main/persistence.ts",
+    "tests/**/*"
+  ]
 }

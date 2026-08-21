@@ -142,6 +142,7 @@ function browserShim(): HelperApi {
       // mock mode never loads models
       status: async () => ({ dir: '', whisper: false, embeddings: false, whisperModel: '' }),
       download: async () => ({ ok: false, error: 'Models are only used by the desktop app.' }),
+      cancelDownload: async () => {},
       onProgress: () => () => {}
     },
     onCommand: (cb) => {

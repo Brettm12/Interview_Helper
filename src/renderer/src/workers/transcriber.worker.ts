@@ -4,6 +4,7 @@ import { DEFAULT_WHISPER_MODEL, FALLBACK_WHISPER_MODEL } from '@shared/models'
 import { VadSegmenter, normalizeForAsr, type Utterance } from '@/lib/dsp/vad'
 import { cleanTranscript, isLikelyHallucination } from '@/lib/asrText'
 import { AsrQueue, rank, type Stream } from '@/lib/asrQueue'
+import { localWasmPaths } from '@/lib/ortWasm'
 
 export {}
 
@@ -58,6 +59,9 @@ async function init(modelPath: string, modelId: string): Promise<void> {
   const { pipeline, env } = await import('@xenova/transformers')
   env.allowRemoteModels = false
   env.localModelPath = modelPath
+  // the onnx runtime's default wasmPaths is a CDN — point it at the bundled
+  // binaries before the first pipeline() constructs a session (REVIEW.md C2)
+  env.backends.onnx.wasm.wasmPaths = localWasmPaths()
   let asr: Awaited<ReturnType<typeof pipeline>>
   try {
     asr = await pipeline('automatic-speech-recognition', modelId)

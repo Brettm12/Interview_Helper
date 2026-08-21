@@ -348,6 +348,31 @@ export function modelState(): 'loading' | 'warm' | 'failed' | 'idle' {
   return models?.transcription.state ?? 'idle'
 }
 
+// Truthful signals for the offline probe (tools/verify/wasm-probe.mjs): "did
+// the real pipelines come up on the bundled wasm, without touching the CDN"
+// is not observable from a screenshot. Read-only, and embedSmoke embeds one
+// throwaway string — nothing here can change app state.
+declare global {
+  interface Window {
+    __lihDebug?: {
+      embeddingsReady(): boolean
+      transcriberState(): 'loading' | 'warm' | 'failed' | 'idle'
+      /** embed one string end-to-end; resolves to the vector length (384) */
+      embedSmoke(): Promise<number>
+    }
+  }
+}
+if (typeof window !== 'undefined') {
+  window.__lihDebug = {
+    embeddingsReady: () => models?.embeddings.ready ?? false,
+    transcriberState: () => modelState(),
+    embedSmoke: async () => {
+      const rows = (await models?.embeddings.embed(['offline wasm probe'])) ?? []
+      return rows[0]?.length ?? 0
+    }
+  }
+}
+
 /** tear the capture path down. Pause uses this: for an app whose promise is
  *  "audio stays on this machine and nothing is recorded", pausing has to stop
  *  the tracks, not just flip a flag and keep listening. */

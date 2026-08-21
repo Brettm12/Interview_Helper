@@ -39,6 +39,20 @@ export interface ModelsStatus {
   whisperModel: string
 }
 
+/** one tick of a model download — enough to render "file 3/11 · 42 MB of
+ *  110 MB" instead of a counter that sits frozen through a 100MB file */
+export interface ModelProgress {
+  /** 1-based index of the file being fetched */
+  done: number
+  total: number
+  /** "Xenova/whisper-tiny.en/config.json" */
+  file: string
+  /** bytes landed for the CURRENT file (includes any resumed prefix) */
+  loadedBytes: number
+  /** from the manifest or Content-Length; 0 when unknown */
+  totalBytes: number
+}
+
 /** localModelPath prefix served by main's privileged custom protocol */
 export const MODELS_URL_PREFIX = 'lih-models://models'
 
@@ -110,8 +124,10 @@ export interface HelperApi {
     status(whisperModel?: string): Promise<ModelsStatus>
     /** fetch the on-device models — the only network call the app makes */
     download(whisperModel?: string): Promise<{ ok: boolean; error?: string }>
+    /** stop an in-flight download; verified files and resumable partials stay */
+    cancelDownload(): Promise<void>
     /** progress while a download runs: "3/11 · Xenova/whisper-tiny.en/…" */
-    onProgress(cb: (p: { done: number; total: number; file: string }) => void): () => void
+    onProgress(cb: (p: ModelProgress) => void): () => void
   }
   /** global shortcuts + strip actions forwarded from main */
   onCommand(cb: (cmd: AppCommand) => void): () => void

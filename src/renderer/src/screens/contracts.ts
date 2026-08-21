@@ -302,6 +302,8 @@ export interface SetupScreenProps {
   modelsNotice?: string | null
   /** offered next to the notice; null while a download is running or done */
   onDownloadModels?: (() => void) | null
+  /** offered next to the notice while a download runs; partial files resume */
+  onCancelDownload?: (() => void) | null
   canStart: boolean
   onStart: () => void
   onEditBank: () => void

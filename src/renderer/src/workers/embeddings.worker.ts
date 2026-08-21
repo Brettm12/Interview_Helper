@@ -1,4 +1,6 @@
 /// <reference lib="webworker" />
+import { localWasmPaths } from '@/lib/ortWasm'
+
 export {}
 
 // all-MiniLM-L6-v2 embeddings in a worker so the panel never janks.
@@ -30,6 +32,9 @@ async function init(modelPath: string): Promise<void> {
   const { pipeline, env } = await import('@xenova/transformers')
   env.allowRemoteModels = false
   env.localModelPath = modelPath
+  // the onnx runtime's default wasmPaths is a CDN — point it at the bundled
+  // binaries before the first pipeline() constructs a session (REVIEW.md C2)
+  env.backends.onnx.wasm.wasmPaths = localWasmPaths()
   extractor = (await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2')) as never
   post({ type: 'ready' })
 }

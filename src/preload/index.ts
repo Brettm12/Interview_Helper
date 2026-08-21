@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppCommand, HelperApi, StripState } from '../shared/ipc'
+import type { AppCommand, HelperApi, ModelProgress, StripState } from '../shared/ipc'
 
 const api: HelperApi = {
   bank: {
@@ -52,8 +52,9 @@ const api: HelperApi = {
   models: {
     status: (whisperModel) => ipcRenderer.invoke('models:status', whisperModel),
     download: (whisperModel) => ipcRenderer.invoke('models:download', whisperModel),
+    cancelDownload: () => ipcRenderer.invoke('models:cancel-download'),
     onProgress: (cb) => {
-      const listener = (_e: unknown, p: { done: number; total: number; file: string }): void => cb(p)
+      const listener = (_e: unknown, p: ModelProgress): void => cb(p)
       ipcRenderer.on('models:progress', listener)
       return () => ipcRenderer.removeListener('models:progress', listener)
     }

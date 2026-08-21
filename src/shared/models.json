@@ -1,5 +1,5 @@
 {
-  "comment": "On-device model manifest — the single source of truth for both `npm run fetch-models` and the in-app download on the setup screen. Quantized ONNX builds only; these are the exact files @xenova/transformers requests for these two pipelines.",
+  "comment": "On-device model manifest \u2014 the single source of truth for both `npm run fetch-models` and the in-app download on the setup screen. Quantized ONNX builds only; these are the exact files @xenova/transformers requests for these two pipelines. Every file carries a sha256 + byte size so a truncated or captive-portal download can never be installed as a model (REVIEW.md H12).",
   "host": "https://huggingface.co",
   "defaultTranscription": "Xenova/whisper-base.en",
   "models": [
@@ -7,36 +7,108 @@
       "id": "Xenova/whisper-tiny.en",
       "use": "transcription",
       "files": [
-        "config.json",
-        "generation_config.json",
-        "preprocessor_config.json",
-        "tokenizer.json",
-        "tokenizer_config.json",
-        "onnx/encoder_model_quantized.onnx",
-        "onnx/decoder_model_merged_quantized.onnx"
+        {
+          "path": "config.json",
+          "sha256": "37a1073be00d19118c06557896c7c148598f4d8277edc0f5bc07c9f5554839f1",
+          "bytes": 2202
+        },
+        {
+          "path": "generation_config.json",
+          "sha256": "132c95ba9db45f4498f2eab3fea7c1d6a174005010f8f6b7d20cfd5e9795996b",
+          "bytes": 1590
+        },
+        {
+          "path": "preprocessor_config.json",
+          "sha256": "a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d",
+          "bytes": 339
+        },
+        {
+          "path": "tokenizer.json",
+          "sha256": "c6ee8f089220a5b1188f6426456772572671c6141ae007eecb83c6a8349f5deb",
+          "bytes": 2128494
+        },
+        {
+          "path": "tokenizer_config.json",
+          "sha256": "e082c1ad251541bf277967a703252cddd4bb37a71a43737e03d050c22ec08238",
+          "bytes": 835
+        },
+        {
+          "path": "onnx/encoder_model_quantized.onnx",
+          "sha256": "8cc3c6f8563d1b3fbd2c5af9f64c2bed8b020bc593c402d1ef53b9f08fbf1b90",
+          "bytes": 10124913
+        },
+        {
+          "path": "onnx/decoder_model_merged_quantized.onnx",
+          "sha256": "dbb2e063b7fbc41d9803b9698f93ecb035c50cbb3fb87b56cb131e4a5eb99059",
+          "bytes": 30727382
+        }
       ]
     },
     {
       "id": "Xenova/whisper-base.en",
       "use": "transcription",
       "files": [
-        "config.json",
-        "generation_config.json",
-        "preprocessor_config.json",
-        "tokenizer.json",
-        "tokenizer_config.json",
-        "onnx/encoder_model_quantized.onnx",
-        "onnx/decoder_model_merged_quantized.onnx"
+        {
+          "path": "config.json",
+          "sha256": "5c390f2c6ba84ddeb7e362cd8b2123832911407850174e64d7081ccc36df2d64",
+          "bytes": 2202
+        },
+        {
+          "path": "generation_config.json",
+          "sha256": "1e57ed56ad1bd7f08a49ece7fe7daada674573805a35f8bdbbe68380aab5b1ee",
+          "bytes": 1500
+        },
+        {
+          "path": "preprocessor_config.json",
+          "sha256": "a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d",
+          "bytes": 339
+        },
+        {
+          "path": "tokenizer.json",
+          "sha256": "c6ee8f089220a5b1188f6426456772572671c6141ae007eecb83c6a8349f5deb",
+          "bytes": 2128494
+        },
+        {
+          "path": "tokenizer_config.json",
+          "sha256": "e082c1ad251541bf277967a703252cddd4bb37a71a43737e03d050c22ec08238",
+          "bytes": 835
+        },
+        {
+          "path": "onnx/encoder_model_quantized.onnx",
+          "sha256": "d0d4e59e2842617b39787cece73d7e8f76f99b1697d3386c0e682eca2269f4a1",
+          "bytes": 23200856
+        },
+        {
+          "path": "onnx/decoder_model_merged_quantized.onnx",
+          "sha256": "a25afc5858a20aabb7652cb2d555996ebe10691a69bbdb423d5073d52f060325",
+          "bytes": 53707027
+        }
       ]
     },
     {
       "id": "Xenova/all-MiniLM-L6-v2",
       "use": "matching + coverage",
       "files": [
-        "config.json",
-        "tokenizer.json",
-        "tokenizer_config.json",
-        "onnx/model_quantized.onnx"
+        {
+          "path": "config.json",
+          "sha256": "7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7",
+          "bytes": 650
+        },
+        {
+          "path": "tokenizer.json",
+          "sha256": "da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0",
+          "bytes": 711661
+        },
+        {
+          "path": "tokenizer_config.json",
+          "sha256": "9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3",
+          "bytes": 366
+        },
+        {
+          "path": "onnx/model_quantized.onnx",
+          "sha256": "afdb6f1a0e45b715d0bb9b11772f032c399babd23bfc31fed1c170afc848bdb1",
+          "bytes": 22972370
+        }
       ]
     }
   ]

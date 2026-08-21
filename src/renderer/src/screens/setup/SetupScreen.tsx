@@ -92,6 +92,7 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
     placementError,
     modelsNotice,
     onDownloadModels,
+    onCancelDownload,
     canStart,
     onStart,
     onEditBank,
@@ -210,6 +211,14 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
                   {' '}
                   <span className="action setup-models-action" onClick={onDownloadModels}>
                     Download now
+                  </span>
+                </>
+              )}
+              {onCancelDownload != null && (
+                <>
+                  {' '}
+                  <span className="action setup-models-action" onClick={onCancelDownload}>
+                    Cancel
                   </span>
                 </>
               )}

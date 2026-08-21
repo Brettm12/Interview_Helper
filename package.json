@@ -26,7 +26,8 @@
     "package:win": "npm run build && electron-builder --win --publish never",
     "package:linux": "npm run build && electron-builder --linux --publish never",
     "smoke:package": "node tools/verify/smoke-package.mjs",
-    "probe:windows": "node tools/verify/windows-probe.mjs"
+    "probe:windows": "node tools/verify/windows-probe.mjs",
+    "probe:wasm": "node tools/verify/wasm-probe.mjs"
   },
   "dependencies": {
     "@fontsource/instrument-serif": "^5.2.5",
@@ -52,6 +53,7 @@
     "playwright": "^1.62.1",
     "pngjs": "^7.0.0",
     "typescript": "^5.7.2",
+    "undici": "^6.28.0",
     "vite": "^6.0.7",
     "vitest": "^3.0.5"
   }

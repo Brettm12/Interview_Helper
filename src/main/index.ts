@@ -1,9 +1,9 @@
 import { app, desktopCapturer, dialog, globalShortcut, ipcMain, net, protocol, session } from 'electron'
 import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { repository } from './persistence'
-import { downloadModels, modelsDir, modelsStatus } from './models'
+import { cancelDownload, downloadModels, modelsDir, modelsStatus } from './models'
 import { permissionStatus, requestMicrophone, openScreenRecordingSettings } from './permissions'
 import {
   allWindows,
@@ -147,12 +147,15 @@ function registerIpc(): void {
   ipcMain.handle('models:status', (_e, whisperModel?: string) => modelsStatus(whisperModel))
   ipcMain.handle('models:download', async (e, whisperModel?: string) => {
     try {
-      await downloadModels((p) => e.sender.send('models:progress', p), whisperModel)
+      await downloadModels((p) => {
+        if (!e.sender.isDestroyed()) e.sender.send('models:progress', p)
+      }, whisperModel)
       return { ok: true }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   })
+  ipcMain.handle('models:cancel-download', () => cancelDownload())
 }
 
 // Global: during an interview the focus is on the meeting window, not on
@@ -232,12 +235,32 @@ app.whenReady().then(async () => {
     { useSystemPicker: false }
   )
 
-  // serve userData/models over the privileged scheme registered above
-  const dir = modelsDir()
+  // Serve two read-only roots over the privileged scheme registered above:
+  //   lih-models://models/…  → userData/models (the downloaded model files)
+  //   lih-models://wasm/…    → the bundled renderer assets (onnxruntime's
+  //                            .wasm binaries — REVIEW.md C2: these used to
+  //                            come from a CDN at runtime, which broke the
+  //                            offline promise and died on a dead connection)
+  // Containment via path.relative — the old startsWith(dir) check missed the
+  // trailing separator and let a sibling `models*` directory through
+  // (REVIEW.md M1).
+  const modelsRoot = modelsDir()
+  const wasmRoot = join(__dirname, '../renderer/assets')
   protocol.handle('lih-models', (req) => {
-    const rel = decodeURIComponent(new URL(req.url).pathname)
-    const file = join(dir, rel)
-    if (!file.startsWith(dir)) return new Response(null, { status: 403 })
+    let url: URL
+    let rel: string
+    try {
+      url = new URL(req.url)
+      rel = decodeURIComponent(url.pathname)
+    } catch {
+      return new Response(null, { status: 400 })
+    }
+    const root = url.hostname === 'wasm' ? wasmRoot : modelsRoot
+    const file = join(root, rel)
+    const escape = relative(root, file)
+    if (escape.startsWith('..') || isAbsolute(escape)) {
+      return new Response(null, { status: 403 })
+    }
     return net.fetch(pathToFileURL(file).toString())
   })
 

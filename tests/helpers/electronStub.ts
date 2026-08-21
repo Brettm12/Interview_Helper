@@ -27,3 +27,11 @@ export const app = {
     return 'Live Interview Helper'
   }
 }
+
+// models.ts imports `net` for downloads; the download path itself needs the
+// real Chromium stack and is exercised by the probes, not by unit tests
+export const net = {
+  fetch(): never {
+    throw new Error('net.fetch is not available under vitest — use the real app or a probe')
+  }
+}
