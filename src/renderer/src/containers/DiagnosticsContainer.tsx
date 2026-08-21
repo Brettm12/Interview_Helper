@@ -5,8 +5,17 @@ import { usePanelStore } from '../state/panelStore'
 import { useSessionStore } from '../state/sessionStore'
 import { useSettingsStore } from '../state/settingsStore'
 import { whisperTier } from '@shared/models'
+import { modelState } from './runtime'
 import { diagnose, formatFloorDb, formatLevelDb } from '../lib/diagnose'
 import { api } from '../lib/api'
+
+/** what the loaded-model state means to someone reading the panel */
+const MODEL_STATE_LABEL: Record<string, string> = {
+  idle: 'not loaded',
+  loading: 'loading…',
+  warm: 'warm',
+  failed: 'failed to load'
+}
 
 export default function DiagnosticsContainer(): JSX.Element | null {
   const open = usePanelStore((s) => s.diagnosticsOpen)
@@ -60,9 +69,12 @@ export default function DiagnosticsContainer(): JSX.Element | null {
         }
       ]}
       models={{
+        // "installed" is on disk; "warm" is loaded and ready to decode. They
+        // are different answers to different questions, and the gap between
+        // them used to be the whole first minute of an interview.
         whisper: `${whisperTier(whisperModel).label} · ${
           models == null ? 'checking…' : models.whisper ? 'installed' : 'not installed'
-        }`,
+        } · ${MODEL_STATE_LABEL[modelState()]}`,
         whisperMissing: models != null && !models.whisper,
         embeddings: models == null ? 'checking…' : models.embeddings ? 'installed' : 'not installed',
         embeddingsMissing: models != null && !models.embeddings,

@@ -84,6 +84,88 @@ describe('classification thresholds', () => {
   })
 })
 
+describe('trigger phrases are recognised semantically, not just literally', () => {
+  // The bug: trigger phrases only ever reached the score through fuzzy edit
+  // distance, so "hardest investigation" matched "the hardest investigation"
+  // and missed "the case that gave you the most trouble" completely — which is
+  // precisely the job a trigger phrase exists to do.
+  function cacheOf(vectors: Record<string, number[]>): EmbeddingCache {
+    return new EmbeddingCache({
+      ready: true,
+      embed: async (texts) => texts.map((t) => Float32Array.from(vectors[t] ?? [0, 0, 1]))
+    })
+  }
+
+  const entry: Answer = {
+    id: 'A',
+    question: 'Tell me about a difficult employee relations case.',
+    sectionId: 's',
+    loopIds: [],
+    points: [],
+    storyId: null,
+    triggerPhrases: ['hardest investigation'],
+    lastUsed: null
+  }
+  const other: Answer = { ...entry, id: 'B', question: 'Why this team?', triggerPhrases: [] }
+  // a paraphrase that shares no wording with either the question or the phrase
+  const asked = 'the case that gave you the most trouble'
+
+  it('matches on a paraphrase of the trigger phrase', async () => {
+    const cache = cacheOf({
+      [asked]: [1, 0, 0],
+      'hardest investigation': [1, 0, 0], // the phrase means the same thing…
+      [entry.question]: [0, 1, 0], // …while the canonical question does not
+      [other.question]: [0, 0, 1]
+    })
+    await cache.ensure([asked, 'hardest investigation', entry.question, other.question])
+    const [top] = new HybridMatcher(cache).score(asked, [entry, other])
+    expect(top.entryId).toBe('A')
+    expect(top.score).toBeGreaterThan(TUNING.confident)
+  })
+
+  it('lets the canonical question win a tie against a phrase', async () => {
+    const cache = cacheOf({
+      [asked]: [1, 0, 0],
+      'hardest investigation': [1, 0, 0],
+      [entry.question]: [1, 0, 0], // both perfect…
+      [other.question]: [1, 0, 0]
+    })
+    await cache.ensure([asked, 'hardest investigation', entry.question, other.question])
+    const scores = new HybridMatcher(cache).score(asked, [entry, other])
+    // …so the discount must not lift the phrase above its own question
+    const a = scores.find((c) => c.entryId === 'A')!
+    const b = scores.find((c) => c.entryId === 'B')!
+    expect(a.score).toBeCloseTo(b.score, 5)
+  })
+})
+
+describe('the repeat prior', () => {
+  const matcher = new HybridMatcher()
+  const asked = 'Tell me about a time you handled a difficult employee relations case.'
+
+  it('demotes an entry already answered this session', () => {
+    const before = matcher.score(asked, entries)
+    const after = matcher.score(asked, entries, (id) =>
+      id === 'a-er-case' ? -TUNING.repeatPenalty : 0
+    )
+    const b = before.find((c) => c.entryId === 'a-er-case')!
+    const a = after.find((c) => c.entryId === 'a-er-case')!
+    expect(b.score - a.score).toBeCloseTo(TUNING.repeatPenalty, 5)
+  })
+
+  it('is small enough not to unseat a genuine re-ask on its own', () => {
+    const after = matcher.score(asked, entries, (id) =>
+      id === 'a-er-case' ? -TUNING.repeatPenaltyMax : 0
+    )
+    expect(after[0].entryId).toBe('a-er-case')
+  })
+
+  it('never drives a score below zero', () => {
+    const scores = matcher.score('completely unrelated chatter about lunch', entries, () => -1)
+    expect(Math.min(...scores.map((c) => c.score))).toBeGreaterThanOrEqual(0)
+  })
+})
+
 describe('embedding blend once the model is warm', () => {
   function fakeCache(vectors: Record<string, number[]>): EmbeddingCache {
     const cache = new EmbeddingCache({

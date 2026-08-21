@@ -1,12 +1,13 @@
-import type { AudioChunk, AudioSource, Segment, Transcriber } from '@shared/types'
+import type { AudioChunk, AudioSource } from '@shared/types'
 import type { EmbeddingProvider } from '../embeddings'
 import captureWorkletUrl from './capture.worklet.ts?worker&url'
 import { Biquad, Resampler } from '../dsp/resample'
 import { TUNING } from '@shared/tuning'
 
 // Real capture path. Speaker attribution comes from stream identity:
-// system/meeting audio is `them`, the microphone is `you` — two transcriber
-// instances, one per stream. All processing stays on this machine.
+// system/meeting audio is `them`, the microphone is `you`. Transcription
+// itself lives in TranscriptionService (one worker, both streams). All
+// processing stays on this machine.
 
 const TARGET_RATE = TUNING.asrSampleRate
 
@@ -176,53 +177,6 @@ export class MeetingAudioSource extends MediaStreamSource {
       )
     }
     return stream
-  }
-}
-
-/** Whisper in a worker, one per stream */
-export class WhisperTranscriber implements Transcriber {
-  private worker: Worker
-  private cb: ((s: Segment) => void) | null = null
-  ready = false
-
-  constructor(speaker: 'you' | 'them', modelPath: string, modelId?: string) {
-    this.worker = new Worker(new URL('../../workers/transcriber.worker.ts', import.meta.url), {
-      type: 'module'
-    })
-    this.worker.onmessage = (e) => {
-      const msg = e.data
-      if (msg.type === 'ready') this.ready = true
-      else if (msg.type === 'segment') {
-        this.cb?.({ speaker: msg.speaker, text: msg.text, confirmed: msg.confirmed, t: msg.t })
-      } else if (msg.type === 'error') {
-        console.warn('[transcriber]', msg.message)
-      }
-    }
-    this.worker.postMessage({ type: 'init', modelPath, speaker, modelId })
-  }
-
-  push(chunk: AudioChunk): void {
-    this.worker.postMessage({ type: 'audio', samples: chunk.samples, t: chunk.t }, [
-      chunk.samples.buffer
-    ])
-  }
-
-  onSegment(cb: (s: Segment) => void): void {
-    this.cb = cb
-  }
-
-  /** end of capture: transcribe whatever is mid-sentence instead of losing it */
-  flush(): void {
-    this.worker.postMessage({ type: 'flush' })
-  }
-
-  /** pause: throw away audio in progress, keep the loaded model */
-  reset(): void {
-    this.worker.postMessage({ type: 'reset' })
-  }
-
-  dispose(): void {
-    this.worker.terminate()
   }
 }
 

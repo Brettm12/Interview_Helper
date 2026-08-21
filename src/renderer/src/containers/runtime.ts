@@ -1,12 +1,8 @@
 import type { AudioChunk, Segment, Transcriber } from '@shared/types'
 import { MODELS_URL_PREFIX } from '@shared/ipc'
 import { createMockDriver, type MockDriver } from '../lib/drivers/mock'
-import {
-  MeetingAudioSource,
-  MicAudioSource,
-  WhisperTranscriber,
-  WorkerEmbeddings
-} from '../lib/drivers/real'
+import { MeetingAudioSource, MicAudioSource, WorkerEmbeddings } from '../lib/drivers/real'
+import { TranscriptionService } from '../lib/drivers/transcription'
 import { SessionEngine } from '../lib/engine'
 import { EmbeddingCache, nullEmbeddings } from '../lib/embeddings'
 import { createStripPublisher, deriveStripState } from '../lib/strip'
@@ -33,9 +29,29 @@ let driver: MockDriver | null = null
 let engine: SessionEngine | null = null
 let stopPlayback: (() => void) | null = null
 let realSources: { meeting: MeetingAudioSource; mic: MicAudioSource } | null = null
-let realTranscribers: { them: WhisperTranscriber; you: WhisperTranscriber } | null = null
-let realEmbeddings: WorkerEmbeddings | null = null
 let audioPrepared = false
+
+/**
+ * The on-device models, loaded once and kept.
+ *
+ * These used to be created inside startSession, which meant the first minute
+ * of every interview ran while ~145MB of Whisper and MiniLM were still loading
+ * from cold: utterances queued behind the load and were dropped past the cap,
+ * and until MiniLM was warm the matcher had no embeddings at all and fell back
+ * to bigram Dice. The opening question — usually the one you most want the
+ * card up for — was the one least likely to work.
+ *
+ * They load on the setup screen instead, while the user is choosing a
+ * placement, and transcription stays *disabled* until a session arms. Warm
+ * model, idle pipeline: nothing said in front of the setup screen is
+ * transcribed.
+ */
+let models: {
+  transcription: TranscriptionService
+  embeddings: WorkerEmbeddings
+  cache: EmbeddingCache
+  modelId: string
+} | null = null
 
 export function getEngine(): SessionEngine | null {
   return engine
@@ -171,14 +187,11 @@ export function prepareAudio(): void {
   }
   realSources.meeting.onChunk((c) => {
     meetingMeter(c.samples)
-    realTranscribers?.them.push(stampClock('meeting', c))
+    models?.transcription.push('them', stampClock('meeting', c))
   })
   realSources.mic.onChunk((c) => {
     micMeter(c.samples)
-    // a copy, and *before* the session transcriber: push() transfers the
-    // buffer, so whoever goes second would be handed a detached array
-    if (micTestSink) micTestSink({ ...c, samples: c.samples.slice() })
-    realTranscribers?.you.push(stampClock('mic', c))
+    models?.transcription.push('you', stampClock('mic', c))
   })
   // the device's real name, straight off the track — a default input that
   // switched to a narrowband headset is otherwise completely invisible
@@ -197,6 +210,52 @@ export function prepareAudio(): void {
   // labels arrive with the track, so the picker needs a refresh once
   // permission has actually been granted
   void useAudioStore.getState().refreshDevices()
+  ensureModels()
+}
+
+/**
+ * Load the on-device models and warm the bank, without transcribing anything.
+ *
+ * Idempotent, except when the chosen Whisper tier changes — switching model on
+ * the setup screen has to actually take effect, so the old worker is torn down
+ * and a new one loads.
+ */
+export function ensureModels(): void {
+  if (MOCK) return
+  const modelId = useSettingsStore.getState().whisperModel
+  if (models && models.modelId !== modelId) {
+    models.transcription.dispose()
+    models.embeddings.dispose()
+    models = null
+  }
+  if (models) return
+  // main serves userData/models over the privileged scheme; the browser build
+  // never reaches this branch
+  const modelPath = IN_ELECTRON ? MODELS_URL_PREFIX : 'models'
+  const transcription = new TranscriptionService(modelPath, modelId)
+  const embeddings = new WorkerEmbeddings(modelPath)
+  const cache = new EmbeddingCache(embeddings)
+  transcription.onStateChange(() => useAudioStore.getState().publish('mic', {}))
+  models = { transcription, embeddings, cache, modelId }
+  warmBank()
+}
+
+/** embed the active loop's questions, trigger phrases and points ahead of time,
+ *  so the first question is matched semantically rather than on bigram overlap */
+function warmBank(): void {
+  const bank = useBankStore.getState().bank
+  if (!bank || !models) return
+  const answers = answersForLoop(bank, bank.activeLoopId)
+  void models.cache.ensure([
+    ...answers.map((a) => a.question),
+    ...answers.flatMap((a) => a.triggerPhrases),
+    ...answers.flatMap((a) => a.points.map((p) => p.text))
+  ])
+}
+
+/** what the diagnostics panel reports about the speech model */
+export function modelState(): 'loading' | 'warm' | 'failed' | 'idle' {
+  return models?.transcription.state ?? 'idle'
 }
 
 /** tear the capture path down. Pause uses this: for an app whose promise is
@@ -232,14 +291,12 @@ export function restartAudio(): void {
 // through the real capture path, transcribes with the real model, and shows
 // you the words back — the same path that will run during the call.
 
-let micTestSink: ((c: AudioChunk) => void) | null = null
-
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 export async function runMicTest(): Promise<void> {
   const audio = useAudioStore.getState()
   if (audio.micTest.state === 'recording' || audio.micTest.state === 'thinking') return
-  if (realTranscribers) {
+  if (engine) {
     audio.setMicTest({ state: 'failed', error: 'A session is already running.' })
     return
   }
@@ -269,8 +326,8 @@ export async function runMicTest(): Promise<void> {
     return
   }
 
-  const models = await api.models.status(useSettingsStore.getState().whisperModel)
-  if (!models.whisper) {
+  const installed = await api.models.status(useSettingsStore.getState().whisperModel)
+  if (!installed.whisper) {
     audio.setMicTest({
       state: 'failed',
       error: 'The speech model is not installed yet — download it first.'
@@ -289,23 +346,28 @@ export async function runMicTest(): Promise<void> {
     })
     return
   }
+  ensureModels()
+  const svc = models?.transcription
+  if (!svc) {
+    audio.setMicTest({ state: 'failed', error: 'The speech model is not loaded.' })
+    return
+  }
   audio.setMicTest({ state: 'recording' })
 
-  const modelPath = IN_ELECTRON ? MODELS_URL_PREFIX : 'models'
-  const probe = new WhisperTranscriber('you', modelPath, useSettingsStore.getState().whisperModel)
+  // the same warm model the session will use, rather than a throwaway probe:
+  // spawning one meant every test paid a cold load inside its own timeout
   const heard: string[] = []
-  probe.onSegment((s) => {
+  const off = svc.subscribe('you', (s) => {
     if (s.confirmed) heard.push(s.text)
   })
-  micTestSink = (c) => probe.push(c)
+  svc.setEnabled(true)
 
   try {
     await delay(TUNING.micTestRecordMs)
-    micTestSink = null
     useAudioStore.getState().setMicTest({ state: 'thinking' })
     // whatever is mid-sentence still counts — this is a five-second test and
     // losing the tail would report "heard nothing" for a working mic
-    probe.flush()
+    svc.flush()
     const deadline = Date.now() + TUNING.micTestDecodeMs
     while (heard.length === 0 && Date.now() < deadline) await delay(150)
     const text = heard.join(' ').trim()
@@ -324,8 +386,8 @@ export async function runMicTest(): Promise<void> {
       error: err instanceof Error ? err.message : String(err)
     })
   } finally {
-    micTestSink = null
-    probe.dispose()
+    off()
+    svc.setEnabled(false)
   }
 }
 
@@ -509,27 +571,19 @@ export function startSession(opts: StartOptions = {}): void {
     stopPlayback = d.play()
   } else {
     prepareAudio()
-    // main serves userData/models over the privileged scheme; the browser
-    // build never reaches this branch
-    const modelPath = IN_ELECTRON ? MODELS_URL_PREFIX : 'models'
-    realTranscribers = {
-      them: new WhisperTranscriber('them', modelPath, settings.whisperModel),
-      you: new WhisperTranscriber('you', modelPath, settings.whisperModel)
-    }
-    realEmbeddings = new WorkerEmbeddings(modelPath)
-    const cache = new EmbeddingCache(realEmbeddings)
-    const them = tee(realTranscribers.them)
-    const you = tee(realTranscribers.you)
+    ensureModels()
+    const m = models
+    if (!m) return
+    // already loaded (and the bank already embedded) from the setup screen —
+    // arming just opens the gate
+    m.transcription.clearSubscribers()
+    const them = tee(m.transcription.transcriberFor('them'))
+    const you = tee(m.transcription.transcriberFor('you'))
     countSegments(them, 'meeting')
     countSegments(you, 'mic')
-    engine = new SessionEngine(them, you, cache)
-    // pre-warm the bank's questions and points while the interviewer is still
-    // on small talk
-    const answers = bank.answers.filter((a) => a.loopIds.includes(bank.activeLoopId))
-    void cache.ensure([
-      ...answers.map((a) => a.question),
-      ...answers.flatMap((a) => a.points.map((p) => p.text))
-    ])
+    engine = new SessionEngine(them, you, m.cache)
+    warmBank() // the active loop may have changed since the models loaded
+    m.transcription.setEnabled(true)
   }
 
   usePanelStore.getState().setView('armed')
@@ -546,11 +600,10 @@ export async function endSession(): Promise<void> {
     engine = null
     await e.end() // saves the record, flips the view to recap
   }
-  realTranscribers?.them.dispose()
-  realTranscribers?.you.dispose()
-  realTranscribers = null
-  realEmbeddings?.dispose()
-  realEmbeddings = null
+  // the models stay loaded: a second session in the same run should cost
+  // nothing, and disposing them here is what made every arm pay a cold start
+  models?.transcription.setEnabled(false)
+  models?.transcription.clearSubscribers()
   zeroClock(false)
   stripPublisherStop?.()
   usePanelStore.getState().setCollapsed(false)
@@ -579,13 +632,13 @@ export function pauseSession(): void {
   if (s.status === 'paused') {
     s.setStatus(s.match.entryId ? 'listening' : 'armed')
     prepareAudio()
+    models?.transcription.setEnabled(true)
     return
   }
   if (s.status === 'armed' || s.status === 'listening') {
     s.setStatus('paused')
     // anything mid-sentence still belongs in the transcript
-    realTranscribers?.them.flush()
-    realTranscribers?.you.flush()
+    models?.transcription.setEnabled(false) // flushes what was mid-sentence
     stopAudio()
   }
 }

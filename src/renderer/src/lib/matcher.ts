@@ -4,12 +4,16 @@ import { diceCoefficient, fuzzyPhraseHit } from './text'
 import type { EmbeddingCache } from './embeddings'
 
 // Scores the rolling window of interviewer speech against every bank entry:
+//   - embedding cosine, best across the question *and* its trigger phrases
 //   - trigger-phrase hit (normalised, fuzzy edit distance) → additive boost
-//   - embedding cosine similarity utterance ↔ question text (once warm)
 //   - bigram Dice coefficient as the fallback path while the model warms up
 // All thresholds live in @shared/tuning.
 
 export type MatchState = 'none' | 'ambiguous' | 'confident'
+
+/** per-entry score adjustment supplied by the session — see the repeat prior
+ *  in engine.ts. Positive values promote, negative demote. */
+export type Priors = (entryId: string) => number
 
 export class HybridMatcher implements Matcher {
   constructor(
@@ -17,11 +21,28 @@ export class HybridMatcher implements Matcher {
     private tuning: Tuning = TUNING
   ) {}
 
-  score(utterance: string, entries: Answer[]): Candidate[] {
+  /** every text an entry can legitimately be recognised by */
+  private textsFor(entry: Answer): string[] {
+    return [entry.question, ...entry.triggerPhrases]
+  }
+
+  score(utterance: string, entries: Answer[], priors?: Priors): Candidate[] {
     const t = this.tuning
     const out: Candidate[] = entries.map((entry) => {
       const dice = diceCoefficient(utterance, entry.question)
-      const cos = this.embeddings?.similarity(utterance, entry.question) ?? null
+      // Trigger phrases used to reach the score only through fuzzy edit
+      // distance, so "hardest investigation" matched "the hardest
+      // investigation" and missed "the case that gave you the most trouble"
+      // entirely — which is exactly the job a trigger phrase exists to do.
+      // They are embedded now and the best cosine wins, discounted a little so
+      // the canonical question takes a tie.
+      let cos: number | null = this.embeddings?.similarity(utterance, entry.question) ?? null
+      for (const phrase of entry.triggerPhrases) {
+        const c = this.embeddings?.similarity(utterance, phrase)
+        if (c == null) continue
+        const discounted = c * t.triggerCosineWeight
+        cos = cos == null ? discounted : Math.max(cos, discounted)
+      }
       // once embeddings are warm, blend them with Dice; before that Dice
       // carries the whole semantic score
       let score = cos == null ? dice : cos * t.embeddingWeight + dice * (1 - t.embeddingWeight)
@@ -31,7 +52,13 @@ export class HybridMatcher implements Matcher {
           break // one boost per entry, not per phrase
         }
       }
-      return { entryId: entry.id, score: Math.min(1, score) }
+      // saturate the evidence *before* applying the prior. Clamping last meant
+      // a near-verbatim question with a trigger hit scored past 1, so the
+      // repeat penalty was silently a no-op on exactly the strong, already-used
+      // entries it exists to demote.
+      score = Math.min(1, score)
+      if (priors) score += priors(entry.id)
+      return { entryId: entry.id, score: Math.max(0, Math.min(1, score)) }
     })
     return out.sort((a, b) => b.score - a.score)
   }

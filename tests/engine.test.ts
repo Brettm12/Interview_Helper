@@ -97,3 +97,106 @@ describe('SessionEngine over the demo fixture', () => {
     expect(recap.stats.matched).toBe(4)
   })
 })
+
+// ---- partial-driven matching ------------------------------------------------
+// The panel used to wait for a confirmed segment, which costs the VAD's 750ms
+// of silence plus a decode: the card landed 1.5–3s after the interviewer
+// stopped asking, in the pause you were meant to be filling. Partials arrive
+// while they are still speaking. The bar for acting on one is deliberately
+// well above the confirmed bar — early is valuable, early and wrong is not.
+
+describe('matching on in-flight partials', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  async function armed(): Promise<{ them: MockTranscriber; you: MockTranscriber; engine: SessionEngine }> {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', true)
+    return { them, you, engine }
+  }
+
+  const partial = (them: MockTranscriber, text: string, t: number): void =>
+    them.emit({ speaker: 'them', text, confirmed: false, t })
+  const confirmed = (them: MockTranscriber, text: string, t: number): void =>
+    them.emit({ speaker: 'them', text, confirmed: true, t })
+
+  it('puts the card up before the question is finished', async () => {
+    const { them } = await armed()
+    partial(them, 'Tell me about a time you handled a really difficult employee relations case', 2)
+    expect(useSessionStore.getState().match.entryId).toBe('a-er-case')
+  })
+
+  it('ignores a partial that is merely plausible', async () => {
+    const { them } = await armed()
+    // scores somewhere, but nowhere near the partial bar
+    partial(them, 'so, a case, you know, the difficult sort of thing', 2)
+    expect(useSessionStore.getState().match.entryId).toBeNull()
+  })
+
+  it('does not flip to a second entry inside the debounce window', async () => {
+    const { them } = await armed()
+    partial(them, 'Tell me about a time you handled a really difficult employee relations case', 2)
+    const first = useSessionStore.getState().match.entryId
+    partial(them, "I've got a manager who's burning their team out — how do you coach a manager in that spot?", 3)
+    expect(useSessionStore.getState().match.entryId).toBe(first)
+  })
+
+  it('corrects the recorded wording when the full sentence arrives', async () => {
+    const { them } = await armed()
+    const half = 'Tell me about a time you handled a really difficult employee relations'
+    const whole = `${half} case, start to finish.`
+    partial(them, half, 2)
+    confirmed(them, whole, 3)
+    const qs = useSessionStore.getState().questions
+    // one row, carrying the confirmed text — not a second row for the partial
+    expect(qs).toHaveLength(1)
+    expect(qs[0].question).toBe(whole)
+    expect(qs[0].entryId).toBe('a-er-case')
+  })
+
+  it('leaves a pinned entry alone', async () => {
+    const { them, engine } = await armed()
+    engine.pinEntry('a-policy')
+    partial(them, 'Tell me about a time you handled a really difficult employee relations case', 2)
+    expect(useSessionStore.getState().match.entryId).toBe('a-policy')
+  })
+})
+
+describe('turn boundaries in the scoring window', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  it('a long silence between their segments ends the turn', async () => {
+    // only *your* speaking used to end a turn, so a question could be scored
+    // together with preamble from a minute earlier
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', true)
+
+    them.emit({ speaker: 'them', text: 'Right. Okay. Good, thanks for that.', confirmed: true, t: 1 })
+    // a gap far longer than windowGapSec
+    them.emit({
+      speaker: 'them',
+      text: 'Tell me about a time you handled a really difficult employee relations case.',
+      confirmed: true,
+      t: 40
+    })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(useSessionStore.getState().match.entryId).toBe('a-er-case')
+  })
+})

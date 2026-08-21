@@ -3,32 +3,25 @@ import { TUNING } from '@shared/tuning'
 import { DEFAULT_WHISPER_MODEL, FALLBACK_WHISPER_MODEL } from '@shared/models'
 import { VadSegmenter, normalizeForAsr, type Utterance } from '@/lib/dsp/vad'
 import { cleanTranscript, isLikelyHallucination } from '@/lib/asrText'
+import { AsrQueue, rank, type Stream } from '@/lib/asrQueue'
 
 export {}
 
-// Whisper transcription in a worker, one instance per stream (speaker
-// attribution comes from stream identity, not diarisation). Audio arrives as
-// 16 kHz mono Float32 chunks. Local models only — no network.
+// Whisper transcription. One worker, one copy of the model, both streams —
+// speaker attribution is stream identity, not diarisation. Audio arrives as
+// 16 kHz mono Float32 chunks. Local models only; no network.
 //
-// This worker used to do its own segmentation with a fixed 0.008 RMS gate, and
-// each part of that was a bug you could hear:
+// There used to be one worker per stream. Two copies of base.en is ~290MB
+// resident and two decodes competing blindly for the same cores, with no way
+// to say which mattered more. Here the queue knows: the interviewer's audio
+// drives the panel, yours drives coverage.
 //
-//  - a mic quieter than the constant produced no transcript at all, silently
-//  - sub-threshold chunks were dropped *before buffering*, so Whisper received
-//    speech spliced together at every inter-word gap
-//  - 800ms closed a segment, which is inside an ordinary pause
-//  - short buffers early-returned from flush without being cleared, so a "yes"
-//    glued itself onto whatever was said minutes later
-//  - partials re-transcribed the entire growing buffer, so they got steadily
-//    more expensive until the `busy` guard started dropping real flushes
-//
-// Segmentation now lives in VadSegmenter (adaptive floor, pre-roll, hangover,
-// hard caps — and unit-tested, which none of the above ever was). What remains
-// here is model lifecycle, a serial queue, and output filtering.
+// Segmentation lives in VadSegmenter (adaptive floor, pre-roll, hangover, hard
+// caps) — this file is model lifecycle, the queue, and output filtering.
 
 type InMsg =
-  | { type: 'init'; modelPath: string; speaker: 'you' | 'them'; modelId?: string }
-  | { type: 'audio'; samples: Float32Array; t: number }
+  | { type: 'init'; modelPath: string; modelId?: string }
+  | { type: 'audio'; stream: Stream; samples: Float32Array; t: number }
   /** end of capture: emit whatever is still open rather than losing it */
   | { type: 'flush' }
   /** pause/resume: drop in-progress audio without tearing the model down */
@@ -39,16 +32,18 @@ type OutMsg =
   | { type: 'error'; message: string }
   | { type: 'segment'; speaker: 'you' | 'them'; text: string; confirmed: boolean; t: number }
 
-const DEFAULT_MODEL = DEFAULT_WHISPER_MODEL
+const STREAMS: Stream[] = ['them', 'you']
 
-let speaker: 'you' | 'them' = 'them'
 let transcribe: ((audio: Float32Array, opts: object) => Promise<{ text: string }>) | null = null
 
-const vad = new VadSegmenter(TUNING.asrSampleRate)
-/** the segmenter counts from its own first sample; the source's clock started
+const vad: Record<Stream, VadSegmenter> = {
+  them: new VadSegmenter(TUNING.asrSampleRate),
+  you: new VadSegmenter(TUNING.asrSampleRate)
+}
+/** each segmenter counts from its own first sample; the source's clock started
  *  earlier (capture runs before the session does), so anchor to the offset */
-let clockOffset: number | null = null
-let lastPartialAt = 0
+const clockOffset: Record<Stream, number | null> = { them: null, you: null }
+const lastPartialAt: Record<Stream, number> = { them: 0, you: 0 }
 
 function post(msg: OutMsg): void {
   ;(self as unknown as Worker).postMessage(msg)
@@ -84,49 +79,43 @@ async function init(modelPath: string, modelId: string): Promise<void> {
   void pump()
 }
 
-// ---- serial transcription queue -------------------------------------------
-// One job at a time: Whisper is the bottleneck and running two decodes
-// concurrently in one worker just makes both slower. The old code guarded with
-// a `busy` flag and *dropped* whatever arrived during a decode, which meant
-// real speech was lost precisely when the machine was under load.
+// ---- the queue -------------------------------------------------------------
+// One decode at a time: Whisper is the bottleneck and two concurrent decodes in
+// one worker just make both slower. Ordering and eviction live in AsrQueue,
+// which is pure and unit-tested; this file only supplies the jobs.
 
 interface Job {
-  audio: Float32Array
+  stream: Stream
   confirmed: boolean
+  audio: Float32Array
   t: number
   speechMs: number
 }
 
-const queue: Job[] = []
-let running = false
+const queue = new AsrQueue<Job>(TUNING.asrMaxQueued)
+let runningRank: number | null = null
 
 function enqueue(job: Job): void {
-  if (!job.confirmed) {
-    // a partial that has to wait is stale before it runs — and the confirmed
-    // text for the same audio is right behind it
-    if (running || queue.length > 0) return
-  } else {
-    // confirmed text supersedes any queued partial of the same speech
-    for (let i = queue.length - 1; i >= 0; i--) if (!queue[i].confirmed) queue.splice(i, 1)
-    while (queue.length >= TUNING.asrMaxQueued) {
-      queue.shift()
-      post({ type: 'error', message: 'transcription is falling behind — dropped the oldest segment' })
-    }
+  const { dropped } = queue.push(job, runningRank)
+  // a dropped *confirmed* segment is lost speech and the user should be able
+  // to find out why; dropped partials are the intended pressure valve
+  if (dropped.some((d) => d.confirmed)) {
+    post({ type: 'error', message: 'transcription is falling behind — dropped the oldest segment' })
   }
-  queue.push(job)
   void pump()
 }
 
 async function pump(): Promise<void> {
-  if (running || !transcribe) return
-  running = true
-  try {
-    while (queue.length > 0) {
-      const job = queue.shift() as Job
+  if (runningRank !== null || !transcribe) return
+  for (;;) {
+    const job = queue.shift()
+    if (!job) break
+    runningRank = rank(job)
+    try {
       await run(job)
+    } finally {
+      runningRank = null
     }
-  } finally {
-    running = false
   }
 }
 
@@ -141,7 +130,7 @@ async function run(job: Job): Promise<void> {
     const result = await transcribe(samples, opts)
     const text = cleanTranscript(result.text)
     if (isLikelyHallucination(text, job.speechMs)) return
-    post({ type: 'segment', speaker, text, confirmed: job.confirmed, t: job.t })
+    post({ type: 'segment', speaker: job.stream, text, confirmed: job.confirmed, t: job.t })
   } catch (err) {
     post({ type: 'error', message: String(err) })
   }
@@ -149,31 +138,39 @@ async function run(job: Job): Promise<void> {
 
 // ---- audio in --------------------------------------------------------------
 
-function emit(u: Utterance): void {
+function emit(stream: Stream, u: Utterance): void {
   enqueue({
-    audio: u.samples,
+    stream,
     confirmed: true,
-    t: (clockOffset ?? 0) + u.startT,
+    audio: u.samples,
+    t: (clockOffset[stream] ?? 0) + u.startT,
     speechMs: u.speechMs
   })
 }
 
-function onAudio(samples: Float32Array, t: number): void {
-  if (clockOffset === null) clockOffset = t
-  for (const u of vad.push(samples)) emit(u)
+function onAudio(stream: Stream, samples: Float32Array, t: number): void {
+  if (clockOffset[stream] === null) clockOffset[stream] = t
+  for (const u of vad[stream].push(samples)) emit(stream, u)
 
-  // in-flight partial → the panel's trailing words at low opacity
+  // in-flight partial → the panel's trailing words, and the early match
   const now = Date.now()
-  if (now - lastPartialAt < TUNING.asrPartialIntervalMs) return
-  const open = vad.peekOpen(TUNING.asrPartialWindowSec)
+  if (now - lastPartialAt[stream] < TUNING.asrPartialIntervalMs) return
+  const open = vad[stream].peekOpen(TUNING.asrPartialWindowSec)
   if (!open || open.speechMs < TUNING.asrPartialMinSpeechMs) return
-  lastPartialAt = now
+  lastPartialAt[stream] = now
   enqueue({
-    audio: open.samples,
+    stream,
     confirmed: false,
-    t: (clockOffset ?? 0) + open.startT,
+    audio: open.samples,
+    t: (clockOffset[stream] ?? 0) + open.startT,
     speechMs: open.speechMs
   })
+}
+
+function clearStream(stream: Stream): void {
+  vad[stream].reset()
+  clockOffset[stream] = null
+  lastPartialAt[stream] = 0
 }
 
 self.onmessage = async (e: MessageEvent<InMsg>) => {
@@ -181,21 +178,23 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
   try {
     switch (msg.type) {
       case 'init':
-        speaker = msg.speaker
-        await init(msg.modelPath, msg.modelId ?? DEFAULT_MODEL)
+        await init(msg.modelPath, msg.modelId ?? DEFAULT_WHISPER_MODEL)
         break
       case 'audio':
-        onAudio(msg.samples, msg.t)
+        onAudio(msg.stream, msg.samples, msg.t)
         break
-      case 'flush': {
-        const tail = vad.flush()
-        if (tail) emit(tail)
+      case 'flush':
+        // emit whatever is open, then clear the segmenters. Queued work still
+        // decodes — this is "capture stopped", not "throw it away".
+        for (const stream of STREAMS) {
+          const tail = vad[stream].flush()
+          if (tail) emit(stream, tail)
+          clearStream(stream)
+        }
         break
-      }
       case 'reset':
-        vad.reset()
-        queue.length = 0
-        clockOffset = null
+        for (const stream of STREAMS) clearStream(stream)
+        queue.clear()
         break
     }
   } catch (err) {

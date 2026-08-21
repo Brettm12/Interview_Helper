@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { EmbeddingCoverage } from '@/lib/coverage'
 import { EmbeddingCache } from '@/lib/embeddings'
+import { TUNING } from '@shared/tuning'
 import seed from '@shared/seed.json'
-import type { Bank } from '@shared/types'
+import type { Bank, Point } from '@shared/types'
 
 const bank = seed as unknown as Bank
 const points = (answerId: string) => bank.answers.find((a) => a.id === answerId)!.points
@@ -77,5 +78,32 @@ describe('embedding coverage (model warm)', () => {
     })
     const coverage = new EmbeddingCoverage(cache)
     expect(coverage.score(said, [near, far])).toEqual(['p1'])
+  })
+})
+
+describe('a point delivered across two breaths', () => {
+  // The bug: coverage was scored one confirmed segment at a time, so a point
+  // made in two halves could clear the bar in neither and stayed un-struck
+  // while the candidate had in fact made it.
+  const points: Point[] = [
+    {
+      id: 'p1',
+      text: 'Framed the disagreement around data, proposed a two-week test, and said out loud that I was partly wrong'
+    }
+  ]
+  const halves = ['I framed it as a disagreement about the data', 'and proposed a two-week test']
+
+  it('is missed by either half alone but caught by the window', () => {
+    const model = new EmbeddingCoverage()
+    for (const half of halves) expect(model.score(half, points)).toHaveLength(0)
+    expect(model.score(halves.join(' '), points, TUNING.coverageWindowMargin)).toEqual(['p1'])
+  })
+
+  it('holds the window to a higher bar than a single segment', () => {
+    // more text is easier to match by accident, so the margin has to bite
+    const model = new EmbeddingCoverage()
+    const joined = halves.join(' ')
+    expect(model.score(joined, points)).toEqual(['p1'])
+    expect(model.score(joined, points, 0.2)).toHaveLength(0)
   })
 })

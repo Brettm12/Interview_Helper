@@ -12,13 +12,33 @@ export const TUNING = {
   triggerBoost: 0.35,
   /** a trigger phrase counts as a hit when its fuzzy similarity reaches this */
   triggerFuzz: 0.82,
+  /** trigger phrases are embedded too, and the best cosine across the question
+   *  and its phrases wins. Discounted slightly because a phrase is a fragment
+   *  of a question, so the canonical wording should take a tie */
+  triggerCosineWeight: 0.95,
   /** blend of embedding cosine vs bigram Dice once embeddings are warm.
    *  Before the model is warm, Dice carries the whole score. */
   embeddingWeight: 0.75,
   /** rolling window of interviewer speech scored against the bank, seconds */
   windowSec: 12,
+  /** ...and a silence this long between *their* segments ends the turn. Only
+   *  you speaking used to end it, so a question could be scored together with
+   *  whatever preamble came a minute earlier */
+  windowGapSec: 6,
   /** at most one automatic panel swap per this many ms */
   swapDebounceMs: 2500,
+  /** An in-flight partial can swap the panel, but only well above the
+   *  confirmed bar. Waiting for a confirmed segment costs the VAD's 750ms of
+   *  silence plus a decode — the card lands 1.5–3s after they stop asking,
+   *  which is the pause you are supposed to be filling. Being early is worth a
+   *  lot; being early and wrong is worth less than nothing. */
+  confidentPartial: 0.78,
+  confidentMarginPartial: 0.18,
+  /** an entry already answered is less likely to be asked again. Subtracted
+   *  per prior activation, so the panel stops swinging back to a strong but
+   *  spent entry when the next question is only loosely related */
+  repeatPenalty: 0.06,
+  repeatPenaltyMax: 0.12,
   /** unsure state auto-picks the leader after this many seconds */
   autoPickSec: 4,
   /** candidates shown in the unsure state */
@@ -32,6 +52,13 @@ export const TUNING = {
    *  cold — deliberately stricter than the embedding path since bigram overlap
    *  on short phrases is noisier */
   coverageLexical: 0.38,
+  /** a point delivered across two breaths — "I brought a two-week test" …
+   *  "rather than an argument" — can clear the bar in neither segment alone,
+   *  so what you said in the last this-many seconds is scored too */
+  coverageWindowSec: 20,
+  /** ...against a higher bar, because a longer text is easier to match by
+   *  accident. Added to `coverage` and to `coverageLexical`. */
+  coverageWindowMargin: 0.05,
 
   // --- recap flags -----------------------------------------------------------
   /** an answer "ran long" past this many seconds of your own mic time */

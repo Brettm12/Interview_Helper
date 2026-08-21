@@ -3,7 +3,8 @@ import { TUNING, type Tuning } from '@shared/tuning'
 import { diceCoefficient, tokenRecall } from './text'
 import type { EmbeddingCache } from './embeddings'
 
-// On each confirmed segment from the candidate's own mic, score it against the
+// On each confirmed segment from the candidate's own mic, score it — and a
+// rolling window of what they have just been saying — against the
 // uncovered points of the active entry. Embedding cosine ≥ TUNING.coverage
 // marks a point covered; while the model is cold, a lexical fallback
 // (Dice ∨ stopword-filtered token recall) with its own threshold stands in.
@@ -15,17 +16,22 @@ export class EmbeddingCoverage implements CoverageModel {
     private tuning: Tuning = TUNING
   ) {}
 
-  score(said: string, points: Point[]): PointId[] {
+  /**
+   * @param margin added to both thresholds. The rolling-window pass uses a
+   *   positive margin: more text is easier to match by accident, so the bar
+   *   for "you said this across two breaths" is higher than for one segment.
+   */
+  score(said: string, points: Point[], margin = 0): PointId[] {
     const t = this.tuning
     const covered: PointId[] = []
     for (const point of points) {
       const cos = this.embeddings?.similarity(said, point.text) ?? null
       if (cos != null) {
-        if (cos >= t.coverage) covered.push(point.id)
+        if (cos >= t.coverage + margin) covered.push(point.id)
         continue
       }
       const lexical = Math.max(diceCoefficient(said, point.text), tokenRecall(point.text, said))
-      if (lexical >= t.coverageLexical) covered.push(point.id)
+      if (lexical >= t.coverageLexical + margin) covered.push(point.id)
     }
     return covered
   }

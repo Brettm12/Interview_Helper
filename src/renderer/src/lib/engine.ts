@@ -30,6 +30,11 @@ export class SessionEngine {
   private questionSeq = 0
   private youSegments: Segment[] = []
   private stopped = false
+  /** how many times each entry has been put on screen this session — the
+   *  repeat prior reads this */
+  private activations = new Map<string, number>()
+  /** the question row a partial opened, waiting for the confirmed text */
+  private partialQuestionId: string | null = null
 
   private snapshotTimer: ReturnType<typeof setInterval> | null = null
   /** a confident swap deferred by the debounce window */
@@ -74,7 +79,10 @@ export class SessionEngine {
     if (s.status !== 'listening' && s.status !== 'armed') return
     s.setClock(Math.max(s.clockSec, seg.t))
     s.appendTranscript({ speaker: 'them', text: seg.text, confirmed: seg.confirmed, t: seg.t })
-    if (!seg.confirmed) return
+    if (!seg.confirmed) {
+      this.onPartial(seg)
+      return
+    }
     if (s.status === 'armed') s.setStatus('listening')
 
     this.window.push(seg)
@@ -102,6 +110,60 @@ export class SessionEngine {
     }
   }
 
+  /**
+   * An in-flight partial, arriving while the interviewer is still speaking.
+   *
+   * Two jobs. First, always warm the embedding for what they are saying, so
+   * the confirmed pass scores immediately instead of waiting on a round trip
+   * to the worker. Second — and only well above the confirmed bar — put the
+   * card up now. Waiting for a confirmed segment costs the VAD's silence
+   * timeout plus a decode, and lands the answer in the pause where you were
+   * meant to be speaking.
+   *
+   * The partial is deliberately *not* pushed into `this.window`: the confirmed
+   * segment covering the same speech is moments behind it and would otherwise
+   * be counted twice.
+   */
+  private onPartial(seg: Segment): void {
+    const s = this.session
+    if (s.match.state === 'pinned') return
+    const entries = this.entries()
+    if (entries.length === 0) return
+
+    const utterance = [...this.window.map((w) => w.text), seg.text].join(' ')
+    void this.embeddings?.ensure([utterance, ...entries.flatMap((e) => [e.question, ...e.triggerPhrases])])
+
+    const candidates = this.matcher.score(utterance, entries, this.priors)
+    const top = candidates[0]
+    if (!top || top.entryId === s.match.entryId) return
+    const runnerUp = candidates[1]?.score ?? 0
+    if (
+      top.score < TUNING.confidentPartial ||
+      top.score - runnerUp < TUNING.confidentMarginPartial
+    ) {
+      return
+    }
+    // a swap this recent belongs to the question still being asked; jumping
+    // again mid-sentence is the flip-flop this bar exists to prevent
+    const wallNow = this.now()
+    if (wallNow - this.lastSwapAt < TUNING.swapDebounceMs) return
+    this.lastSwapAt = wallNow
+    if (s.status === 'armed') s.setStatus('listening')
+    this.activateEntry(top.entryId, {
+      askedAt: seg.t,
+      heard: seg.text,
+      viaFind: false,
+      candidates,
+      fromPartial: true
+    })
+  }
+
+  /** an entry already answered is less likely to be asked again */
+  private priors = (entryId: string): number => {
+    const n = this.activations.get(entryId) ?? 0
+    return -Math.min(TUNING.repeatPenaltyMax, n * TUNING.repeatPenalty)
+  }
+
   private rescoreIfUnchanged(utterance: string, seg: Segment, questionLike: boolean): void {
     if (this.stopped) return
     const s = this.session
@@ -119,8 +181,20 @@ export class SessionEngine {
   ): void {
     const s = this.session
     const entries = this.entries()
-    const candidates = this.matcher.score(utterance, entries)
-    const state = this.matcher.classify(candidates)
+    // Score the whole window *and* the question on its own, and take whichever
+    // reads more clearly. Joining 12 seconds of speech means "right, that makes
+    // sense, okay, so next one" gets averaged into the question's embedding and
+    // dilutes it toward nothing in particular.
+    const tail = this.questionTail(utterance)
+    let candidates = this.matcher.score(utterance, entries, this.priors)
+    let state = this.matcher.classify(candidates)
+    if (tail !== utterance) {
+      const tailCandidates = this.matcher.score(tail, entries, this.priors)
+      if ((tailCandidates[0]?.score ?? 0) > (candidates[0]?.score ?? 0)) {
+        candidates = tailCandidates
+        state = this.matcher.classify(tailCandidates)
+      }
+    }
 
     if (state === 'confident') {
       const top = candidates[0]
@@ -145,6 +219,10 @@ export class SessionEngine {
       } else {
         s.setMatch({ candidates, state: 'confident' })
         this.clearAutoPick()
+        // the panel was already on this entry because a partial put it there;
+        // now that the full sentence has arrived, correct the wording the
+        // recap will show rather than leaving half a question in the record
+        this.patchPartialQuestion(seg)
       }
     } else if (state === 'ambiguous' && questionLike) {
       const shortlist = this.matcher.shortlist(candidates)
@@ -164,6 +242,21 @@ export class SessionEngine {
     }
   }
 
+  /** replace a partial's half-sentence with the confirmed text on the row it
+   *  opened. Only ever touches the one row, and only once. */
+  private patchPartialQuestion(seg: Segment): void {
+    const id = this.partialQuestionId
+    if (!id) return
+    const s = this.session
+    const q = s.questions.find((x) => x.id === id)
+    this.partialQuestionId = null
+    if (!q || !seg.text) return
+    // the confirmed segment covers the same speech, so it is the longer and
+    // more accurate rendering of it
+    if (seg.text.length <= q.question.length) return
+    s.upsertQuestion({ ...q, question: seg.text })
+  }
+
   private queueSwap(
     pending: { entryId: string; askedAt: number; heard: string; candidates: Candidate[] },
     delayMs: number
@@ -179,7 +272,27 @@ export class SessionEngine {
     }, delayMs)
   }
 
+  /** the window from the last question-like segment onward, or the whole
+   *  thing when nothing in it looks like a question */
+  private questionTail(whole: string): string {
+    for (let i = this.window.length - 1; i >= 0; i--) {
+      if (isQuestionLike(this.window[i].text)) {
+        const tail = this.window.slice(i).map((w) => w.text).join(' ')
+        return tail || whole
+      }
+    }
+    return whole
+  }
+
   private pruneWindow(nowSec: number): void {
+    // a long silence between *their* segments is a turn boundary too. Only
+    // your own speech used to end the turn, so a question could be scored
+    // together with preamble from well before it.
+    const prev = this.window[this.window.length - 2]
+    if (prev && nowSec - prev.t > TUNING.windowGapSec) {
+      this.window = this.window.slice(-1)
+      return
+    }
     this.window = this.window.filter((w) => nowSec - w.t <= TUNING.windowSec || w.t === nowSec)
   }
 
@@ -202,22 +315,50 @@ export class SessionEngine {
     const coveredAlready = new Set(s.coverage[entryId] ?? [])
     const uncovered = entry.points.filter((p) => !coveredAlready.has(p.id))
     if (uncovered.length === 0) return
-    void this.embeddings?.ensure([seg.text, ...uncovered.map((p) => p.text)])
-    const newlyCovered = this.coverage.score(seg.text, uncovered)
-    if (newlyCovered.length > 0) {
-      s.coverPoints(entryId, newlyCovered)
+
+    // A point delivered across two breaths — "I brought a two-week test" …
+    // "rather than an argument" — could clear the bar in neither segment on
+    // its own, so the last few seconds of speech are scored as well, against a
+    // higher threshold since more text is easier to match by accident.
+    const recent = this.recentSpeech(seg.t)
+    const texts = recent === seg.text ? [seg.text] : [seg.text, recent]
+    void this.embeddings?.ensure([...texts, ...uncovered.map((p) => p.text)])
+
+    const newlyCovered = new Set(this.coverage.score(seg.text, uncovered))
+    if (recent !== seg.text) {
+      for (const id of this.coverage.score(recent, uncovered, TUNING.coverageWindowMargin)) {
+        newlyCovered.add(id)
+      }
+    }
+    if (newlyCovered.size > 0) {
+      s.coverPoints(entryId, [...newlyCovered])
       this.syncActiveQuestion()
     }
+  }
+
+  /** what you have said in the last coverageWindowSec, as one string */
+  private recentSpeech(nowSec: number): string {
+    const recent = this.youSegments.filter((y) => nowSec - y.t <= TUNING.coverageWindowSec)
+    return recent.map((y) => y.text).join(' ')
   }
 
   // ---- activation / unsure resolution ----
 
   private activateEntry(
     entryId: string,
-    opts: { askedAt: number; heard: string | null; viaFind: boolean; candidates?: { entryId: string; score: number }[] }
+    opts: {
+      askedAt: number
+      heard: string | null
+      viaFind: boolean
+      candidates?: { entryId: string; score: number }[]
+      /** an in-flight partial put this on screen; the confirmed text will
+       *  arrive shortly and should replace the recorded question wording */
+      fromPartial?: boolean
+    }
   ): void {
     const s = this.session
     this.clearAutoPick()
+    this.activations.set(entryId, (this.activations.get(entryId) ?? 0) + 1)
     // any activation supersedes a deferred swap
     if (this.pendingSwapTimer) {
       clearTimeout(this.pendingSwapTimer)
@@ -245,10 +386,16 @@ export class SessionEngine {
       autoPickAt: null,
       heard: null
     })
-    this.recordQuestion(entryId, opts.askedAt, opts.heard, opts.viaFind)
+    this.recordQuestion(entryId, opts.askedAt, opts.heard, opts.viaFind, opts.fromPartial === true)
   }
 
-  private recordQuestion(entryId: string | null, askedAt: number, heard: string | null, viaFind: boolean): void {
+  private recordQuestion(
+    entryId: string | null,
+    askedAt: number,
+    heard: string | null,
+    viaFind: boolean,
+    fromPartial = false
+  ): void {
     const s = this.session
     const entry = entryId ? this.entries().find((e) => e.id === entryId) : null
     // an activation arriving just after an unmatched question resolves that
@@ -283,6 +430,9 @@ export class SessionEngine {
       pinnedViaFind: viaFind
     }
     s.upsertQuestion(q)
+    // a partial's text is half a sentence; remember the row so the confirmed
+    // wording can replace it rather than adding a second row to the recap
+    this.partialQuestionId = fromPartial ? q.id : null
     if (entry) {
       s.pushHistory({
         entryId: entry.id,
