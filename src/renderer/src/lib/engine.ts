@@ -359,6 +359,10 @@ export class SessionEngine {
     const s = this.session
     this.clearAutoPick()
     this.activations.set(entryId, (this.activations.get(entryId) ?? 0) + 1)
+    // any activation that isn't itself a partial ends the wait for one: a swap
+    // to a different entry would otherwise leave the old row marked, and the
+    // *next* confirmed segment would patch the wrong question's text
+    if (!opts.fromPartial) this.partialQuestionId = null
     // any activation supersedes a deferred swap
     if (this.pendingSwapTimer) {
       clearTimeout(this.pendingSwapTimer)

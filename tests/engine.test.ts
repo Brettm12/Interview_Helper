@@ -200,3 +200,43 @@ describe('turn boundaries in the scoring window', () => {
     expect(useSessionStore.getState().match.entryId).toBe('a-er-case')
   })
 })
+
+describe('a partial that turns out to be wrong', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  it('does not let a later question patch the row the partial opened', async () => {
+    // the partial marks a row as awaiting its confirmed wording. If the panel
+    // then swaps to a different entry, that mark has to be dropped, or the
+    // next confirmed segment rewrites the wrong question in the recap.
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', true)
+
+    them.emit({
+      speaker: 'them',
+      text: 'Tell me about a time you handled a really difficult employee relations case',
+      confirmed: false,
+      t: 2
+    })
+    const first = useSessionStore.getState().questions[0]
+    expect(first.entryId).toBe('a-er-case')
+
+    // a different entry takes over, by hand
+    engine.pinEntry('a-coach')
+    // ...and a confirmed segment lands on that one
+    them.emit({ speaker: 'them', text: 'how do you coach a manager in that spot?', confirmed: true, t: 30 })
+    await vi.advanceTimersByTimeAsync(10)
+
+    const rows = useSessionStore.getState().questions
+    const original = rows.find((q) => q.id === first.id)!
+    expect(original.question).toBe(first.question)
+  })
+})
