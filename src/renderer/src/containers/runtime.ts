@@ -759,12 +759,17 @@ export function recapCommand(): void {
 export function pauseSession(): void {
   const s = useSessionStore.getState()
   if (s.status === 'paused') {
+    engine?.resume()
     s.setStatus(s.match.entryId ? 'listening' : 'armed')
     prepareAudio()
     models?.transcription.setEnabled(true)
     return
   }
   if (s.status === 'armed' || s.status === 'listening') {
+    // tell the engine first: it notes the pause clock (so the flushed
+    // mid-sentence tail is still accepted, REVIEW.md M6) and stops the
+    // auto-pick/deferred-swap timers (REVIEW.md M4)
+    engine?.pause()
     s.setStatus('paused')
     // anything mid-sentence still belongs in the transcript
     models?.transcription.setEnabled(false) // flushes what was mid-sentence

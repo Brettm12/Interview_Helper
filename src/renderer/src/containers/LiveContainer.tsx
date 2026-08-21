@@ -106,6 +106,9 @@ export default function LiveContainer(): JSX.Element | null {
           .filter((h) => h.entryId !== entry.id)
           .slice(0, 4)
           .map((h) => ({
+            // keyed on the history identity, not display text — two rows can
+            // share question+minute after a merge (REVIEW.md L8)
+            key: `${h.entryId}-${h.askedAt}`,
             question: entries.find((e) => e.id === h.entryId)?.question ?? '',
             time: formatClock(h.askedAt)
           }))

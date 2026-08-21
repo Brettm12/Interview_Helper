@@ -38,8 +38,14 @@ export function serveStatic(root, port) {
   })
 }
 
-/** spawn an npm-resolved CLI and wait for its port to accept connections */
+/** spawn an npm-resolved CLI and wait for its port to accept connections.
+ *  `npx <tool>` is rewritten to run the local bin under the current node —
+ *  npx sometimes stalls for minutes on registry checks behind a proxy. */
 export async function spawnServer(command, args, port, { env } = {}) {
+  if (command === 'npx' && args[0] === 'vite') {
+    command = process.execPath
+    args = [join(repoRoot, 'node_modules', 'vite', 'bin', 'vite.js'), ...args.slice(1)]
+  }
   const child = spawn(command, args, {
     cwd: repoRoot,
     env: { ...process.env, ...env },

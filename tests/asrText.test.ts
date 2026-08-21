@@ -64,3 +64,24 @@ describe('isLikelyHallucination', () => {
     expect(isLikelyHallucination('Redis, mostly.', BARELY_ANY_MS)).toBe(false)
   })
 })
+
+// ---- multi-word repetition loops (REVIEW.md M15) ----------------------------
+
+describe('phrase-level repetition loops', async () => {
+  const { isLikelyHallucination } = await import('@/lib/asrText')
+
+  it('drops the classic multi-word Whisper loops', () => {
+    expect(isLikelyHallucination('Thank you. Thank you. Thank you.', 400)).toBe(true)
+    expect(isLikelyHallucination("I'm sorry. I'm sorry. I'm sorry. I'm sorry.", 400)).toBe(true)
+    expect(isLikelyHallucination('Thanks for watching. Thanks for watching. Thanks for watching.', 500)).toBe(true)
+  })
+
+  it('keeps genuine emphasis and ordinary speech', () => {
+    expect(isLikelyHallucination('it was very very important to get that right', 2000)).toBe(false)
+    expect(
+      isLikelyHallucination('we went step by step through the case and documented everything', 2500)
+    ).toBe(false)
+    // a real double "thank you" (two repeats, plenty of voiced time) survives
+    expect(isLikelyHallucination('Thank you. Thank you.', 1500)).toBe(false)
+  })
+})

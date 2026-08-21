@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { HybridMatcher } from '@/lib/matcher'
+import { isQuestionLike } from '@/lib/engine'
 import { EmbeddingCache, type EmbeddingProvider } from '@/lib/embeddings'
 import type { Answer, Candidate } from '@shared/types'
 import seed from '@shared/seed.json'
@@ -68,16 +69,24 @@ describe.skipIf(!REAL)('matching calibration against real MiniLM', () => {
     await cache.ensure(texts)
   }, 300_000)
 
-  // single seam the recalibration (and any matcher signature change) updates
-  const scoreText = (text: string): Candidate[] => matcher.score(text, entries)
+  // single seam mirroring how the engine scores a segment: the matcher gets
+  // the same question-likeness signal, which gates the trigger boost (C7)
+  const scoreText = (text: string): Candidate[] =>
+    matcher.score(text, entries, undefined, isQuestionLike(text))
 
-  it.each(fixture.paraphrases)('paraphrase matches: $text', ({ text, entryId }) => {
+  it.each(fixture.paraphrases)('paraphrase matches: $text', (p) => {
+    const { text, entryId } = p
     const candidates = scoreText(text)
     const state = matcher.classify(candidates)
     const topIds = candidates.slice(0, 2).map((c) => c.entryId)
     expect(state, `classified none — top was ${candidates[0]?.entryId} @ ${candidates[0]?.score.toFixed(3)}`).not.toBe('none')
     if (TWINS.has(entryId)) {
       expect(topIds, 'twin entry must be in the top 2').toContain(entryId)
+    } else if ('shortlisted' in p && p.shortlisted) {
+      // cluster-adjacent paraphrases: the right entry appearing on the unsure
+      // card (top 3 shortlist) is the designed outcome — the user taps it
+      const shortlist = matcher.shortlist(candidates).map((c) => c.entryId)
+      expect(shortlist, 'entry must be on the unsure shortlist').toContain(entryId)
     } else {
       expect(candidates[0]?.entryId, `top-1 mismatch @ ${candidates[0]?.score.toFixed(3)}`).toBe(entryId)
     }
@@ -99,11 +108,19 @@ describe.skipIf(!REAL)('matching calibration against real MiniLM', () => {
     ).not.toBe('confident')
   })
 
+  it.each(fixture.statements)('a topical statement never outranks its topic: $text', ({ text, entryId }) => {
+    // an on-topic statement may legitimately surface a card early — but the
+    // trigger boost must never pull a DIFFERENT entry above the topical one
+    const candidates = scoreText(text)
+    expect(candidates[0]?.entryId).toBe(entryId)
+  })
+
   it('prints the calibration table', () => {
     const rows = [
       ...fixture.paraphrases.map((p) => ({ kind: 'paraphrase', ...p })),
       ...fixture.offBank.map((p) => ({ kind: 'off-bank', entryId: '', ...p })),
-      ...fixture.triggerAbuse.map((p) => ({ kind: 'abuse', entryId: '', ...p }))
+      ...fixture.triggerAbuse.map((p) => ({ kind: 'abuse', entryId: '', ...p })),
+      ...fixture.statements.map((p) => ({ kind: 'statement', ...p }))
     ]
     for (const row of rows) {
       const c = scoreText(row.text)

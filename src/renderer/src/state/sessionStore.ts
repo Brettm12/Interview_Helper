@@ -61,6 +61,9 @@ interface SessionState {
   coverPoints(entryId: string, pointIds: string[]): void
   /** manual click-to-toggle — the one path that may un-cover */
   togglePoint(entryId: string, pointId: string): void
+  /** a genuine re-ask of an entry starts its coverage over — "covered THIS
+   *  time", not "covered at some point today" */
+  resetCoverage(entryId: string): void
   pushHistory(row: HistoryRow): void
   upsertQuestion(q: SessionQuestion): void
   setLastSession(s: SessionRecord | null): void
@@ -126,6 +129,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       else cur.add(pointId)
       return { coverage: { ...s.coverage, [entryId]: [...cur] } }
     }),
+
+  resetCoverage: (entryId) =>
+    set((s) => ({ coverage: { ...s.coverage, [entryId]: [] } })),
 
   pushHistory: (row) => set((s) => ({ history: [row, ...s.history] })),
 

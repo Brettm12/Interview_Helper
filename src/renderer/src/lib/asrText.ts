@@ -54,14 +54,26 @@ function normalise(text: string): string {
     .trim()
 }
 
-/** ≥ asrMaxWordRepeats of the same word in a row — the decoder looping, not a
- *  person */
+/** ≥ asrMaxWordRepeats of the same word in a row, or the same 2–4-word phrase
+ *  three or more times back to back — the decoder looping, not a person.
+ *  ("Thank you. Thank you. Thank you." alternates words, so the single-word
+ *  rule alone let every multi-word loop through — REVIEW.md M15.) */
 function hasRepetitionLoop(text: string): boolean {
   const words = normalise(text).split(' ').filter(Boolean)
   let run = 1
   for (let i = 1; i < words.length; i++) {
     run = words[i] === words[i - 1] ? run + 1 : 1
     if (run >= TUNING.asrMaxWordRepeats) return true
+  }
+  for (let n = 2; n <= 4; n++) {
+    for (let start = 0; start < n; start++) {
+      let repeats = 1
+      for (let i = start + n; i + n <= words.length; i += n) {
+        const same = words.slice(i, i + n).every((w, k) => w === words[i - n + k])
+        repeats = same ? repeats + 1 : 1
+        if (repeats >= 3) return true
+      }
+    }
   }
   return false
 }

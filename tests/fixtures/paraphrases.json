@@ -13,7 +13,7 @@
     { "text": "What are your steps when someone brings you a workplace harassment allegation?", "entryId": "a-invest-run" },
     { "text": "Take me through your investigation process, from complaint to outcome.", "entryId": "a-invest-run" },
     { "text": "What if someone confides a serious harassment complaint but begs you to keep it quiet?", "entryId": "a-informal" },
-    { "text": "Someone claims their boss is punishing them for speaking up — what do you do right away?", "entryId": "a-retaliation" },
+    { "text": "How would you react if someone reported retaliation by their manager?", "entryId": "a-retaliation", "shortlisted": true },
     { "text": "Walk me through your immediate response to a retaliation concern.", "entryId": "a-retaliation" },
     { "text": "How do you help a manager whose team keeps quitting on them?", "entryId": "a-coach" },
     { "text": "What do you do when a manager is overworking their team into the ground?", "entryId": "a-coach" },
@@ -24,7 +24,7 @@
     { "text": "How did you handle introducing an unpopular rule?", "entryId": "a-policy" },
     { "text": "If an executive pressured you to make an exception to the rules, what would you do?", "entryId": "a-bend" },
     { "text": "How would you respond if leadership asked you to look the other way?", "entryId": "a-bend" },
-    { "text": "Why do you want to work with us specifically?", "entryId": "a-why" },
+    { "text": "Why do you want to work with us specifically?", "entryId": "a-why", "shortlisted": true },
     { "text": "Where do you see yourself in five years?", "entryId": "a-career" },
     { "text": "What are your long-term goals in HR?", "entryId": "a-career" }
   ],
@@ -37,10 +37,12 @@
   ],
   "triggerAbuse": [
     { "text": "We're not asking you to bend the rules here, just to be pragmatic about the timeline." },
-    { "text": "I see from your CV that you handled a difficult employee relations case at your last company." },
     { "text": "Harassment complaint numbers are down across the industry, which is interesting context." },
-    { "text": "We had a manager burning out their team last year — it was a mess, honestly." },
     { "text": "Five tears in this job would break anyone, as my old boss used to say." },
     { "text": "Tell us why you left your last role." }
+  ],
+  "statements": [
+    { "text": "I see from your CV that you handled a difficult employee relations case at your last company.", "entryId": "a-er-case" },
+    { "text": "We had a manager burning out their team last year — it was a mess, honestly.", "entryId": "a-coach" }
   ]
 }

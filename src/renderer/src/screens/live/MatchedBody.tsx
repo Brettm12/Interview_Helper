@@ -82,7 +82,7 @@ export default function MatchedBody(props: MatchedBodyProps): JSX.Element {
         <div className="live-earlier">
           <Label>EARLIER</Label>
           {earlier.map((e) => (
-            <div key={`${e.question}-${e.time}`} className="live-earlier__row">
+            <div key={e.key} className="live-earlier__row">
               {e.question} · {e.time}
             </div>
           ))}

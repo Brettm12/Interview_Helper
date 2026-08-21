@@ -240,3 +240,158 @@ describe('a partial that turns out to be wrong', () => {
     expect(original.question).toBe(first.question)
   })
 })
+
+// ---- races found in review (REVIEW.md H3 H4 M2 M3 M4 M6 L12) ---------------
+
+describe('question-record integrity under close-together events', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  const ER = 'Tell me about a time you handled a really difficult employee relations case.'
+  const COACH = "I've got a manager who's burning their team out — how do you coach a manager in that spot?"
+  const AMBIG = 'Say a harassment complaint lands on your desk — how do you run the investigation?'
+  const UNMATCHED = "What's your approach to pay transparency conversations, when someone finds out a peer earns more?"
+
+  async function armed(): Promise<{ them: MockTranscriber; you: MockTranscriber; engine: SessionEngine }> {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', true)
+    return { them, you, engine }
+  }
+  const say = (t: MockTranscriber, text: string, at: number): void =>
+    t.emit({ speaker: 'them', text, confirmed: true, t: at })
+
+  it('an organic match for the NEXT question does not swallow a prior unmatched one (H3)', async () => {
+    const { them } = await armed()
+    say(them, UNMATCHED, 10)
+    expect(useSessionStore.getState().questions).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(3000)
+    say(them, ER, 40)
+    const qs = [...useSessionStore.getState().questions].sort((a, b) => a.askedAtSec - b.askedAtSec)
+    expect(qs).toHaveLength(2)
+    expect(qs[0].entryId).toBeNull()
+    expect(qs[0].question).toMatch(/pay transparency/i)
+    expect(qs[1].entryId).toBe('a-er-case')
+  })
+
+  it('a ⌘K pin still resolves a just-heard unmatched question into one row', async () => {
+    const { them, engine } = await armed()
+    say(them, UNMATCHED, 10)
+    engine.pinEntry('a-policy')
+    const qs = useSessionStore.getState().questions
+    expect(qs).toHaveLength(1)
+    expect(qs[0].entryId).toBe('a-policy')
+    expect(qs[0].pinnedViaFind).toBe(true)
+  })
+
+  it('a deferred swap is invalidated by a newer unsure question (H4)', async () => {
+    const { them } = await armed()
+    // session-clock gaps (> windowGapSec) keep each question its own turn;
+    // the wall clock still packs them inside the 2.5s swap debounce
+    say(them, ER, 2) // confident swap; debounce window opens
+    expect(useSessionStore.getState().match.entryId).toBe('a-er-case')
+    await vi.advanceTimersByTimeAsync(200)
+    say(them, COACH, 20) // confident again, inside the debounce → deferred
+    await vi.advanceTimersByTimeAsync(100)
+    say(them, AMBIG, 40) // NEWER question goes ambiguous — countdown starts
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+
+    // past the point where the deferred swap would have fired
+    await vi.advanceTimersByTimeAsync(2600)
+    const m = useSessionStore.getState().match
+    expect(m.state).toBe('ambiguous') // the unsure card survived
+    expect(m.entryId).toBe('a-er-case') // no stale flip to a-coach
+
+    // and the countdown resolves the ambiguous question, not the stale swap
+    await vi.advanceTimersByTimeAsync(4200)
+    const resolved = useSessionStore.getState().match
+    expect(resolved.state).toBe('confident')
+    expect(['a-invest-run', 'a-informal']).toContain(resolved.entryId)
+  })
+
+  it('a user pick beats a warm rescore landing later (M2)', async () => {
+    await useBankStore.getState().load()
+    let release: () => void = () => {}
+    const vecs: Record<string, number[]> = {
+      [AMBIG]: [1, 0],
+      'Walk me through how you run a harassment investigation.': [1, 0]
+    }
+    const { EmbeddingCache } = await import('@/lib/embeddings')
+    const cache = new EmbeddingCache({
+      ready: true,
+      embed: (texts: string[]) =>
+        new Promise((res) => {
+          release = () => res(texts.map((t) => Float32Array.from(vecs[t] ?? [0, 1])))
+        })
+    })
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you, cache)
+    useSessionStore.getState().arm('loop-meridian', true)
+
+    say(them, AMBIG, 5) // cold: ambiguous on the twins, rescore scheduled
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+    engine.pickCandidate('a-informal') // the user resolves it by hand
+    expect(useSessionStore.getState().match.entryId).toBe('a-informal')
+
+    release() // embeddings land, favouring a-invest-run overwhelmingly
+    await vi.advanceTimersByTimeAsync(50)
+    expect(useSessionStore.getState().match.entryId).toBe('a-informal') // their call stands
+    expect(useSessionStore.getState().questions).toHaveLength(1)
+  })
+
+  it('a click racing the auto-pick does not record a second row (M3)', async () => {
+    const { them, engine } = await armed()
+    say(them, AMBIG, 10)
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+    await vi.advanceTimersByTimeAsync(4200) // auto-pick fires first
+    const picked = useSessionStore.getState().match.entryId
+    expect(picked).not.toBeNull()
+    engine.pickCandidate('a-informal') // the in-flight click lands late
+    expect(useSessionStore.getState().match.entryId).toBe(picked)
+    expect(useSessionStore.getState().questions).toHaveLength(1)
+  })
+
+  it('pause stops the auto-pick and keeps only the pre-pause tail (M4/M6)', async () => {
+    const { them, you, engine } = await armed()
+    say(them, ER, 2)
+    say(them, AMBIG, 10)
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+
+    engine.pause()
+    useSessionStore.getState().setStatus('paused')
+    await vi.advanceTimersByTimeAsync(6000)
+    // nothing auto-picked while paused, no phantom row (the unresolved
+    // ambiguous question records only when something resolves it)
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+    expect(useSessionStore.getState().questions).toHaveLength(1)
+
+    // the flushed mid-sentence tail (stamped before the pause) still lands...
+    const before = useSessionStore.getState().transcript.length
+    you.emit({ speaker: 'you', text: 'and that wrapped the case up.', confirmed: true, t: 10 })
+    expect(useSessionStore.getState().transcript.length).toBe(before + 1)
+    // ...but speech from after the pause does not
+    you.emit({ speaker: 'you', text: 'this should be dropped.', confirmed: true, t: 200 })
+    expect(useSessionStore.getState().transcript.length).toBe(before + 1)
+  })
+
+  it('an empty loop still records unmatched questions (L12)', async () => {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-that-does-not-exist', true)
+    say(them, ER, 3)
+    say(them, AMBIG, 8)
+    const qs = useSessionStore.getState().questions
+    expect(qs).toHaveLength(2)
+    expect(qs.every((q) => q.entryId === null)).toBe(true)
+  })
+})

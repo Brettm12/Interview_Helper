@@ -201,3 +201,58 @@ describe('embedding blend once the model is warm', () => {
     expect(bottom.score).toBeLessThan(0.2)
   })
 })
+
+// ---- trigger-phrase guardrails (REVIEW.md H13) ------------------------------
+
+describe('fuzzyPhraseHit guardrails', async () => {
+  const { fuzzyPhraseHit } = await import('@/lib/text')
+  const { TUNING } = await import('@shared/tuning')
+  const hit = (phrase: string, utterance: string) =>
+    fuzzyPhraseHit(phrase, utterance, TUNING.triggerFuzz)
+
+  it('a short phrase must appear verbatim — no fuzz headroom', () => {
+    expect(hit('why us', 'so tell me, why us specifically?')).toBe(true)
+    expect(hit('why us', 'and why is this role open?')).toBe(false)
+    expect(hit('five years', 'where do you see yourself in five years')).toBe(true)
+    expect(hit('five years', 'five tears in this job would break anyone')).toBe(false)
+  })
+
+  it('no sorted-token matching for 2-word phrases', () => {
+    expect(hit('why us', 'tell us why you left your last role')).toBe(false)
+  })
+
+  it('longer reordered phrases still hit via sorted tokens', () => {
+    expect(hit('burning out their team', "a manager who's burning their team out")).toBe(true)
+  })
+
+  it('a window without any exact content word cannot hit', () => {
+    expect(hit('why this role', 'why this rule matters to us')).toBe(false)
+    expect(hit('why this role', 'why this role appeals to you')).toBe(true)
+  })
+})
+
+// ---- question-likeness (REVIEW.md M12) --------------------------------------
+
+describe('isQuestionLike', async () => {
+  const { isQuestionLike } = await import('@/lib/engine')
+
+  it('hears requests phrased without a question mark', () => {
+    expect(isQuestionLike("I'd love to hear about a time you disagreed with a leader")).toBe(true)
+    expect(isQuestionLike('Talk about a mistake that had real consequences')).toBe(true)
+    expect(isQuestionLike('Can you share an example of coaching a manager')).toBe(true)
+    expect(isQuestionLike('Give us a sense of how you run investigations')).toBe(true)
+    expect(isQuestionLike('Could you take me through your first week')).toBe(true)
+    expect(isQuestionLike('Suppose leadership asked you to bend a policy')).toBe(true)
+    expect(isQuestionLike('Have you ever changed a leader’s mind')).toBe(true)
+  })
+
+  it('does not fire on a bare interrogative mid-statement', () => {
+    expect(isQuestionLike("that's why we moved the interview online")).toBe(false)
+    expect(isQuestionLike('we know what is at stake for the team here')).toBe(false)
+  })
+
+  it('still fires on an interrogative opening a clause', () => {
+    expect(isQuestionLike('Why this team')).toBe(true)
+    expect(isQuestionLike('Right. What would you change first')).toBe(true)
+  })
+})

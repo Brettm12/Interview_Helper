@@ -60,10 +60,15 @@ export function diceCoefficient(a: string, b: string): number {
   return (2 * inter) / total
 }
 
+/** the tokens of `s` that carry content (stopwords removed) */
+export function contentTokens(s: string): string[] {
+  return tokens(s).filter((t) => !STOPWORDS.has(t))
+}
+
 /** token-overlap recall of `needle` inside `haystack` (how much of the needle
  *  is present), used by lexical coverage */
 export function tokenRecall(needle: string, haystack: string): number {
-  const nt = tokens(needle).filter((t) => !STOPWORDS.has(t))
+  const nt = contentTokens(needle)
   if (nt.length === 0) return 0
   const ht = new Set(tokens(haystack))
   let hit = 0
@@ -106,20 +111,33 @@ export function fuzzySimilarity(a: string, b: string): number {
   return 1 - d / Math.max(na.length, nb.length)
 }
 
-/** does `phrase` appear in `utterance`, allowing fuzzy word-window matching?
+/** Does `phrase` appear in `utterance`, allowing fuzzy word-window matching?
  *  Slides a window of the phrase's word length across the utterance and takes
  *  the best fuzzy similarity — comparing both the raw window and the
  *  sorted-token forms, so re-ordered speech ("burning their team out" vs the
- *  trigger "burning out their team") still hits. */
+ *  trigger "burning out their team") still hits.
+ *
+ *  Guardrails (REVIEW.md H13 — short phrases were wildcards):
+ *   - a phrase under 10 normalized characters has no room for fuzz (one edit
+ *     on "why us" reaches unrelated words) — it must appear verbatim;
+ *   - a window with no exact content-word from the phrase can't hit;
+ *   - the sorted-token pass is off for 2-word phrases, where it just deletes
+ *     word order ("why us" would hit inside "tell us why you left"). */
 export function fuzzyPhraseHit(phrase: string, utterance: string, threshold: number): boolean {
   const pt = tokens(phrase)
   const ut = tokens(utterance)
   if (pt.length === 0 || ut.length === 0) return false
   const np = pt.join(' ')
+  if (np.replace(/ /g, '').length < 10) {
+    return ` ${ut.join(' ')} `.includes(` ${np} `)
+  }
+  const content = contentTokens(phrase)
   const npSorted = [...pt].sort().join(' ')
-  const windowHits = (win: string[]): boolean =>
-    fuzzySimilarity(np, win.join(' ')) >= threshold ||
-    fuzzySimilarity(npSorted, [...win].sort().join(' ')) >= threshold
+  const windowHits = (win: string[]): boolean => {
+    if (content.length > 0 && !win.some((w) => content.includes(w))) return false
+    if (fuzzySimilarity(np, win.join(' ')) >= threshold) return true
+    return pt.length >= 3 && fuzzySimilarity(npSorted, [...win].sort().join(' ')) >= threshold
+  }
   if (ut.length <= pt.length) return windowHits(ut)
   for (let i = 0; i + pt.length <= ut.length; i++) {
     if (windowHits(ut.slice(i, i + pt.length))) return true

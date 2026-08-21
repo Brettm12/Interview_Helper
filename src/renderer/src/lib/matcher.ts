@@ -26,7 +26,19 @@ export class HybridMatcher implements Matcher {
     return [entry.question, ...entry.triggerPhrases]
   }
 
-  score(utterance: string, entries: Answer[], priors?: Priors): Candidate[] {
+  /**
+   * @param questionLike whether the utterance reads as a question (the
+   *   engine's isQuestionLike). A trigger phrase is a *disambiguator*, not a
+   *   conjurer: on a statement, or on weak semantic evidence, its boost is
+   *   capped at the ambiguous band so it can surface the unsure card but can
+   *   never swap the panel confidently on its own (REVIEW.md C7).
+   */
+  score(
+    utterance: string,
+    entries: Answer[],
+    priors?: Priors,
+    questionLike = true
+  ): Candidate[] {
     const t = this.tuning
     const out: Candidate[] = entries.map((entry) => {
       const dice = diceCoefficient(utterance, entry.question)
@@ -48,7 +60,13 @@ export class HybridMatcher implements Matcher {
       let score = cos == null ? dice : cos * t.embeddingWeight + dice * (1 - t.embeddingWeight)
       for (const phrase of entry.triggerPhrases) {
         if (fuzzyPhraseHit(phrase, utterance, t.triggerFuzz)) {
-          score += t.triggerBoost
+          const boosted = score + t.triggerBoost
+          // the boost may lift a decent mid-band reading of a QUESTION to
+          // confident; on a statement, or when the semantic evidence alone
+          // is below the ambiguous bar, it caps at ambiguous — a trigger hit
+          // by itself must never produce a confident swap (REVIEW.md C7)
+          score =
+            questionLike && score >= t.ambiguous ? boosted : Math.min(boosted, t.ambiguous)
           break // one boost per entry, not per phrase
         }
       }

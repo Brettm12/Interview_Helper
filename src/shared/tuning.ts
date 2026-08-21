@@ -2,12 +2,18 @@
 // real sessions — change the number, not the call sites.
 export const TUNING = {
   // --- question matching -----------------------------------------------------
+  // Calibrated against the real MiniLM over the seed bank
+  // (tests/calibration.real.test.ts): honest paraphrases of bank questions
+  // blend to 0.32–0.62 while off-bank questions top out at ~0.31, so the old
+  // bars (0.62/0.45) classified most paraphrases as "none" — a silent panel in
+  // the app's core scenario (REVIEW.md H1). Discrimination comes from the
+  // runner-up margin, not from a high absolute bar.
   /** top candidate must reach this to swap the panel without asking */
-  confident: 0.62,
+  confident: 0.5,
   /** ...and beat the runner-up by at least this margin */
   confidentMargin: 0.12,
   /** below `confident` but at/above this → unsure state with 2–3 candidates */
-  ambiguous: 0.45,
+  ambiguous: 0.32,
   /** additive boost when a trigger phrase hits (normalised, fuzzy edit distance) */
   triggerBoost: 0.35,
   /** a trigger phrase counts as a hit when its fuzzy similarity reaches this */
@@ -31,8 +37,9 @@ export const TUNING = {
    *  confirmed bar. Waiting for a confirmed segment costs the VAD's 750ms of
    *  silence plus a decode — the card lands 1.5–3s after they stop asking,
    *  which is the pause you are supposed to be filling. Being early is worth a
-   *  lot; being early and wrong is worth less than nothing. */
-  confidentPartial: 0.78,
+   *  lot; being early and wrong is worth less than nothing. (Kept 0.16 above
+   *  `confident` through the recalibration.) */
+  confidentPartial: 0.66,
   confidentMarginPartial: 0.18,
   /** an entry already answered is less likely to be asked again. Subtracted
    *  per prior activation, so the panel stops swinging back to a strong but

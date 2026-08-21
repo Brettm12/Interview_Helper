@@ -71,8 +71,8 @@ function LiveMatched(): JSX.Element {
               metrics: ['9 days', '−18% drop-off']
             },
             earlier: [
-              { question: 'Why this team?', time: '08:12' },
-              { question: 'Walk me through the last thing you shipped', time: '04:50' }
+              { key: 'g-1', question: 'Why this team?', time: '08:12' },
+              { key: 'g-2', question: 'Walk me through the last thing you shipped', time: '04:50' }
             ]
           }}
           unsure={null}

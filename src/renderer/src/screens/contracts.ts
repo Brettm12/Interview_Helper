@@ -26,7 +26,7 @@ export interface MatchedBodyProps {
   points: PointView[]
   onTogglePoint: (id: string) => void
   story: { label: string; body: string; metrics: string[] } | null
-  earlier: { question: string; time: string }[]
+  earlier: { key: string; question: string; time: string }[]
 }
 
 export interface UnsureCandidateView {
