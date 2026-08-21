@@ -35,6 +35,8 @@ interface BankState {
   /** pane 3 shows the shared stories library */
   storiesOpen: boolean
   storyDraft: StoryDraft | null
+  /** pane 3 shows the import/export surface */
+  importOpen: boolean
 
   load(): Promise<void>
   selectLoop(id: string): void
@@ -50,6 +52,10 @@ interface BankState {
 
   openStories(): void
   closeStories(): void
+  openImport(): void
+  closeImport(): void
+  /** merge parsed entries into the active loop; returns how many landed */
+  addAnswers(answers: Answer[]): Promise<number>
   selectStory(id: string): void
   newStory(): void
   updateStoryDraft(patch: Partial<StoryDraft>): void
@@ -71,6 +77,7 @@ export const useBankStore = create<BankState>((set, get) => ({
   filterIds: null,
   storiesOpen: false,
   storyDraft: null,
+  importOpen: false,
 
   load: async () => {
     const bank = await api.bank.load()
@@ -94,7 +101,7 @@ export const useBankStore = create<BankState>((set, get) => ({
     void api.bank.save(next)
   },
 
-  selectAnswer: (id) => set({ selectedAnswerId: id, draft: null, storiesOpen: false }),
+  selectAnswer: (id) => set({ selectedAnswerId: id, draft: null, storiesOpen: false, importOpen: false }),
   setSearch: (q) => set({ searchQuery: q }),
   setFilter: (ids) => set({ filterIds: ids }),
 
@@ -103,6 +110,7 @@ export const useBankStore = create<BankState>((set, get) => ({
     if (!a) return
     set({
       storiesOpen: false,
+      importOpen: false,
       draft: {
         answerId: a.id,
         question: a.question,
@@ -118,6 +126,7 @@ export const useBankStore = create<BankState>((set, get) => ({
     const bank = get().bank
     set({
       storiesOpen: false,
+      importOpen: false,
       draft: {
         answerId: null,
         question: prefill?.question ?? '',
@@ -210,8 +219,20 @@ export const useBankStore = create<BankState>((set, get) => ({
 
   // ---- shared stories library (pane 3) ----
 
-  openStories: () => set({ storiesOpen: true, draft: null, storyDraft: null }),
+  openStories: () => set({ storiesOpen: true, draft: null, storyDraft: null, importOpen: false }),
   closeStories: () => set({ storiesOpen: false, storyDraft: null }),
+
+  openImport: () => set({ importOpen: true, draft: null, storiesOpen: false, storyDraft: null }),
+  closeImport: () => set({ importOpen: false }),
+
+  addAnswers: async (answers) => {
+    const bank = get().bank
+    if (!bank || answers.length === 0) return 0
+    const next: Bank = { ...bank, answers: [...bank.answers, ...answers] }
+    set({ bank: next })
+    await api.bank.save(next)
+    return answers.length
+  },
 
   selectStory: (id) => {
     const story = get().bank?.stories.find((s) => s.id === id)

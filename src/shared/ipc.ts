@@ -82,7 +82,9 @@ export interface HelperApi {
     displays(): Promise<DisplayInfo>
   }
   exportFile: {
-    /** write markdown next to the user's documents; returns the path */
+    /** save a text file next to the user's documents; returns the path.
+     *  The extension on `defaultName` picks the dialog's filter — session
+     *  notes and bank exports both come through here. */
     saveNotes(defaultName: string, contents: string): Promise<string | null>
   }
   /** strip window bridge: the session-owning renderer publishes snapshots,

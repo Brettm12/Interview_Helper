@@ -114,7 +114,9 @@ function browserShim(): HelperApi {
     exportFile: {
       saveNotes: async (name, contents) => {
         if (typeof document === 'undefined') return name
-        const blob = new Blob([contents], { type: 'text/markdown' })
+        const blob = new Blob([contents], {
+          type: name.endsWith('.json') ? 'application/json' : 'text/markdown'
+        })
         const a = document.createElement('a')
         a.href = URL.createObjectURL(blob)
         a.download = name

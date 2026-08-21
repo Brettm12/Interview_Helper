@@ -170,6 +170,36 @@ export interface BankScreenProps {
   onStories: () => void
 }
 
+// ---- import / export (pane 3) -----------------------------------------------
+
+export interface ImportPreviewView {
+  /** "12 questions · 47 points" */
+  summary: string
+  /** the caveats, each worth reading before committing */
+  warnings: string[]
+  /** first few questions, so it's obvious the parse understood the notes */
+  sample: { question: string; points: number; duplicate: boolean }[]
+  /** why nothing could be read */
+  problem: string | null
+  /** how many would actually be added */
+  importable: number
+}
+
+export interface ImportPaneProps {
+  text: string
+  onTextChange: (t: string) => void
+  /** null until there is something to preview */
+  preview: ImportPreviewView | null
+  /** re-importing a bank you already have would double every card */
+  skipDuplicates: boolean
+  onSkipDuplicates: (skip: boolean) => void
+  onImport: () => void
+  onExport: (format: 'md' | 'json') => void
+  /** "Added 12 answers", "Saved to ~/Documents/bank.md" */
+  result: string | null
+  onClose: () => void
+}
+
 // ---- stories library (pane 3) -----------------------------------------------
 
 export interface StoryRowView {

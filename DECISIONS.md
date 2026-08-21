@@ -375,6 +375,67 @@ window lifecycle.
   required field would silently wipe an existing user's placement, transcript
   preference and strip position on upgrade.
 
+## Latency and prep round
+
+Everything here came from reading the code after the audio round, not from a
+new symptom. Two of the three were structural: they had been true since the
+first build and were invisible because nothing measured them.
+
+- **The models load on the setup screen, not at "Start listening".** Creating
+  them inside `startSession` meant the opening minute of every interview ran
+  while ~145MB of Whisper came off disk — utterances queued behind the load and
+  were dropped past the cap of four — and while MiniLM was still cold, which
+  left the matcher with no embeddings at all and falling back to bigram Dice.
+  The first question is usually the one you most want the card up for, and it
+  was the one least likely to work. Transcription stays *disabled* until a
+  session arms: warm model, idle pipeline, nothing said in front of the setup
+  screen transcribed. Ending a session no longer disposes them, so a second one
+  costs nothing.
+- **One transcription worker, not one per stream.** Two copies of base.en is
+  ~290MB resident and two decodes competing for the same cores with no way to
+  express which mattered. The queue now knows: the interviewer's audio puts the
+  card on screen, yours only ticks off points already on it. Order is
+  confirmed-them → confirmed-you → partial-them → partial-you, and overflow
+  sheds the least urgent job rather than the oldest — which in a two-stream
+  queue would mean discarding their question to keep your answer. The ordering
+  lives in a pure `AsrQueue` because inside a worker it could only ever be
+  reasoned about, never tested.
+- **The panel matches on partials.** It used to ignore every unconfirmed
+  segment, so a swap needed the VAD's 750ms of silence plus a decode and landed
+  1.5–3s after the question ended — in the pause you were meant to be filling.
+  Partials always warm the embedding now, and swap the panel when they clear a
+  bar well above the confirmed one (0.78 against 0.62, with a wider margin).
+  Being early is worth a lot; being early and wrong is worth less than nothing.
+  When the full sentence arrives it corrects the wording on the row the partial
+  opened rather than adding a second row to the recap.
+- **Trigger phrases are embedded.** They only ever reached the score through
+  fuzzy edit distance, so "hardest investigation" matched "the hardest
+  investigation" and missed "the case that gave you the most trouble" — exactly
+  the job a trigger phrase exists to do. Best cosine across the question and its
+  phrases wins, phrases discounted 5% so the canonical wording takes a tie.
+- **Coverage is scored over a rolling window as well as per segment.** A point
+  delivered across two breaths could clear the bar in neither. The window
+  carries a higher threshold, because more text is easier to match by accident.
+- **A silence between *their* segments ends a turn.** Only your own speech used
+  to, so a question could be scored together with preamble from a minute
+  earlier. The question-like tail of the window is also scored separately and
+  the better reading wins.
+- **A small repeat prior.** An entry already answered is less likely to be
+  asked again. Applying it exposed that clamping the score to 1 *before* the
+  prior made it a no-op on precisely the saturated entries it exists to demote,
+  so evidence now saturates first and the prior is applied after.
+- **Import and export.** The bank sidebar already had an "Import from a job
+  post" link wired to `() => {}` — a dead affordance in the shipped app. It now
+  opens a real import/export pane in pane 3. Its text is deliberately unchanged:
+  the `bank` screen is pixel-gated at ≤0.1% and the sidebar sits inside the
+  compared region, so the pinned screenshot stays at 0.00%. The parser is
+  forgiving because real prep notes are messy, and a heading earns an entry only
+  if it reads like a question or carries content — otherwise the markdown this
+  module exports would re-import its own section headings as questions. Nothing
+  is written until the preview has been seen: merging pasted text blind into
+  someone's prepared material the night before an interview is not a mistake
+  they can undo.
+
 ## Known limitations
 
 - The real capture path is wired end to end and its model delivery is now

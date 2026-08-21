@@ -69,8 +69,8 @@ but a browser. `VITE_MOCK_SPEED=2` (any factor) compresses the playback.
 Every screen/state renders statically at its reference frame for design
 review: append `?screen=<name>` in `dev:web` — `live`, `unsure`, `find`,
 `strip`, `strip-queued`, `strip-new`, `bank`, `editor`, `setup`,
-`setup-noperm`, `setup-devices`, `armed`, `recap`, `recap-off`. No value lists an index page;
-any unknown name shows the list.
+`setup-noperm`, `setup-devices`, `importer`, `armed`, `recap`, `recap-off`.
+No value lists an index page; any unknown name shows the list.
 
 ## macOS permissions
 
@@ -119,6 +119,23 @@ Two things to do on the setup screen, in this order:
    heard — with one plain-language verdict on top naming the most likely
    problem. If the mic is 8dB under the threshold, this is where it says so.
 
+## Building the bank
+
+The bank is the product: matching can only ever be as good as what it is
+matching against. Three ways in:
+
+- **Type it** — "New answer" in the bank screen opens the editor.
+- **Paste it** — "Import from a job post" in the bank sidebar opens an
+  import/export pane. Paste prep notes in whatever shape you already keep them:
+  a question per line (or as a heading) with its points as bullets underneath,
+  optionally `> triggers: a, b` and `> story: title`. It shows you what it
+  found — how many questions, how many points, which look like duplicates of
+  entries you already have — **before** anything is added.
+- **Re-import an export** — the same pane exports the bank as markdown (for
+  reading and editing anywhere) or as JSON (a lossless backup that imports
+  back). Worth doing: your prepared material otherwise lives in a single
+  `bank.json` whose only backup is written on a successful read.
+
 ## Where things live
 
 - **Tuning constants** — `src/shared/tuning.ts`. Every matching, coverage,
@@ -145,8 +162,10 @@ Two things to do on the setup screen, in this order:
   `src/shared/types.ts` (`AudioSource`, `Transcriber`, `Matcher`,
   `CoverageModel`) with two capture implementations: the real path
   (`src/renderer/src/lib/drivers/real.ts` — getUserMedia mic, meeting audio
-  from either a loopback input device or getDisplayMedia, Whisper + MiniLM in
-  Web Workers) and the mock
+  from either a loopback input device or getDisplayMedia;
+  `drivers/transcription.ts` — one Whisper worker serving both streams behind
+  two Transcriber views, with the interviewer's audio prioritised; MiniLM in
+  its own worker) and the mock
   driver (`drivers/mock.ts`) replaying `fixtures/demo-session.json`. Speaker
   attribution is stream identity: system audio is `them`, mic is `you` — one
   transcriber per stream, no diarisation. `lib/engine.ts` wires segments →

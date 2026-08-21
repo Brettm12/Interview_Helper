@@ -1,11 +1,14 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { Answer } from '@shared/types'
 import BankScreen from '../screens/bank/BankScreen'
 import EditorPane from '../screens/bank/EditorPane'
 import StoriesPane from '../screens/bank/StoriesPane'
-import type { BankDetailProps, BankGroupView } from '../screens/contracts'
+import ImportPane from '../screens/bank/ImportPane'
+import type { BankDetailProps, BankGroupView, ImportPreviewView } from '../screens/contracts'
 import { useBankStore, answersForLoop, storyById, storyUsage } from '../state/bankStore'
+import { entriesToAnswers, parseBankText, serializeBank } from '../lib/bankIO'
 import { normalize } from '../lib/text'
+import { api } from '../lib/api'
 import { startSession } from './runtime'
 
 // Question bank + entry editor, bound to the bank store. Selecting a loop
@@ -113,6 +116,90 @@ function StoriesContainer(): JSX.Element | null {
   )
 }
 
+/**
+ * Import / export, bound to the bank store.
+ *
+ * The preview is recomputed on every keystroke and nothing is written until
+ * the user commits: pasting into someone's prepared material the night before
+ * an interview has to be reversible in their head before it happens.
+ */
+function ImportContainer(): JSX.Element {
+  const bank = useBankStore((s) => s.bank)
+  const store = useBankStore.getState()
+  const [text, setText] = useState('')
+  const [skipDuplicates, setSkipDuplicates] = useState(true)
+  const [result, setResult] = useState<string | null>(null)
+
+  const parsed = useMemo(
+    () => (text.trim() ? parseBankText(text, bank?.answers ?? []) : null),
+    [text, bank]
+  )
+
+  const importable = parsed
+    ? parsed.entries.filter((e) => !(skipDuplicates && e.duplicateOf)).length
+    : 0
+
+  const preview: ImportPreviewView | null = parsed && {
+    summary: `${parsed.entries.length} question${parsed.entries.length === 1 ? '' : 's'} · ${parsed.entries.reduce((n, e) => n + e.points.length, 0)} points`,
+    warnings: [
+      parsed.pointless > 0
+        ? `${parsed.pointless} have no points — they will show as a card with nothing to strike through.`
+        : '',
+      parsed.duplicates > 0
+        ? `${parsed.duplicates} look like questions you already have.`
+        : ''
+    ].filter(Boolean),
+    sample: parsed.entries.slice(0, 6).map((e) => ({
+      question: e.question,
+      points: e.points.length,
+      duplicate: e.duplicateOf != null
+    })),
+    problem: parsed.problem,
+    importable
+  }
+
+  const doImport = (): void => {
+    if (!bank || !parsed) return
+    const chosen = parsed.entries.filter((e) => !(skipDuplicates && e.duplicateOf))
+    const answers = entriesToAnswers(chosen, {
+      loopId: bank.activeLoopId,
+      // imports land in the first section; moving them is one edit, and
+      // guessing a section from prose would be guessing
+      sectionId: bank.sections[0]?.id ?? 'sec-imported',
+      stories: bank.stories
+    })
+    void store.addAnswers(answers).then((n) => {
+      setResult(`Added ${n} answer${n === 1 ? '' : 's'} to ${bank.loops.find((l) => l.id === bank.activeLoopId)?.shortName ?? 'this loop'}.`)
+      setText('')
+    })
+  }
+
+  const doExport = (format: 'md' | 'json'): void => {
+    if (!bank) return
+    const name = `interview-bank.${format}`
+    void api.exportFile
+      .saveNotes(name, serializeBank(bank, format))
+      .then((path) => setResult(path ? `Saved to ${path}` : null))
+  }
+
+  return (
+    <ImportPane
+      text={text}
+      onTextChange={(t) => {
+        setText(t)
+        setResult(null)
+      }}
+      preview={preview}
+      skipDuplicates={skipDuplicates}
+      onSkipDuplicates={setSkipDuplicates}
+      onImport={doImport}
+      onExport={doExport}
+      result={result}
+      onClose={() => store.closeImport()}
+    />
+  )
+}
+
 export default function BankContainer(): JSX.Element | null {
   const bank = useBankStore((s) => s.bank)
   const selectedAnswerId = useBankStore((s) => s.selectedAnswerId)
@@ -120,6 +207,7 @@ export default function BankContainer(): JSX.Element | null {
   const draft = useBankStore((s) => s.draft)
   const filterIds = useBankStore((s) => s.filterIds)
   const storiesOpen = useBankStore((s) => s.storiesOpen)
+  const importOpen = useBankStore((s) => s.importOpen)
 
   const groups = useMemo<BankGroupView[]>(() => {
     if (!bank) return []
@@ -206,14 +294,16 @@ export default function BankContainer(): JSX.Element | null {
       groups={groups}
       selectedAnswerId={selectedAnswerId}
       detail={detail}
-      editing={draft != null || storiesOpen}
-      editorSlot={draft != null ? <EditorContainer /> : <StoriesContainer />}
+      editing={draft != null || storiesOpen || importOpen}
+      editorSlot={
+        draft != null ? <EditorContainer /> : importOpen ? <ImportContainer /> : <StoriesContainer />
+      }
       searchQuery={searchQuery}
       onSearch={(q) => store.setSearch(q)}
       onSelectLoop={(id) => store.selectLoop(id)}
       onSelectAnswer={(id) => store.selectAnswer(id)}
       onNewAnswer={() => store.startNew()}
-      onImport={() => {}}
+      onImport={() => store.openImport()}
       onStories={() => store.openStories()}
     />
   )

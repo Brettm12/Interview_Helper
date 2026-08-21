@@ -30,6 +30,9 @@ type InMsg =
 type OutMsg =
   | { type: 'ready' }
   | { type: 'error'; message: string }
+  /** the model could not be loaded at all — distinct from a decode error,
+   *  because it means nothing will ever be transcribed */
+  | { type: 'load-failed'; message: string }
   | { type: 'segment'; speaker: 'you' | 'them'; text: string; confirmed: boolean; t: number }
 
 const STREAMS: Stream[] = ['them', 'you']
@@ -178,7 +181,13 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
   try {
     switch (msg.type) {
       case 'init':
-        await init(msg.modelPath, msg.modelId ?? DEFAULT_WHISPER_MODEL)
+        try {
+          await init(msg.modelPath, msg.modelId ?? DEFAULT_WHISPER_MODEL)
+        } catch (err) {
+          // "still loading" forever is the dishonest state: it looks exactly
+          // like a slow machine right up until the interview starts
+          post({ type: 'load-failed', message: String(err) })
+        }
         break
       case 'audio':
         onAudio(msg.stream, msg.samples, msg.t)

@@ -19,6 +19,8 @@ export class TranscriptionService {
   private disposed = false
 
   state: ModelState = 'loading'
+  /** why it failed, when it did */
+  error: string | null = null
 
   constructor(modelPath: string, modelId?: string) {
     this.worker = new Worker(new URL('../../workers/transcriber.worker.ts', import.meta.url), {
@@ -36,6 +38,10 @@ export class TranscriptionService {
           t: msg.t
         }
         for (const cb of this.subs[stream]) cb(segment)
+      } else if (msg.type === 'load-failed') {
+        console.warn('[transcriber]', msg.message)
+        this.error = msg.message
+        this.setState('failed')
       } else if (msg.type === 'error') {
         console.warn('[transcriber]', msg.message)
       }

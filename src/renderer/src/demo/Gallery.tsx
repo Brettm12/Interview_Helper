@@ -5,6 +5,7 @@ import FindOverlay from '../screens/find/FindOverlay'
 import Strip from '../screens/strip/Strip'
 import BankScreen from '../screens/bank/BankScreen'
 import EditorPane from '../screens/bank/EditorPane'
+import ImportPane from '../screens/bank/ImportPane'
 import SetupScreen from '../screens/setup/SetupScreen'
 import ArmedCard from '../screens/setup/ArmedCard'
 import RecapScreen from '../screens/recap/RecapScreen'
@@ -389,6 +390,40 @@ function Editor(): JSX.Element {
   )
 }
 
+/** import/export in pane 3, with a paste already previewed. Not part of the
+ *  pinned comparison — the mock has no such surface — but the preview is the
+ *  thing that stops an import mangling someone's prep, so it needs reviewing. */
+function Importer(): JSX.Element {
+  return (
+    <Frame width={520} height={812}>
+      <ImportPane
+        text={'Tell me about a time you disagreed with your manager.\n- Frame it as a data disagreement\n- I brought a two-week test'}
+        onTextChange={noop}
+        preview={{
+          summary: '12 questions · 47 points',
+          warnings: [
+            '3 have no points — they will show as a card with nothing to strike through.',
+            '2 look like questions you already have.'
+          ],
+          sample: [
+            { question: 'Tell me about a time you disagreed with your manager.', points: 4, duplicate: false },
+            { question: 'Why this team?', points: 3, duplicate: false },
+            { question: 'What is your biggest weakness?', points: 0, duplicate: true }
+          ],
+          problem: null,
+          importable: 10
+        }}
+        skipDuplicates
+        onSkipDuplicates={noop}
+        onImport={noop}
+        onExport={noop}
+        result={null}
+        onClose={noop}
+      />
+    </Frame>
+  )
+}
+
 // ---- 4a: setup -------------------------------------------------------------
 
 function Setup({ permissions }: { permissions: boolean }): JSX.Element {
@@ -646,6 +681,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
   'strip-new': StripNew,
   bank: Bank,
   editor: Editor,
+  importer: Importer,
   setup: () => <Setup permissions />,
   'setup-noperm': () => <Setup permissions={false} />,
   'setup-devices': SetupDevices,

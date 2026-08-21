@@ -78,11 +78,18 @@ function registerIpc(): void {
   ipcMain.handle('windows:set-content-protection', (_e, on: boolean) => setContentProtection(on))
   ipcMain.handle('windows:displays', () => ({ count: displayCount() }))
 
+  // extension is derived from the name so one handler serves session notes,
+  // a markdown bank and a JSON bank backup
   ipcMain.handle('export:save-notes', async (_e, defaultName: string, contents: string) => {
     const win = getMainWindow()
+    const ext = defaultName.split('.').pop() ?? 'md'
+    const filters =
+      ext === 'json'
+        ? [{ name: 'JSON', extensions: ['json'] }]
+        : [{ name: 'Markdown', extensions: ['md'] }]
     const { canceled, filePath } = await dialog.showSaveDialog(win!, {
       defaultPath: join(app.getPath('documents'), defaultName),
-      filters: [{ name: 'Markdown', extensions: ['md'] }]
+      filters
     })
     if (canceled || !filePath) return null
     await fs.writeFile(filePath, contents, 'utf8')
