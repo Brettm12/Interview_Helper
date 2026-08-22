@@ -459,6 +459,24 @@ the review's finding IDs are the cross-reference.
   honest paraphrases, off-bank questions and trigger-abuse utterances against
   the real MiniLM. Any future retune has to keep that suite green; symbolic
   unit tests alone cannot catch thresholds that are consistently wrong.
+- **Coverage has its own calibration, and it is asymmetric.**
+  `tests/coverage.real.test.ts` scores spoken deliveries of the seed points
+  against the real embedder. A missed point leaves something on the card you
+  have already said; a false strike-through hides something you have *not*
+  said and you leave the interview without having made it. So the fixtures
+  assert exactly which points a delivery may cover — including that it strikes
+  nothing on any other answer — and the suite prints the two score
+  populations, because an encoder that cannot separate them at all cannot be
+  fixed by moving a threshold.
+- **The transcript is a variable, not a constant.** The clean fixtures are
+  prose; Whisper is not. `mangled` in the paraphrase fixture carries dropped
+  question marks, run-ons, disfluencies and mishearings, tested as invariants
+  against their own clean wording rather than as new absolute bars: the match
+  may weaken, but it may not vanish, lose the entry off the shortlist, or turn
+  confidently wrong. Measured today, a run-on or a disfluency costs about
+  0.10–0.15 of score — enough on its own to push a question from the confident
+  card onto the unsure one. That is a transcript problem, and no encoder swap
+  fixes it.
 - **The 45s merge only trusts explicit context (H3).** Merging a new question
   into the current row is limited to ⌘K pins and same-window rescores. The old
   time-window heuristic swallowed genuine not-in-bank questions whenever any

@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { HybridMatcher } from '@/lib/matcher'
 import { isQuestionLike } from '@/lib/engine'
-import { EmbeddingCache, type EmbeddingProvider } from '@/lib/embeddings'
+import { EmbeddingCache } from '@/lib/embeddings'
+import { REAL, realEmbeddingProvider } from './helpers/realModel'
 import type { Answer, Candidate } from '@shared/types'
 import seed from '@shared/seed.json'
 import fixture from './fixtures/paraphrases.json'
@@ -25,9 +26,6 @@ import fixture from './fixtures/paraphrases.json'
 //  - trigger-adjacent statements and wrong-topic questions never classify
 //    confident — the trigger boost must not conjure matches (REVIEW.md C7/H13).
 
-const REAL = process.env.LIH_REAL_MODELS === '1'
-const MODELS_DIR = process.env.LIH_MODELS_DIR
-
 // the two entries deliberately sharing the "harassment complaint" trigger; the
 // unsure card showing both is the designed outcome (DECISIONS.md)
 const TWINS = new Set(['a-invest-run', 'a-informal'])
@@ -39,32 +37,15 @@ describe.skipIf(!REAL)('matching calibration against real MiniLM', () => {
   let cache: EmbeddingCache
 
   beforeAll(async () => {
-    if (!MODELS_DIR) throw new Error('LIH_MODELS_DIR is required with LIH_REAL_MODELS=1')
-    const { pipeline, env } = await import('@xenova/transformers')
-    env.localModelPath = MODELS_DIR
-    env.allowRemoteModels = false
-    const extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2')
-    const provider: EmbeddingProvider = {
-      ready: true,
-      async embed(texts: string[]): Promise<Float32Array[]> {
-        const out: Float32Array[] = []
-        for (const t of texts) {
-          const r = (await extractor(t, { pooling: 'mean', normalize: true })) as {
-            data: Float32Array
-          }
-          out.push(Float32Array.from(r.data))
-        }
-        return out
-      }
-    }
-    cache = new EmbeddingCache(provider)
+    cache = new EmbeddingCache(await realEmbeddingProvider())
     matcher = new HybridMatcher(cache)
     const texts = [
       ...entries.map((e) => e.question),
       ...entries.flatMap((e) => e.triggerPhrases),
       ...fixture.paraphrases.map((p) => p.text),
       ...fixture.offBank.map((p) => p.text),
-      ...fixture.triggerAbuse.map((p) => p.text)
+      ...fixture.triggerAbuse.map((p) => p.text),
+      ...fixture.mangled.flatMap((m) => [m.clean, m.text])
     ]
     await cache.ensure(texts)
   }, 300_000)
@@ -113,6 +94,52 @@ describe.skipIf(!REAL)('matching calibration against real MiniLM', () => {
     // trigger boost must never pull a DIFFERENT entry above the topical one
     const candidates = scoreText(text)
     expect(candidates[0]?.entryId).toBe(entryId)
+  })
+
+  // ---- what the transcriber actually hands us ------------------------------
+  // Every fixture above is clean prose. Whisper does not produce clean prose:
+  // it drops the terminal question mark (which gates question-likeness, and
+  // with it the trigger boost), runs two sentences together, leaves the
+  // disfluencies in, and mishears the low-frequency words this bank is full
+  // of. These are invariants against the clean wording in the same row —
+  // relative, never absolute, so a red here means the transcript broke the
+  // match rather than that the clean set needs retuning.
+
+  it.each(fixture.mangled)('$kind — still shows something: $text', ({ clean, text }) => {
+    const cleanState = matcher.classify(scoreText(clean))
+    if (cleanState === 'none') return // nothing to preserve
+    const mangled = scoreText(text)
+    expect(
+      matcher.classify(mangled),
+      `clean was ${cleanState}; mangled fell to none (top ${mangled[0]?.entryId} @ ${mangled[0]?.score.toFixed(3)})`
+    ).not.toBe('none')
+  })
+
+  it.each(fixture.mangled)('$kind — the right entry stays reachable: $text', ({ clean, text, entryId }) => {
+    const cleanShortlist = matcher.shortlist(scoreText(clean)).map((c) => c.entryId)
+    if (!cleanShortlist.includes(entryId)) return // it was not reachable clean either
+    const shortlist = matcher.shortlist(scoreText(text)).map((c) => c.entryId)
+    expect(shortlist, `shortlist became ${JSON.stringify(shortlist)}`).toContain(entryId)
+  })
+
+  it.each(fixture.mangled)('$kind — never confidently wrong: $text', ({ clean, text }) => {
+    const mangled = scoreText(text)
+    if (matcher.classify(mangled) !== 'confident') return
+    // a mangled transcript may lose confidence; it must never GAIN it for a
+    // different entry — that is a wrong answer on screen with a green dot
+    expect(mangled[0]?.entryId).toBe(scoreText(clean)[0]?.entryId)
+  })
+
+  it('prints what the mangling costs', () => {
+    for (const m of fixture.mangled) {
+      const c = scoreText(m.clean)
+      const g = scoreText(m.text)
+      const delta = (g[0]?.score ?? 0) - (c[0]?.score ?? 0)
+      console.log(
+        `${m.kind.padEnd(19)} ${matcher.classify(c).padEnd(9)} ${c[0]?.score.toFixed(3)} → ${matcher.classify(g).padEnd(9)} ${g[0]?.score.toFixed(3)} (${delta >= 0 ? '+' : ''}${delta.toFixed(3)}) top ${g[0]?.entryId === m.entryId ? '✓' : `✗ ${g[0]?.entryId}`}  | ${m.text.slice(0, 52)}`
+      )
+    }
+    expect(fixture.mangled.length).toBeGreaterThan(0)
   })
 
   it('prints the calibration table', () => {

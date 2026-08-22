@@ -60,8 +60,15 @@ jobs:
           key: models-${{ hashFiles('src/shared/models.json') }}
       - run: node scripts/fetch-models.mjs --dest "$HOME/lih-models" --model Xenova/whisper-tiny.en
       # calibration: paraphrases must land, off-bank must stay none, triggers
-      # must not conjure confident matches (REVIEW.md H1/C7/H13)
+      # must not conjure confident matches (REVIEW.md H1/C7/H13). The same run
+      # carries the Whisper-mangled invariants — dropped question marks,
+      # run-ons, disfluencies — which say whether a miss is the encoder's
+      # fault or the transcript's.
       - run: LIH_REAL_MODELS=1 LIH_MODELS_DIR="$HOME/lih-models" npx vitest run tests/calibration.real.test.ts
+      # coverage: the thresholds that decide whether a point is struck through
+      # while you are still talking. A false strike hides something you never
+      # said, so the fixtures assert exactly which points a delivery may cover
+      - run: LIH_REAL_MODELS=1 LIH_MODELS_DIR="$HOME/lih-models" npx vitest run tests/coverage.real.test.ts
       # the onnx wasm binaries must be IN the build, and both workers must
       # point at them rather than the CDN default (REVIEW.md C2)
       - run: npm run build
