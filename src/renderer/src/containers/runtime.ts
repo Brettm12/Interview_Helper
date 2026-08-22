@@ -656,7 +656,24 @@ function startStripPublisher(): void {
 /** other windows saved the bank — reload so this one isn't stale. Returns the
  *  unsubscribe; App mounts it once per window. */
 export function startBankSync(): () => void {
-  return api.bank.onChanged(() => void useBankStore.getState().load())
+  const offChanged = api.bank.onChanged(() => void useBankStore.getState().load())
+  // The setup screen starts loading models as it mounts, but the bank arrives
+  // from disk a moment later — so that pre-warm found no bank and quietly did
+  // nothing, and the cold-start window came back at the first question
+  // (REVIEW.md L13). Warm from whichever side lands last: ensureModels() warms
+  // when the models finish, this warms when the bank does (and again when the
+  // active loop changes, since a different loop is a different set of texts).
+  let warmedLoop: string | null = null
+  const offBank = useBankStore.subscribe((s) => {
+    const loop = s.bank?.activeLoopId ?? null
+    if (!loop || loop === warmedLoop) return
+    warmedLoop = loop
+    warmBank()
+  })
+  return () => {
+    offChanged()
+    offBank()
+  }
 }
 
 export interface StartOptions {
