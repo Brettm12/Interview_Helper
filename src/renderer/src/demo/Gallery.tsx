@@ -391,6 +391,7 @@ function Editor(): JSX.Element {
         onTriggerAdd={noop}
         onTriggerRemove={noop}
         onSwapStory={noop}
+        onDelete={noop}
         onCancel={noop}
         onSave={noop}
       />

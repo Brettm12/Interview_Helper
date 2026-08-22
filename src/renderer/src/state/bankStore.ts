@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Answer, Bank, Story } from '@shared/types'
 import { BankSchema } from '@shared/schema'
+import seed from '@shared/seed.json'
 import { api } from '../lib/api'
 import { usePersistHealth } from './persistHealth'
 
@@ -69,6 +70,13 @@ interface BankState {
   newStory(): void
   updateStoryDraft(patch: Partial<StoryDraft>): void
   saveStoryDraft(): Promise<void>
+
+  /** remove an answer for good; selection moves to a neighbour */
+  deleteAnswer(answerId: string): Promise<void>
+  /** remove a story and detach it from every answer that referenced it */
+  deleteStory(storyId: string): Promise<void>
+  /** drop the example answers the app ships with; returns how many went */
+  removeStarterAnswers(): Promise<number>
 
   addTrigger(answerId: string, phrase: string): Promise<void>
   removeTrigger(answerId: string, phrase: string): Promise<void>
@@ -209,6 +217,69 @@ export const useBankStore = create<BankState>((set, get) => ({
     await persist(next)
   },
 
+  // ---- removal ----
+  // The bank had no delete at all: the fifteen example answers could never be
+  // taken out, sat in the active loop, and were scored against the
+  // interviewer's voice for the whole interview.
+
+  deleteAnswer: async (answerId) => {
+    const { bank, selectedAnswerId, draft, filterIds } = get()
+    if (!bank) return
+    const answers = bank.answers.filter((a) => a.id !== answerId)
+    if (answers.length === bank.answers.length) return
+    const next = { ...bank, answers }
+    // land the selection somewhere real rather than on an empty pane
+    const inLoop = answers.filter((a) => a.loopIds.includes(bank.activeLoopId))
+    set({
+      bank: next,
+      selectedAnswerId:
+        selectedAnswerId === answerId ? (inLoop[0]?.id ?? null) : selectedAnswerId,
+      draft: draft?.answerId === answerId ? null : draft,
+      filterIds: filterIds ? filterIds.filter((id) => id !== answerId) : null
+    })
+    await persist(next)
+  },
+
+  deleteStory: async (storyId) => {
+    const bank = get().bank
+    if (!bank) return
+    const stories = bank.stories.filter((s) => s.id !== storyId)
+    if (stories.length === bank.stories.length) return
+    // a story is a shared entity: leaving the id behind on its answers would
+    // point them at nothing, and the live panel reads that reference
+    const next = {
+      ...bank,
+      stories,
+      answers: bank.answers.map((a) => (a.storyId === storyId ? { ...a, storyId: null } : a))
+    }
+    set({ bank: next, storyDraft: null })
+    await persist(next)
+  },
+
+  removeStarterAnswers: async () => {
+    const { bank, selectedAnswerId, draft } = get()
+    if (!bank) return 0
+    const ids = new Set(starterAnswerIds(bank))
+    if (ids.size === 0) return 0
+    const answers = bank.answers.filter((a) => !ids.has(a.id))
+    // seed stories that nothing references any more go with them; a story the
+    // user attached to their own answer stays
+    const keptStoryIds = new Set(answers.map((a) => a.storyId).filter(Boolean) as string[])
+    const seedStoryIds = new Set((seed.stories as Story[]).map((s) => s.id))
+    const stories = bank.stories.filter((s) => keptStoryIds.has(s.id) || !seedStoryIds.has(s.id))
+    const next = { ...bank, answers, stories }
+    const inLoop = answers.filter((a) => a.loopIds.includes(bank.activeLoopId))
+    set({
+      bank: next,
+      selectedAnswerId:
+        selectedAnswerId && ids.has(selectedAnswerId) ? (inLoop[0]?.id ?? null) : selectedAnswerId,
+      draft: draft?.answerId && ids.has(draft.answerId) ? null : draft,
+      filterIds: null
+    })
+    await persist(next)
+    return ids.size
+  },
+
   addTrigger: async (answerId, phrase) => {
     const bank = get().bank
     if (!bank) return
@@ -345,4 +416,22 @@ export function storyById(bank: Bank, id: string | null): Story | null {
 /** live count for "used in N answers" */
 export function storyUsage(bank: Bank, storyId: string): number {
   return bank.answers.filter((a) => a.storyId === storyId).length
+}
+
+/** The example answers still exactly as they shipped. Keyed on the seed ids
+ *  and on the content: an entry the user has rewritten is theirs now, whatever
+ *  id it was born with, and "remove the starter answers" must not take it. */
+export function starterAnswerIds(bank: Bank): string[] {
+  const seedById = new Map((seed.answers as Answer[]).map((a) => [a.id, a]))
+  return bank.answers
+    .filter((a) => {
+      const s = seedById.get(a.id)
+      if (!s) return false
+      return (
+        s.question === a.question &&
+        s.points.length === a.points.length &&
+        s.points.every((p, i) => p.text === a.points[i]?.text)
+      )
+    })
+    .map((a) => a.id)
 }

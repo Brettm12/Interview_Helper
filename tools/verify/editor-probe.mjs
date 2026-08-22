@@ -76,6 +76,55 @@ try {
   if (saved !== firstPoint) throw new Error(`reorder was not saved (got "${saved}")`)
   ok('the reorder landed in the saved bank')
 
+  // ---- removal, in the real DOM --------------------------------------------
+  // A two-press confirm that fires on the first press, or a delete that leaves
+  // the pane pointing at an id that no longer exists, is the kind of thing
+  // only a real click finds.
+  const startCount = await page.evaluate(
+    () => JSON.parse(localStorage.getItem('lih.bank')).answers.length
+  )
+  await page.locator('.bank-detail__action', { hasText: 'Edit' }).click()
+  await page.locator('.editor-pane').waitFor()
+  const doomed = await page.locator('.editor-question').inputValue()
+
+  await page.locator('.editor-delete').click()
+  await page.locator('.editor-delete.confirm--armed').waitFor()
+  if ((await page.evaluate(() => JSON.parse(localStorage.getItem('lih.bank')).answers.length)) !== startCount) {
+    throw new Error('the first press deleted the answer')
+  }
+  ok('the first press on Delete only arms it')
+
+  await page.locator('.editor-delete').click()
+  await page.locator('.editor-pane').waitFor({ state: 'detached' })
+  const afterDelete = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('lih.bank')).answers.map((a) => a.question)
+  )
+  if (afterDelete.length !== startCount - 1) throw new Error('delete did not persist')
+  if (afterDelete.includes(doomed)) throw new Error('the wrong answer went')
+  ok('the second press deleted it, and it stayed deleted')
+
+  // the pane has to land on a real entry, not an empty detail
+  const detailQuestion = await page.locator('.bank-detail__question').textContent()
+  if (!detailQuestion || !afterDelete.includes(detailQuestion.trim())) {
+    throw new Error(`detail pane is showing "${detailQuestion}" after the delete`)
+  }
+  ok('the detail pane landed on an answer that still exists')
+
+  // ---- the way out of the starter bank -------------------------------------
+  await page.locator('.bank-side__link', { hasText: 'Import from a job post' }).click()
+  await page.locator('.importer').waitFor()
+  const removeStarters = page.locator('.importer__action', { hasText: 'untouched examples' })
+  await removeStarters.waitFor()
+  await removeStarters.click()
+  await page.locator('.importer__action.confirm--armed').waitFor()
+  await page.locator('.importer__action.confirm--armed').click()
+  await page.locator('.importer__result').waitFor()
+  const left = await page.evaluate(
+    () => JSON.parse(localStorage.getItem('lih.bank')).answers.length
+  )
+  if (left !== 0) throw new Error(`${left} starter answers survived`)
+  ok('the starter answers can be removed, and are')
+
   console.log('\nEDITOR PROBE PASS')
 } catch (err) {
   console.error(`\nEDITOR PROBE FAIL: ${err.message}`)

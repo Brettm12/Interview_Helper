@@ -5,7 +5,13 @@ import EditorPane from '../screens/bank/EditorPane'
 import StoriesPane from '../screens/bank/StoriesPane'
 import ImportPane from '../screens/bank/ImportPane'
 import type { BankDetailProps, BankGroupView, ImportPreviewView } from '../screens/contracts'
-import { useBankStore, answersForLoop, storyById, storyUsage } from '../state/bankStore'
+import {
+  useBankStore,
+  answersForLoop,
+  starterAnswerIds,
+  storyById,
+  storyUsage
+} from '../state/bankStore'
 import { usePersistHealth } from '../state/persistHealth'
 import { entriesToAnswers, parseBankText, serializeBank } from '../lib/bankIO'
 import { normalize } from '../lib/text'
@@ -90,6 +96,8 @@ function EditorContainer(): JSX.Element | null {
       }
       onSwapStory={swapStory}
       dirty={dirty}
+      // nothing to delete while the answer is still a draft
+      onDelete={draft.answerId ? () => void store.deleteAnswer(draft.answerId!) : null}
       onCancel={() => store.cancelEdit()}
       onSave={() => void store.saveEdit()}
     />
@@ -126,6 +134,10 @@ function StoriesContainer(): JSX.Element | null {
         if (d) store.updateStoryDraft({ metrics: d.metrics.filter((x) => x !== m) })
       }}
       onSave={() => void store.saveStoryDraft()}
+      onDelete={
+        storyDraft?.storyId ? () => void store.deleteStory(storyDraft.storyId!) : null
+      }
+      draftUsedIn={storyDraft?.storyId ? storyUsage(bank, storyDraft.storyId) : 0}
       onClose={() => store.closeStories()}
     />
   )
@@ -220,6 +232,14 @@ function ImportContainer(): JSX.Element {
       onRestore={parsed?.fullBank ? doRestore : null}
       onExport={doExport}
       result={result}
+      starters={{
+        count: bank ? starterAnswerIds(bank).length : 0,
+        onRemove: () => {
+          void store.removeStarterAnswers().then((n) => {
+            setResult(n > 0 ? `Removed ${n} starter ${n === 1 ? 'answer' : 'answers'}.` : null)
+          })
+        }
+      }}
       onClose={() => store.closeImport()}
     />
   )

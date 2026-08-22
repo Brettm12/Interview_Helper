@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import './primitives.css'
 
@@ -236,5 +237,44 @@ export function PhraseChip({
         </button>
       )}
     </div>
+  )
+}
+
+/** Two-press destructive action: the first press arms and re-labels itself,
+ *  the second one commits, and it disarms after a few seconds on its own.
+ *  Same shape as Esc-to-discard in the editor — no modal to hunt for, and no
+ *  dialog that can eat a keystroke meant for something else. */
+export function ConfirmButton({
+  label,
+  confirmLabel,
+  onConfirm,
+  className = 'action'
+}: {
+  label: string
+  confirmLabel: string
+  onConfirm: () => void
+  className?: string
+}) {
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (!armed) return
+    const id = window.setTimeout(() => setArmed(false), 2500)
+    return () => window.clearTimeout(id)
+  }, [armed])
+  return (
+    <button
+      type="button"
+      className={armed ? `${className} confirm--armed` : className}
+      onClick={() => {
+        if (armed) {
+          setArmed(false)
+          onConfirm()
+        } else {
+          setArmed(true)
+        }
+      }}
+    >
+      {armed ? confirmLabel : label}
+    </button>
   )
 }

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { DragEvent, KeyboardEvent } from 'react'
 import type { EditorPaneProps } from '../contracts'
-import { Label, PhraseChip } from '../../components/primitives'
+import { ConfirmButton, Label, PhraseChip } from '../../components/primitives'
 import { editorKeyAction } from '../../lib/keys'
 import './editor.css'
 
@@ -21,6 +21,7 @@ const EditorPane = (props: EditorPaneProps): JSX.Element => {
     onTriggerRemove,
     onSwapStory,
     dirty,
+    onDelete,
     onCancel,
     onSave
   } = props
@@ -120,6 +121,14 @@ const EditorPane = (props: EditorPaneProps): JSX.Element => {
       <div className="editor-header">
         <Label crumb>EDITING</Label>
         <div className="editor-header__actions">
+          {onDelete && (
+            <ConfirmButton
+              className="editor-delete"
+              label="Delete"
+              confirmLabel="Delete for good?"
+              onConfirm={onDelete}
+            />
+          )}
           <button
             className={discardArmed ? 'editor-cancel editor-cancel--armed' : 'editor-cancel'}
             onClick={onCancel}

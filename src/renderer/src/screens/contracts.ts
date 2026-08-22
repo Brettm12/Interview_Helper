@@ -228,6 +228,10 @@ export interface ImportPaneProps {
   onExport: (format: 'md' | 'json') => void
   /** "Added 12 answers", "Saved to ~/Documents/bank.md" */
   result: string | null
+  /** the example answers the app ships with are still in the bank, untouched.
+   *  They are scored against the interviewer's voice like anything else, so
+   *  there has to be a way out of them. Null once none are left. */
+  starters?: { count: number; onRemove: () => void } | null
   onClose: () => void
 }
 
@@ -251,6 +255,12 @@ export interface StoriesPaneProps {
   onMetricAdd: (m: string) => void
   onMetricRemove: (m: string) => void
   onSave: () => void
+  /** delete the story being edited; every answer using it loses the
+   *  reference rather than keeping a dangling one. Null while it is new. */
+  onDelete?: (() => void) | null
+  /** how many answers currently point at the story being edited — deleting a
+   *  shared entity should say what it is about to touch */
+  draftUsedIn?: number
   onClose: () => void
 }
 
@@ -273,6 +283,9 @@ export interface EditorPaneProps {
   /** the draft has unsaved changes — Esc asks before discarding them
    *  (REVIEW.md P6) */
   dirty?: boolean
+  /** delete this entry for good — absent while drafting a new one, since
+   *  there is nothing yet to delete. Two presses, no modal. */
+  onDelete?: (() => void) | null
   onCancel: () => void
   onSave: () => void
 }

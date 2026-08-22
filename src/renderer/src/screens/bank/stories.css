@@ -164,3 +164,14 @@
   border-radius: 5px;
   flex: none;
 }
+
+.stories-save-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stories-delete {
+  font: 500 11px/1 var(--font-ui);
+  color: var(--text-dim);
+}

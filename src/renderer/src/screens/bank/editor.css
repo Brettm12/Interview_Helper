@@ -25,6 +25,12 @@
   align-items: center;
 }
 
+.editor-delete {
+  font: 500 11px/1 var(--font-ui);
+  color: var(--text-dim);
+  margin-right: 4px;
+}
+
 .editor-cancel {
   font: 500 11px/1 var(--font-ui);
   color: var(--text-label);
