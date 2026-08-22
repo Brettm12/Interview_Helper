@@ -19,6 +19,13 @@ const MODEL_STATE_LABEL: Record<string, string> = {
 
 export default function DiagnosticsContainer(): JSX.Element | null {
   const open = usePanelStore((s) => s.diagnosticsOpen)
+  // gate BEFORE the hot subscriptions: a closed panel used to re-render on
+  // every level tick for the whole session (REVIEW.md L6)
+  if (!open) return null
+  return <DiagnosticsBody />
+}
+
+function DiagnosticsBody(): JSX.Element {
   const meeting = useAudioStore((s) => s.meeting)
   const mic = useAudioStore((s) => s.mic)
   const permissions = useAudioStore((s) => s.permissions)
@@ -31,13 +38,10 @@ export default function DiagnosticsContainer(): JSX.Element | null {
   )
 
   useEffect(() => {
-    if (!open) return
     // the status has to be about the model actually selected — "some Whisper
     // is installed" is the answer that hid this class of failure before
     void api.models.status(whisperModel).then(setModels)
-  }, [open, whisperModel])
-
-  if (!open) return null
+  }, [whisperModel])
 
   const micPermission = permissions.microphone === 'granted'
   const screenPermission = permissions.screen === 'granted'

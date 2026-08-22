@@ -6,6 +6,24 @@
   height: 100%;
   display: flex;
   background: var(--bg-panel);
+  position: relative;
+}
+
+/* failure-state strip (unreadable bank / failing saves — H8/H9). Overlays the
+   top of the panes so it cannot reflow the gated layout; renders only when a
+   banner message exists, which the static gallery never has. */
+.bank-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  padding: 8px 14px;
+  background: var(--warn-bg);
+  border-bottom: 1px solid var(--warn-border);
+  color: var(--warn-text);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 /* ---- pane 1: loops + sections sidebar ---- */

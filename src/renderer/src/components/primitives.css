@@ -127,7 +127,7 @@
 }
 
 .point-row--covered {
-  opacity: 0.4;
+  opacity: var(--point-covered-opacity);
 }
 
 .point-row__check {
@@ -188,4 +188,9 @@
 .phrase-chip__x {
   color: var(--text-dim);
   cursor: pointer;
+}
+
+/* armed half of a two-press destructive action */
+.confirm--armed {
+  color: var(--status-attention);
 }

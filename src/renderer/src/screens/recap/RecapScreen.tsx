@@ -39,8 +39,28 @@ function RecapRow({ row }: { row: RecapRowView }): JSX.Element {
     .filter(Boolean)
     .join(' ')
 
+  // Not a <button>: the row contains its own "Add to bank" button, and
+  // nesting interactive elements is worse than the div it replaces. It gets
+  // the keyboard directly instead (REVIEW.md P8).
+  const toggle = (): void => setOpen((o) => !o)
   return (
-    <div className={rowClass} onClick={expandable ? () => setOpen((o) => !o) : undefined}>
+    <div
+      className={rowClass}
+      onClick={expandable ? toggle : undefined}
+      role={expandable ? 'button' : undefined}
+      tabIndex={expandable ? 0 : undefined}
+      aria-expanded={expandable ? open : undefined}
+      onKeyDown={
+        expandable
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                toggle()
+              }
+            }
+          : undefined
+      }
+    >
       <div className="recap-row__time">{row.time}</div>
       <div className="recap-row__mid">
         <div className="recap-row__question pretty">{row.question}</div>
@@ -97,6 +117,9 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
     rows,
     fixes,
     practiceCount,
+    notice,
+    ephemeral,
+    onDone,
     onDeleteSession,
     onSaveToLoop,
     onExport,
@@ -105,6 +128,7 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
 
   return (
     <div className="recap-screen">
+      {notice != null && <div className="recap-notice pretty">{notice}</div>}
       <div className="recap-header">
         <div>
           <Label style={{ marginBottom: 10 }}>{eyebrow}</Label>
@@ -112,12 +136,22 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
           <div className="recap-header__sub pretty">{sub}</div>
         </div>
         <div className="recap-header__actions">
-          <button className="recap-header__delete" onClick={onDeleteSession}>
-            Delete session
-          </button>
-          <button className="cta" onClick={onSaveToLoop}>
-            Save to loop
-          </button>
+          {/* a rehearsal was never written anywhere, so "delete" and "save"
+              would both be lies — one way back instead (REVIEW.md P10) */}
+          {ephemeral ? (
+            <button className="cta" onClick={onDone}>
+              Done
+            </button>
+          ) : (
+            <>
+              <button className="recap-header__delete" onClick={onDeleteSession}>
+                Delete session
+              </button>
+              <button className="cta" onClick={onSaveToLoop}>
+                Save to loop
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -171,7 +205,9 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
         </div>
 
         <div className="recap-privacy pretty">
-          Transcript is on this machine only. Deleting the session removes it.
+          {ephemeral
+            ? 'Nothing was saved — this run stays out of your interview history. Export it if you want to keep it.'
+            : 'Transcript is on this machine only. Deleting the session removes it.'}
         </div>
 
         <div className="recap-footer">
@@ -179,9 +215,11 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
             <button className="footer-hint" onClick={onExport}>
               ⌘E export as notes
             </button>
-            <button className="footer-hint" onClick={onDeleteSession}>
-              ⌘⌫ delete session
-            </button>
+            {!ephemeral && (
+              <button className="footer-hint" onClick={onDeleteSession}>
+                ⌘⌫ delete session
+              </button>
+            )}
           </div>
           {practiceCount > 0 && (
             <button className="recap-footer__practice" onClick={onPractice}>

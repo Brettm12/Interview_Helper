@@ -24,6 +24,9 @@ if (!process.env.DISPLAY && process.platform === 'linux') {
 }
 
 const { _electron } = await import('playwright')
+const { mkdtempSync } = await import('node:fs').then((m) => m)
+const { tmpdir } = await import('node:os')
+const isolatedUserData = mkdtempSync(join(tmpdir(), 'lih-e2e-'))
 
 const mainEntry = join(repoRoot, 'out', 'main', 'index.js')
 if (!existsSync(mainEntry)) {
@@ -35,7 +38,7 @@ const stage = (name) => console.log(`  ${name}`)
 
 const app = await _electron.launch({
   args: ['--no-sandbox', mainEntry],
-  env: { ...process.env, MOCK_SESSION: '1' },
+  env: { ...process.env, MOCK_SESSION: '1', LIH_USER_DATA: isolatedUserData },
   cwd: repoRoot
 })
 

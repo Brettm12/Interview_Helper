@@ -25,7 +25,10 @@
     "package:mac": "npm run build && electron-builder --mac --publish never",
     "package:win": "npm run build && electron-builder --win --publish never",
     "package:linux": "npm run build && electron-builder --linux --publish never",
-    "smoke:package": "node tools/verify/smoke-package.mjs"
+    "smoke:package": "node tools/verify/smoke-package.mjs",
+    "probe:windows": "node tools/verify/windows-probe.mjs",
+    "probe:wasm": "node tools/verify/wasm-probe.mjs",
+    "probe:editor": "node tools/verify/editor-probe.mjs"
   },
   "dependencies": {
     "@fontsource/instrument-serif": "^5.2.5",
@@ -35,22 +38,21 @@
     "zod": "^3.24.0",
     "zustand": "^5.0.3"
   },
-  "optionalDependencies": {
-    "@xenova/transformers": "^2.17.2"
-  },
   "devDependencies": {
+    "@huggingface/transformers": "3.8.1",
     "@types/node": "^26.2.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "@xenova/transformers": "^2.17.2",
     "electron": "^33.2.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^3.1.0",
+    "onnxruntime-web": "1.22.0-dev.20250409-89f8206ba4",
     "pixelmatch": "^7.2.0",
     "playwright": "^1.62.1",
     "pngjs": "^7.0.0",
     "typescript": "^5.7.2",
+    "undici": "^6.28.0",
     "vite": "^6.0.7",
     "vitest": "^3.0.5"
   }

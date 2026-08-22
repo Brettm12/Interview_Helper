@@ -18,7 +18,8 @@ function highlightTitle(title: string, query: string): ReactNode {
 }
 
 const FindOverlay = (props: FindOverlayProps): JSX.Element => {
-  const { query, matchCount, results, selectedIndex, onQueryChange, onMove, onPin, onClose } = props
+  const { query, matchCount, results, selectedIndex, onQueryChange, onPinEntry, onMove, onPin, onClose } =
+    props
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'ArrowDown') {
@@ -57,7 +58,8 @@ const FindOverlay = (props: FindOverlayProps): JSX.Element => {
           const selected = i === selectedIndex
           const last = i === results.length - 1
           return (
-            <div
+            <button
+              type="button"
               key={r.entryId}
               className={[
                 'find-row',
@@ -66,10 +68,7 @@ const FindOverlay = (props: FindOverlayProps): JSX.Element => {
               ]
                 .filter(Boolean)
                 .join(' ')}
-              onClick={() => {
-                onMove(i - selectedIndex)
-                onPin()
-              }}
+              onClick={() => onPinEntry(r.entryId)}
             >
               <div
                 className={
@@ -83,7 +82,7 @@ const FindOverlay = (props: FindOverlayProps): JSX.Element => {
                     <div className="find-row__preview pretty">{r.preview.join(' · ')}</div>
                   )
                 : r.sub != null && <div className="find-row__sub">{r.sub}</div>}
-            </div>
+            </button>
           )
         })}
         <div className="find-footer">

@@ -19,7 +19,11 @@ export default defineConfig({
     resolve: {
       alias: {
         '@': resolve('src/renderer/src'),
-        '@shared': resolve('src/shared')
+        '@shared': resolve('src/shared'),
+        // onnxruntime-web 1.22 does not export its wasm files as package
+        // subpaths, and the offline promise needs them in the build rather
+        // than off a CDN (REVIEW.md C2) — so they are aliased by path.
+        '@ort-wasm': resolve('node_modules/onnxruntime-web/dist')
       }
     },
     worker: {

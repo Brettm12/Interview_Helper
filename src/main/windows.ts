@@ -1,30 +1,27 @@
 import { BrowserWindow, screen, shell } from 'electron'
 import { join } from 'node:path'
 import { repository } from './persistence'
+import { VIEW_FRAMES, clampStripPosition, frameFor } from '../shared/frames'
 import type { Settings } from '../shared/types'
 import type { ViewName } from '../shared/ipc'
 
 // Window management. One morphing main window (setup → armed → live → bank →
 // recap all reuse it, resized/repositioned per view), plus the frameless
-// share-safe strip and an optional second-screen bank window.
+// share-safe strip and an optional second-screen bank window. The frame
+// matrix itself is pure (frames.ts) and unit-tested.
 //
 // Desktop behaviour per the handoff: always-on-top at 'floating' level,
 // visible across spaces, no dock activation on show, content protection on
 // by default so helper windows are excluded from screen capture.
-
-const VIEW_FRAMES: Record<ViewName, { width: number; height: number }> = {
-  setup: { width: 880, height: 812 },
-  armed: { width: 412, height: 400 },
-  live: { width: 412, height: 836 },
-  bank: { width: 1280, height: 812 },
-  recap: { width: 880, height: 812 }
-}
 
 let mainWindow: BrowserWindow | null = null
 let stripWindow: BrowserWindow | null = null
 let secondScreenWindow: BrowserWindow | null = null
 let protectionOn = true
 let quitting = false
+/** the renderer reports arm/end; close interception and the session-scoped
+ *  shortcuts key off it (REVIEW.md H16/M19) */
+let sessionActive = false
 
 /** main tells us a quit is under way so window teardown stops resurrecting
  *  windows on the way out */
@@ -34,6 +31,30 @@ export function setQuitting(): void {
 
 function isQuitting(): boolean {
   return quitting
+}
+
+export function setSessionActive(on: boolean): void {
+  sessionActive = on
+}
+
+export function isSessionActive(): boolean {
+  return sessionActive
+}
+
+/** A crashed renderer must not sit there as a frozen last-painted frame that
+ *  looks alive (REVIEW.md L17) — reload it and let the boot paths recover
+ *  (the strip re-primes over strip:get; the session window finds the 20s
+ *  snapshot). */
+function guardRenderer(win: BrowserWindow): void {
+  win.webContents.on('render-process-gone', (_e, details) => {
+    console.warn('[windows] renderer gone:', details.reason)
+    if (!win.isDestroyed() && details.reason !== 'clean-exit') {
+      win.webContents.reload()
+    }
+  })
+  // nothing in this app opens child windows — window.open from any renderer
+  // would otherwise create a live, unmanaged BrowserWindow (REVIEW.md L2)
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 }
 
 function rendererUrl(query: Record<string, string>): { url?: string; file?: string; query: Record<string, string> } {
@@ -54,6 +75,10 @@ function baseWindowOptions(): Electron.BrowserWindowConstructorOptions {
     webPreferences: {
       // electron-vite emits an ESM preload (package "type": "module")
       preload: join(__dirname, '../preload/index.mjs'),
+      // sandbox: false is deliberate and ACCEPTED (REVIEW.md L3): the ESM
+      // preload requires it. contextIsolation still holds and no remote
+      // content is ever loaded; the accepted trade-off is that a renderer
+      // compromise is not OS-contained. Revisit if the preload moves to CJS.
       sandbox: false
     }
   }
@@ -93,10 +118,15 @@ function live(win: BrowserWindow | null): BrowserWindow | null {
 
 /** Reveal the main window and give it focus. The recovery path for the tray,
  *  the dock, and app.on('activate') — without it, a hidden main window plus a
- *  closed strip leaves the app running with nothing on screen. */
+ *  closed strip leaves the app running with nothing on screen. Recreates the
+ *  window when it was closed: every recovery affordance used to silently
+ *  no-op after a ⌘W, leaving a running, invisible app (REVIEW.md H16). */
 export function showMain(): void {
   const win = live(mainWindow)
-  if (!win) return
+  if (!win) {
+    if (!isQuitting()) void createMainWindow()
+    return
+  }
   live(stripWindow)?.hide()
   win.show()
   win.focus()
@@ -109,59 +139,46 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     resizable: true
   })
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+  // one habitual ⌘W used to destroy the session renderer — everything since
+  // the last snapshot — with no way back (REVIEW.md H16): during a session,
+  // close hides instead
+  mainWindow.on('close', (e) => {
+    if (!isQuitting() && sessionActive && mainWindow && !mainWindow.isDestroyed()) {
+      e.preventDefault()
+      mainWindow.hide()
+    }
+  })
   // drop the reference so nothing later calls .show() on a destroyed window
   mainWindow.on('closed', () => (mainWindow = null))
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
     return { action: 'deny' }
   })
+  guardRenderer(mainWindow)
   mainWindow.setContentProtection(protectionOn)
   await loadInto(mainWindow, { window: 'main' })
   return mainWindow
 }
 
-/** morph the main window frame for a view */
+/** morph the main window frame for a view — the matrix lives in frames.ts */
 export function setView(view: ViewName, placement?: Settings['placement']): void {
   const win = live(mainWindow)
   if (!win) return
-  const frame = VIEW_FRAMES[view]
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
-  const wa = display.workArea
+  const plan = frameFor(view, placement, display.workArea)
 
-  if (view === 'live' && placement !== 'strip') {
-    // docked right: a separate always-on-top panel against the right edge of
-    // the display — it resizes nothing else
-    const bounds = { x: wa.x + wa.width - 412, y: wa.y, width: 412, height: wa.height }
+  if (plan.helper) {
     applyHelperBehaviour(win)
-    win.setBounds(bounds)
-    win.showInactive() // no focus steal from the meeting
-    return
+  } else {
+    // ordinary windows again — undo the helper behaviour, including workspace
+    // stickiness, which otherwise makes them follow across every Space forever
+    win.setAlwaysOnTop(false)
+    win.setVisibleOnAllWorkspaces(false)
   }
-
-  if (view === 'armed') {
-    applyHelperBehaviour(win)
-    win.setBounds({
-      x: wa.x + wa.width - frame.width - 14,
-      y: wa.y + 14,
-      width: frame.width,
-      height: frame.height
-    })
-    win.showInactive()
-    return
-  }
-
-  // setup / bank / recap are ordinary windows again — undo the helper
-  // behaviour, including workspace stickiness, which otherwise makes them
-  // follow the user across every Space forever
-  win.setAlwaysOnTop(false)
-  win.setVisibleOnAllWorkspaces(false)
-  win.setBounds({
-    x: wa.x + Math.round((wa.width - frame.width) / 2),
-    y: wa.y + Math.round((wa.height - frame.height) / 2),
-    width: frame.width,
-    height: frame.height
-  })
-  win.show()
+  win.setBounds(plan.bounds)
+  if (plan.show === 'active') win.show()
+  else if (plan.show === 'inactive') win.showInactive() // no focus steal
+  // 'none': the strip is the visible surface; stay hidden until expand
 }
 
 export async function showStrip(show: boolean, stripPosition: Settings['stripPosition']): Promise<void> {
@@ -172,21 +189,31 @@ export async function showStrip(show: boolean, stripPosition: Settings['stripPos
   }
   if (!live(stripWindow)) {
     stripWindow = null
-    const display = screen.getPrimaryDisplay()
-    const wa = display.workArea
-    // 340px strip content + 24px padding + 2px border (the mock is content-box)
+    // clamp the remembered position to a display that still exists — restoring
+    // it verbatim after a monitor change opened the strip fully off-screen
+    // while the main window hid behind it (REVIEW.md H14)
+    const STRIP = { width: 366, height: 39 } // 340 content + 24 padding + 2 border
+    const nearest = stripPosition
+      ? screen.getDisplayMatching({ ...stripPosition, ...STRIP })
+      : screen.getPrimaryDisplay()
+    const wa = nearest.workArea
+    const fallbackWa = screen.getPrimaryDisplay().workArea
+    const pos = clampStripPosition(stripPosition, STRIP, wa, {
+      x: fallbackWa.x + fallbackWa.width - STRIP.width - 14,
+      y: fallbackWa.y + 14
+    })
     stripWindow = new BrowserWindow({
       ...baseWindowOptions(),
-      width: 366,
-      height: 39,
-      x: stripPosition?.x ?? wa.x + wa.width - 366 - 14,
-      y: stripPosition?.y ?? wa.y + 14,
+      ...STRIP,
+      x: pos.x,
+      y: pos.y,
       resizable: false,
       skipTaskbar: true,
       hasShadow: false,
       transparent: true,
       backgroundColor: undefined
     })
+    guardRenderer(stripWindow)
     applyHelperBehaviour(stripWindow)
     // if the strip is destroyed by any route, drop the ref AND bring the main
     // window back — otherwise the app is left running with nothing on screen
@@ -201,9 +228,13 @@ export async function showStrip(show: boolean, stripPosition: Settings['stripPos
       moveTimer = setTimeout(() => {
         const pos = stripBounds()
         if (!pos) return
+        // patch through the same serialized path as every other settings
+        // writer — a full-object save here could revert a renderer edit
+        // landing in the same instant (REVIEW.md L10)
         void repository
-          .loadSettings()
-          .then((s) => repository.saveSettings({ ...s, stripPosition: pos }))
+          .updateSettings({ stripPosition: pos })
+          .then((merged) => broadcast('settings:did-change', merged))
+          .catch(() => {})
       }, 500)
     })
     await loadInto(stripWindow, { window: 'strip' })
@@ -234,6 +265,7 @@ export async function openSecondScreenBank(): Promise<{ ok: boolean; error?: str
       height: 812
     })
     secondScreenWindow.on('closed', () => (secondScreenWindow = null))
+    guardRenderer(secondScreenWindow)
     secondScreenWindow.setContentProtection(protectionOn)
     await loadInto(secondScreenWindow, { window: 'bank' })
   }

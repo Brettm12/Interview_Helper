@@ -1,0 +1,181 @@
+{
+  "_comment": "Spoken deliveries of seed-bank points, for calibrating the coverage thresholds against the real embedder. `deliveries` are how someone actually says that point out loud — never verbatim, because nobody reads their own bullets aloud. `only` names the points that may be struck: a false strike-through is worse than a missed one, since the user skips something they never said. `nearMisses` are on-topic speech that says none of the points. `windows` are points delivered across two breaths, which no single segment covers.",
+  "deliveries": [
+    {
+      "entryId": "a-er-case",
+      "pointId": "p-erc-1",
+      "text": "The riskiest part was two complainants against one long-tenured supervisor, at a site that was used to keeping people quiet."
+    },
+    {
+      "entryId": "a-er-case",
+      "pointId": "p-erc-2",
+      "text": "First thing I did was separate the people rather than the payroll — schedule changes, nobody suspended."
+    },
+    {
+      "entryId": "a-er-case",
+      "pointId": "p-erc-3",
+      "text": "I ran eleven interviews over five days and I documented each one as I went."
+    },
+    {
+      "entryId": "a-er-case",
+      "pointId": "p-erc-4",
+      "text": "The decision held up in the end — there was no grievance and no appeal."
+    },
+    {
+      "entryId": "a-coach",
+      "pointId": "p-cch-1",
+      "text": "I start by showing them their own attrition and overtime figures, because those tell the story better than I can."
+    },
+    {
+      "entryId": "a-coach",
+      "pointId": "p-cch-2",
+      "text": "Then I coach the behaviour rather than the intention — almost none of them mean to burn anyone out."
+    },
+    {
+      "entryId": "a-coach",
+      "pointId": "p-cch-3",
+      "text": "And I set a review date, because coaching without a checkpoint is really just a hope."
+    },
+    {
+      "entryId": "a-policy",
+      "pointId": "p-pol-1",
+      "text": "On day one I name what it actually costs people, honestly — they can smell spin."
+    },
+    {
+      "entryId": "a-policy",
+      "pointId": "p-pol-2",
+      "text": "I give the managers the reason in their own numbers, not in HR's language."
+    },
+    {
+      "entryId": "a-policy",
+      "pointId": "p-pol-3",
+      "text": "And we publish the exception path, because that pressure needs somewhere to go."
+    },
+    {
+      "entryId": "a-invest-run",
+      "pointId": "p-inv-1",
+      "text": "In the first twenty-four hours I scope it and put interim measures in place."
+    },
+    {
+      "entryId": "a-invest-run",
+      "pointId": "p-inv-2",
+      "text": "The order matters: complainant first, then the witnesses, and the respondent last."
+    },
+    {
+      "entryId": "a-invest-run",
+      "pointId": "p-inv-4",
+      "text": "Then I close the loop with both sides, because silence reads like a cover-up."
+    },
+    {
+      "entryId": "a-pressure",
+      "pointId": "p-pre-1",
+      "text": "I triage on legal exposure first and people risk second."
+    },
+    {
+      "entryId": "a-pressure",
+      "pointId": "p-pre-2",
+      "text": "Every file gets one owner — I don't run anything out of a shared inbox."
+    },
+    {
+      "entryId": "a-mistake",
+      "pointId": "p-mis-2",
+      "text": "The first rollout missed the night shift completely."
+    },
+    {
+      "entryId": "a-term",
+      "pointId": "p-trm-2",
+      "text": "The optics of the security escort cost us that site's trust for a whole quarter."
+    },
+    {
+      "entryId": "a-multi",
+      "pointId": "p-mlt-1",
+      "text": "We keep one national floor with provincial overlays on top — never ten separate policies."
+    },
+    {
+      "entryId": "a-bend",
+      "pointId": "p-bnd-3",
+      "text": "Usually I can offer the compliant version of the same outcome they wanted."
+    },
+    {
+      "entryId": "a-why",
+      "pointId": "p-why-2",
+      "text": "The onboarding rebuild is exactly the kind of work I want more of."
+    }
+  ],
+  "nearMisses": [
+    {
+      "entryId": "a-er-case",
+      "text": "In the end the supervisor left the business a few months later.",
+      "why": "on topic, says none of the four points"
+    },
+    {
+      "entryId": "a-er-case",
+      "text": "It was probably the hardest case I have worked on.",
+      "why": "framing, no content"
+    },
+    {
+      "entryId": "a-coach",
+      "text": "The manager had been in the role about eighteen months at that point.",
+      "why": "context, not a point"
+    },
+    {
+      "entryId": "a-policy",
+      "text": "It was a return-to-office policy and nobody wanted it.",
+      "why": "sets the scene, none of the three moves"
+    },
+    {
+      "entryId": "a-invest-run",
+      "text": "Most of them settle long before you get to a finding.",
+      "why": "adjacent claim, not one of the steps"
+    },
+    {
+      "entryId": "a-pressure",
+      "text": "Some weeks there are four or five of them landing at once.",
+      "why": "restates the question"
+    },
+    {
+      "entryId": "a-mistake",
+      "text": "I still think about that one, honestly.",
+      "why": "filler under stress"
+    },
+    {
+      "entryId": "a-bend",
+      "text": "Leadership does not usually put it that bluntly.",
+      "why": "aside"
+    }
+  ],
+  "windows": [
+    {
+      "entryId": "a-coach",
+      "pointId": "p-cch-3",
+      "parts": [
+        "And we agree a review date,",
+        "otherwise the coaching is just hoping."
+      ]
+    },
+    {
+      "entryId": "a-er-case",
+      "pointId": "p-erc-2",
+      "parts": [
+        "The separation was done through the schedule,",
+        "not through the payroll."
+      ]
+    },
+    {
+      "entryId": "a-policy",
+      "pointId": "p-pol-3",
+      "parts": [
+        "And we published the route for exceptions,",
+        "because that pressure has to go somewhere."
+      ]
+    },
+    {
+      "entryId": "a-disagree",
+      "pointId": "p-dis-2",
+      "parts": [
+        "I came back with a plan for the order we would do it in,",
+        "rather than an objection."
+      ]
+    }
+  ]
+}

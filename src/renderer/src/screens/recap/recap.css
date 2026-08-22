@@ -229,3 +229,15 @@
   font: 500 11.5px/1 var(--font-ui);
   color: var(--text-action);
 }
+
+/* the final save failed — the recap is memory-only until exported (M5).
+   Renders only in that failure state; never in the static gallery. */
+.recap-notice {
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border-radius: 6px;
+  font-size: 12px;
+}

@@ -9,7 +9,6 @@ import ImportPane from '../screens/bank/ImportPane'
 import SetupScreen from '../screens/setup/SetupScreen'
 import ArmedCard from '../screens/setup/ArmedCard'
 import RecapScreen from '../screens/recap/RecapScreen'
-import { WHISPER_TIERS } from '@shared/models'
 import './gallery.css'
 
 // Static state gallery (?screen=…): every screen at its reference frame with
@@ -71,8 +70,15 @@ function LiveMatched(): JSX.Element {
               metrics: ['9 days', '−18% drop-off']
             },
             earlier: [
-              { question: 'Why this team?', time: '08:12' },
-              { question: 'Walk me through the last thing you shipped', time: '04:50' }
+              // resumable, as they are in the running app — the gate has to
+              // see the element that actually ships (a button, not a div)
+              { key: 'g-1', question: 'Why this team?', time: '08:12', onResume: () => {} },
+              {
+                key: 'g-2',
+                question: 'Walk me through the last thing you shipped',
+                time: '04:50',
+                onResume: () => {}
+              }
             ]
           }}
           unsure={null}
@@ -179,6 +185,7 @@ function Find(): JSX.Element {
         ]}
         selectedIndex={0}
         onQueryChange={noop}
+        onPinEntry={noop}
         onMove={noop}
         onPin={noop}
         onClose={noop}
@@ -383,6 +390,7 @@ function Editor(): JSX.Element {
         onTriggerAdd={noop}
         onTriggerRemove={noop}
         onSwapStory={noop}
+        onDelete={noop}
         onCancel={noop}
         onSave={noop}
       />
@@ -476,6 +484,7 @@ function Setup({ permissions }: { permissions: boolean }): JSX.Element {
         canStart={permissions}
         onStart={noop}
         onEditBank={noop}
+        onCheckBank={noop}
         onFixNoStory={noop}
         onTestMic={noop}
         onDryRun={noop}
@@ -529,12 +538,18 @@ function SetupDevices(): JSX.Element {
             onChange: noop
           }
         }}
-        model={{
-          options: WHISPER_TIERS.map((t) => ({ value: t.id, label: `Speech model · ${t.label}` })),
-          value: WHISPER_TIERS[0].id,
+        autoPick={{
+          options: [
+            { value: '4', label: 'Unsure: picks for me after 4s' },
+            { value: '8', label: 'Unsure: picks for me after 8s' },
+            { value: 'never', label: 'Unsure: waits for me' }
+          ],
+          value: '4',
           onChange: noop,
-          detail: WHISPER_TIERS[0].detail
+          detail: 'it commits the leader when the countdown runs out'
         }}
+        highLegibility={false}
+        onToggleLegibility={noop}
         keepTranscript
         onToggleTranscript={noop}
         placement="docked"
@@ -543,6 +558,7 @@ function SetupDevices(): JSX.Element {
         canStart
         onStart={noop}
         onEditBank={noop}
+        onCheckBank={noop}
         onFixNoStory={noop}
         onTestMic={noop}
         testLabel="Test again"

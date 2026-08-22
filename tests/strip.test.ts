@@ -28,6 +28,7 @@ const match = (over: Partial<MatchSlice>): MatchSlice => ({
   candidates: [],
   autoPickAt: null,
   heard: null,
+  stale: false,
   ...over
 })
 
@@ -93,7 +94,8 @@ describe('createStripPublisher', () => {
     variant: 'current',
     text,
     counter: '1/4',
-    protectionOn: true
+    protectionOn: true,
+    paused: false
   })
 
   it('sends a changed state immediately and drops identical offers', () => {
@@ -124,5 +126,90 @@ describe('createStripPublisher', () => {
     pub.offer(state('a')) // back to what the strip already shows
     vi.advanceTimersByTime(200)
     expect(sent).toEqual(['a'])
+  })
+})
+
+// REVIEW.md P2: pause closes the microphone. A strip still counting off your
+// next point — under a live-green dot — says the opposite.
+describe('paused strip', () => {
+  const pausedDerive = (over: { match?: Partial<MatchSlice>; coverage?: Record<string, string[]> } = {}): StripState =>
+    deriveStripState({
+      entries: [entry],
+      match: match(over.match ?? {}),
+      coverage: over.coverage ?? {},
+      entryAtCollapse: 'a-1',
+      protectionOn: true,
+      paused: true
+    })
+
+  it('says it is paused instead of showing the next point', () => {
+    expect(pausedDerive()).toMatchObject({
+      variant: 'current',
+      text: 'Paused — mic is off',
+      counter: null,
+      paused: true
+    })
+  })
+
+  it('wins over the new-question nudge — nothing is being heard to be new', () => {
+    expect(pausedDerive({ match: { state: 'ambiguous', heard: 'and what about scale?' } })).toMatchObject({
+      variant: 'current',
+      text: 'Paused — mic is off',
+      paused: true
+    })
+  })
+
+  it('is a material change, so pausing publishes to the strip window', () => {
+    const running = deriveStripState({
+      entries: [entry],
+      match: match({}),
+      coverage: {},
+      entryAtCollapse: 'a-1',
+      protectionOn: true
+    })
+    expect(running.paused).toBe(false)
+    expect(stripStatesEqual(running, pausedDerive())).toBe(false)
+  })
+})
+
+// A question was heard that matched nothing. The entry still on screen is the
+// PREVIOUS answer — the strip must stop feeding its points as "what to say
+// next" while the user improvises something else entirely.
+describe('stale strip', () => {
+  it('stops counting off the previous answer once nothing matched', () => {
+    expect(derive({ match: { stale: true } })).toMatchObject({
+      variant: 'current',
+      text: 'Nothing matched',
+      counter: null
+    })
+  })
+
+  it('stays stale even when coverage has moved on', () => {
+    expect(
+      derive({ match: { stale: true }, coverage: { 'a-1': ['p1', 'p2'] } })
+    ).toMatchObject({ text: 'Nothing matched', counter: null })
+  })
+
+  it('does not fire the new-question nudge — no new entry arrived', () => {
+    expect(
+      derive({ match: { stale: true }, entryAtCollapse: 'a-other' })
+    ).toMatchObject({ variant: 'current', text: 'Nothing matched' })
+  })
+
+  it('yields to paused — a closed mic is the bigger lie', () => {
+    expect(
+      deriveStripState({
+        entries: [entry],
+        match: match({ stale: true }),
+        coverage: {},
+        entryAtCollapse: 'a-1',
+        protectionOn: true,
+        paused: true
+      })
+    ).toMatchObject({ text: 'Paused — mic is off', paused: true })
+  })
+
+  it('is a material change, so going stale publishes to the strip window', () => {
+    expect(stripStatesEqual(derive({}), derive({ match: { stale: true } }))).toBe(false)
   })
 })

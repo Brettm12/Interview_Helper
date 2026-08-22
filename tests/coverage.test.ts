@@ -67,10 +67,10 @@ describe('embedding coverage (model warm)', () => {
     return cache
   }
 
-  it('cosine ≥ threshold covers; below does not; lexical path is bypassed', async () => {
+  it('cosine ≥ threshold covers; a genuinely unrelated point stays uncovered', async () => {
     const said = 'I owned the mistake in one sentence'
     const near = { id: 'p1', text: 'Own it in one sentence — no wind-up' } // cos ≈ .8
-    const far = { id: 'p2', text: 'Own it in one sentence eventually' } // cos ≈ .3 despite lexical overlap
+    const far = { id: 'p2', text: 'Escalate to the regulator on day one' } // cos low, lexically unrelated
     const cache = await warmCache({
       [said]: [1, 0, 0],
       [near.text]: [0.8, 0.6, 0],
@@ -78,6 +78,36 @@ describe('embedding coverage (model warm)', () => {
     })
     const coverage = new EmbeddingCoverage(cache)
     expect(coverage.score(said, [near, far])).toEqual(['p1'])
+  })
+
+  it('the lexical path backstops a point the embedding under-scores (REVIEW.md M14)', async () => {
+    // figurative point wording can land under the cosine bar on a fair spoken
+    // delivery; the noun-heavy lexical signal catches it
+    const said = 'we set a review date so the coaching had a checkpoint'
+    const point = { id: 'p1', text: 'Set a review date — coaching without a checkpoint is a hope' }
+    const cache = await warmCache({
+      [said]: [1, 0, 0],
+      [point.text]: [0.3, 0.954, 0] // cos ≈ .3, well under the bar
+    })
+    const coverage = new EmbeddingCoverage(cache)
+    expect(coverage.score(said, [point])).toEqual(['p1'])
+  })
+})
+
+describe('short points and word-soup (REVIEW.md M13)', () => {
+  const model = new EmbeddingCoverage() // cold — lexical path only
+  const pts = [{ id: 'p1', text: 'Coach the behaviour, not the intention' }]
+
+  it('is not covered by a sentence that merely reuses its words', () => {
+    expect(
+      model.score('I would coach them on the behaviour side of the intention here', pts)
+    ).toEqual([])
+  })
+
+  it('is still covered by an actual delivery', () => {
+    expect(
+      model.score('Then coach the behaviour, not the intention — almost none of them mean to.', pts)
+    ).toEqual(['p1'])
   })
 })
 

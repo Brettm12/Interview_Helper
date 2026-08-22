@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { diagnose, formatLevelDb } from '@/lib/diagnose'
+import { loopbackGuidance } from '@/lib/devices'
 import type { SourceStatus } from '@/state/audioStore'
 
 // This is the code that has to be right precisely when the app "isn't
@@ -39,11 +40,20 @@ describe('diagnose', () => {
     expect(out).toMatch(/Microphone permission/i)
   })
 
-  it('names the macOS loopback workaround when meeting audio has no track', () => {
+  it('names the loopback workaround when meeting audio has no track', () => {
     const out = diagnose({ ...base, meeting: source({ state: 'no-track', error: 'no system-audio track' }) })
     expect(out).toMatch(/loopback/i)
-    expect(out).toMatch(/BlackHole/)
     expect(out).toMatch(/no system-audio track/)
+  })
+
+  it('the loopback guidance names the right fix per OS (REVIEW.md M21)', () => {
+    // BlackHole is a macOS product — telling a Windows user to install it is
+    // exactly the wrong-place hunt the review flagged
+    expect(loopbackGuidance('darwin')).toMatch(/BlackHole/)
+    expect(loopbackGuidance('linux')).toMatch(/Monitor of/i)
+    expect(loopbackGuidance('linux')).not.toMatch(/BlackHole/)
+    expect(loopbackGuidance('win32')).toMatch(/directly/)
+    expect(loopbackGuidance('win32')).not.toMatch(/BlackHole/)
   })
 
   it('calls out a mic that is live but far too quiet', () => {

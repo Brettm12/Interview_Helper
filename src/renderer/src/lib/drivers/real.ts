@@ -3,6 +3,7 @@ import type { EmbeddingProvider } from '../embeddings'
 import captureWorkletUrl from './capture.worklet.ts?worker&url'
 import { Biquad, Resampler } from '../dsp/resample'
 import { TUNING } from '@shared/tuning'
+import { loopbackGuidance } from '../devices'
 
 // Real capture path. Speaker attribution comes from stream identity:
 // system/meeting audio is `them`, the microphone is `you`. Transcription
@@ -46,7 +47,58 @@ abstract class MediaStreamSource implements AudioSource {
     // showed a hardcoded 'Your mic' and a silently-switched input was invisible
     const label = this.mediaStream.getAudioTracks()[0]?.label
     if (label) this.deviceCb?.(label)
+    // A dying capture must be LOUD. Unplugged headset, Bluetooth battery,
+    // permission revoked, the OS "Stop sharing" bar — all end or mute the
+    // track, and with no listener the panel just went quiet with the dot stuck
+    // green (REVIEW.md C4).
+    for (const track of this.mediaStream.getAudioTracks()) {
+      track.addEventListener('ended', () => {
+        if (this.disposed) return
+        this.errCb?.(
+          new Error(
+            `the ${this.streamName === 'mic' ? 'microphone' : 'meeting audio'} input stopped — device unplugged, switched, or permission revoked. Re-pick the device on the setup screen.`
+          )
+        )
+      })
+      let muteTimer: ReturnType<typeof setTimeout> | null = null
+      track.addEventListener('mute', () => {
+        if (this.disposed) return
+        // transient mutes happen (Bluetooth renegotiation); only a sustained
+        // one means the device stopped delivering audio
+        muteTimer = setTimeout(() => {
+          if (!this.disposed && track.muted) {
+            this.errCb?.(
+              new Error(
+                `the ${this.streamName === 'mic' ? 'microphone' : 'meeting audio'} input went silent at the device level — it may have been switched off or claimed by another app.`
+              )
+            )
+          }
+        }, 4000)
+      })
+      track.addEventListener('unmute', () => {
+        if (muteTimer) clearTimeout(muteTimer)
+        muteTimer = null
+      })
+    }
     this.ctx = new AudioContext()
+    // sleep/wake can leave the context suspended; try to resume, and say so
+    // if that fails rather than sitting silent
+    this.ctx.addEventListener('statechange', () => {
+      const ctx = this.ctx
+      if (!ctx || this.disposed) return
+      if ((ctx.state as string) === 'suspended' || (ctx.state as string) === 'interrupted') {
+        void ctx.resume().catch(() => {})
+        setTimeout(() => {
+          if (!this.disposed && this.ctx && this.ctx.state !== 'running') {
+            this.errCb?.(
+              new Error(
+                'the audio engine was suspended (machine slept?) and did not resume — restart listening from the setup screen.'
+              )
+            )
+          }
+        }, 1000)
+      }
+    })
     // capture runs on the audio thread; ScriptProcessorNode (deprecated,
     // main-thread) would jank the panel
     await this.ctx.audioWorklet.addModule(captureWorkletUrl)
@@ -172,9 +224,7 @@ export class MeetingAudioSource extends MediaStreamSource {
     stream.getVideoTracks().forEach((t) => t.stop())
     if (stream.getAudioTracks().length === 0) {
       stream.getTracks().forEach((t) => t.stop())
-      throw new Error(
-        'no system-audio track — this platform cannot capture system audio directly. Route the meeting through a loopback device (BlackHole) and pick it below.'
-      )
+      throw new Error(`no system-audio track — ${loopbackGuidance()}`)
     }
     return stream
   }
@@ -184,8 +234,14 @@ export class MeetingAudioSource extends MediaStreamSource {
 export class WorkerEmbeddings implements EmbeddingProvider {
   private worker: Worker
   private seq = 0
-  private pending = new Map<number, (v: Float32Array[]) => void>()
+  private pending = new Map<
+    number,
+    { resolve: (v: Float32Array[]) => void; reject: (e: Error) => void }
+  >()
   ready = false
+  /** the model never loaded — matching is running on word overlap */
+  failed: string | null = null
+  private onFail: ((message: string) => void) | null = null
 
   constructor(modelPath: string) {
     this.worker = new Worker(new URL('../../workers/embeddings.worker.ts', import.meta.url), {
@@ -195,24 +251,62 @@ export class WorkerEmbeddings implements EmbeddingProvider {
       const msg = e.data
       if (msg.type === 'ready') this.ready = true
       else if (msg.type === 'embedded') {
-        this.pending.get(msg.id)?.(msg.vectors)
+        this.pending.get(msg.id)?.resolve(msg.vectors)
         this.pending.delete(msg.id)
       } else if (msg.type === 'error') {
+        // an error WITH an id rejects that one request so the cache can retry
+        // it later; one without is the model load itself failing, which dooms
+        // everything in flight. Leaving these pending forever silently turned
+        // semantic matching off for the session (REVIEW.md C8).
         console.warn('[embeddings]', msg.message)
+        if (msg.id != null) {
+          this.pending.get(msg.id)?.reject(new Error(msg.message))
+          this.pending.delete(msg.id)
+        } else {
+          // the model itself failed. Semantic matching is gone for the whole
+          // session and everything still runs — on bigram overlap. That is
+          // the quietest bad outcome this app has, so it gets said out loud
+          this.fail(msg.message)
+          this.rejectAll(new Error(msg.message))
+        }
       }
+    }
+    this.worker.onerror = (e) => {
+      console.warn('[embeddings] worker crashed:', e.message)
+      this.fail(`embeddings worker crashed: ${e.message}`)
+      this.rejectAll(new Error(`embeddings worker crashed: ${e.message}`))
     }
     this.worker.postMessage({ type: 'init', modelPath })
   }
 
+  /** called once when the encoder is gone for good */
+  onFailure(cb: (message: string) => void): void {
+    this.onFail = cb
+    if (this.failed) cb(this.failed)
+  }
+
+  private fail(message: string): void {
+    if (this.failed) return
+    this.failed = message
+    this.ready = false
+    this.onFail?.(message)
+  }
+
+  private rejectAll(err: Error): void {
+    for (const p of this.pending.values()) p.reject(err)
+    this.pending.clear()
+  }
+
   embed(texts: string[]): Promise<Float32Array[]> {
     const id = this.seq++
-    return new Promise((resolve) => {
-      this.pending.set(id, resolve)
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject })
       this.worker.postMessage({ type: 'embed', id, texts })
     })
   }
 
   dispose(): void {
+    this.rejectAll(new Error('embeddings worker disposed'))
     this.worker.terminate()
   }
 }

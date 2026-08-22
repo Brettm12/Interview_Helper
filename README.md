@@ -9,6 +9,8 @@ pre-interview setup screen, and a post-interview recap.
 
 Everything runs on this machine. The bank, matching, transcription, and the
 session transcript never touch the network; a dead connection changes nothing.
+(That includes the inference runtime itself: onnxruntime's WASM binaries are
+bundled into the build and served internally, not fetched from a CDN.)
 
 ## Building the app
 
@@ -25,11 +27,15 @@ specific platform, though each has to be built on that platform (a `.dmg`
 can only be produced on a Mac).
 
 **First launch on macOS.** The build is unsigned — I have no Developer ID —
-so Gatekeeper will refuse it on a double-click. Right-click the app →
-**Open** → **Open**, once; after that it launches normally. (If you'd rather
-sign it, set `mac.identity` in `electron-builder.yml` and flip
-`hardenedRuntime` back on; `build/entitlements.mac.plist` is already written
-for the microphone and the WASM models.)
+so Gatekeeper will refuse it on a double-click. On macOS 14 and earlier:
+right-click the app → **Open** → **Open**, once. On macOS 15 (Sequoia) the
+right-click path is gone: double-click it once to get the refusal, then open
+**System Settings → Privacy & Security**, scroll to the message about the
+blocked app, and click **Open Anyway**. Either way it's a one-time step;
+after that it launches normally. (If you'd rather sign it, set `mac.identity`
+in `electron-builder.yml` and flip `hardenedRuntime` back on;
+`build/entitlements.mac.plist` is already written for the microphone and the
+WASM models.)
 
 The app stores everything under `~/Library/Application Support/Live Interview
 Helper/` on macOS (`%APPDATA%` on Windows, `~/.config` on Linux): the bank,
@@ -93,17 +99,30 @@ listening" is never disabled by a live signal — a click landing in a pause
 used to hit an undefined handler and be silently dropped.
 
 **Meeting audio by platform.** Electron's loopback audio capture is
-Windows-only. On macOS the meeting has to reach the app as an ordinary *input
-device*: install a virtual cable (BlackHole is the usual choice), route the
-meeting's output through it — typically as part of a Multi-Output Device so
-you can still hear the call — and then pick it in the **meeting row's device
-picker** on the setup screen. If the app can already see something that looks
-like a virtual cable, the row names it.
+Windows-only — there it works out of the box. On macOS the meeting has to
+reach the app as an ordinary *input device*: install a virtual cable
+(BlackHole is the usual choice), route the meeting's output through it —
+typically as part of a Multi-Output Device so you can still hear the call —
+and then pick it in the **meeting row's device picker** on the setup screen.
+On Linux no install is needed: PulseAudio and PipeWire already expose every
+output as a capturable input named **"Monitor of …"** — pick the monitor of
+whatever output the meeting plays through. If the app can already see
+something that looks like a virtual cable or a monitor source, the row names
+it.
 
 Both rows are pickers: the microphone one exists because a default input that
 silently switches to a narrowband Bluetooth headset is otherwise invisible.
 The device name comes off the live track, so what you read is what is
 actually open.
+
+## Rehearsing an answer
+
+**Practice** on any bank entry arms your microphone against that one answer:
+points strike through as you actually say them, and it ends in a one-entry
+recap showing what you covered and how long you took. Nothing is written —
+rehearsals never enter your session history. It needs the same models and
+microphone a real session does, and refuses with the same plain explanation
+if either is missing.
 
 ## Checking it works before the interview
 
@@ -119,12 +138,70 @@ Two things to do on the setup screen, in this order:
    heard — with one plain-language verdict on top naming the most likely
    problem. If the mic is 8dB under the threshold, this is where it says so.
 
+`docs/hardware-checklist.md` is the longer version: the handful of things no
+automated suite here can prove — a real microphone, a second monitor, a real
+screen share, a screen reader — with what "working" looks like for each. Worth
+one pass the evening before, not ten minutes prior.
+
+## Checking the bank itself
+
+**"Check bank"** on the setup screen opens a prep-time rehearsal of the live
+decision, in the bank's third pane:
+
+- **Paste a question you expect** and it tells you what the panel would do
+  with it — the answer that would come up on its own, the two or three you
+  would be asked to choose between, or nothing at all, with one click to start
+  writing the answer you turn out not to have. It scores exactly the way the
+  interview does, on the same encoder, so it warms the model on entry rather
+  than answering from word overlap and calling it a match.
+- **The three answers most likely to fight**, each with something to do about
+  it: merge them into one, or open the one that loses. Three findings with
+  remedies beat twenty without — and the report is capped there deliberately.
+
+It uses the embedding model only, never the speech model, and it steps aside
+while a session is running: the interview gets the model.
+
+Answers, stories and the fifteen examples the app ships with can all be
+deleted — two presses on the same button, no modal. "Remove the untouched
+examples" in the import pane keys on both the example ids and their content,
+so anything you have rewritten is yours and stays.
+
+## Turning what you said into points
+
+Draft an answer from the recap and the editor shows **your own lines from the
+session** beside the points field. Click one to make it a point; click **"Make
+points from this"** to have the app cut the whole thing down for you — it picks
+the clauses that carry the most, drops the ones that say nothing, and keeps
+them in the order you said them.
+
+It is extractive, not generative: every word it gives back is a word you said.
+That is a measured decision, not a limitation nobody revisited. Four
+instruction models have now been run against this exact job
+(`node tools/spike/llm-spike.mjs --models-dir <dir>`), including the best one
+that fits in a gigabyte of download on the current library, and each invented
+details about the speaker's own experience — a scandal that never happened, a
+fact turned into its opposite, "hindsight bias" from nowhere. The spike scores
+every generated line mechanically: a line passes only if every content word and
+every number in it was actually said, it flips no negation, and it stays close
+to something the speaker really uttered. The bar to ship was 90% of lines
+passing; the best model managed 20%, at 21 seconds and 5.4GB of memory per
+request. The extractive pass gets 3/3 in 40 milliseconds. The table is in
+DECISIONS.md, and the gate is committed, so the day a model can pass it the
+question is one command away.
+
+Nothing the interviewer said reaches this. The excerpt is filtered to your own
+lines where it is built, and both the unit tests and the end-to-end run fail
+if an interviewer line — or any word you did not say — turns up in the result.
+
 ## Building the bank
 
 The bank is the product: matching can only ever be as good as what it is
 matching against. Three ways in:
 
-- **Type it** — "New answer" in the bank screen opens the editor.
+- **Type it** — "New answer" in the bank screen opens the editor. It is
+  keyboard-complete: ↵ commits a point and opens the next row, ⌥↑/⌥↓ move the
+  one you are on, ⌘↵ saves, and Esc cancels — asking first if there is unsaved
+  work.
 - **Paste it** — "Import from a job post" in the bank sidebar opens an
   import/export pane. Paste prep notes in whatever shape you already keep them:
   a question per line (or as a heading) with its points as bullets underneath,
@@ -132,9 +209,10 @@ matching against. Three ways in:
   found — how many questions, how many points, which look like duplicates of
   entries you already have — **before** anything is added.
 - **Re-import an export** — the same pane exports the bank as markdown (for
-  reading and editing anywhere) or as JSON (a lossless backup that imports
-  back). Worth doing: your prepared material otherwise lives in a single
-  `bank.json` whose only backup is written on a successful read.
+  reading and editing anywhere) or as JSON (a lossless backup). Pasting a
+  JSON backup back in offers an exact **Restore** — sections, loops, stories,
+  ids and usage history all intact — alongside the ordinary merge. Worth
+  doing: your prepared material otherwise lives in a single `bank.json`.
 
 ## Where things live
 
@@ -154,10 +232,12 @@ matching against. Three ways in:
   without audio hardware.
 - **Data** — three JSON files in Electron's `userData` directory (`bank.json`,
   `sessions.json`, `settings.json`), zod-validated on read, written atomically
-  (temp file + rename), with a `.bak` of the last good read per file. Deleting
-  `bank.json` loses the bank and nothing else. First run seeds from
-  `src/shared/seed.json`. The browser build keeps the same repository contract
-  on localStorage.
+  (temp file + fsync + rename), with a `.bak` refreshed on every good read
+  *and* write. An unreadable `bank.json` is quarantined under a timestamped
+  name — never silently replaced — and the app says which bank you're looking
+  at. Deleting `bank.json` loses the bank and nothing else. First run seeds
+  from `src/shared/seed.json`. The browser build keeps the same repository
+  contract on localStorage.
 - **Architecture** — the UI never touches audio directly. Four interfaces in
   `src/shared/types.ts` (`AudioSource`, `Transcriber`, `Matcher`,
   `CoverageModel`) with two capture implementations: the real path
@@ -176,20 +256,38 @@ matching against. Three ways in:
   `docs/reference/` (per-screen fragments), `docs/CONVENTIONS.md` (build
   rules), `DECISIONS.md` (every call the spec didn't make).
 - **Verification** — `tools/verify/` holds the pixel-diff harness
-  (`verify:pixels`, gating six screens at ≤0.1% against the reference) and
-  the scripted end-to-end drive (`e2e`); `.github/workflows/ci.yml` runs
-  typecheck → unit tests → both on every push.
+  (`verify:pixels`, gating six screens at ≤0.1% against the reference), the
+  scripted end-to-end drive (`e2e`), the Electron multi-window check
+  (`e2e:electron`), the window-lifecycle probe (`probe:windows`: strip
+  placement, off-screen clamp, close interception, single instance) and the
+  offline-inference probe (`probe:wasm`: real models on the bundled WASM with
+  the network dead). `.github/workflows/ci.yml` runs the Linux suite on every
+  push, plus a real-model job (calibration against the actual MiniLM) and
+  macOS/Windows packaging jobs.
 - **Stories library** — the bank sidebar's "Stories library" opens a pane
   for the shared stories themselves (title, body, metric chips); saving one
   updates every answer that references it.
 
 ## Desktop behaviour
 
+**Keys during a session.** When the panel is unsure between two or three
+answers, **1 / 2 / 3** pick one and **Esc** dismisses — the four-second
+countdown is not enough time to find the mouse, and your eyes belong on the
+interviewer. How long that countdown runs is a setting: 4s (default), 8s, or
+never (it waits for you). Everything clickable is a real button with a visible
+focus ring, so the whole app is operable from the keyboard; the setup screen
+also has a switch that raises the faintest text and the struck-through points
+for half-second glances.
+
 ⌘K (find), ⌘⇧H (collapse to strip), ⌘⇧R (recap) register as global
-shortcuts — they work while the meeting window has focus. Helper windows are
-always-on-top at floating level, visible across spaces, shown without stealing
-focus, and content-protected by default (`setContentProtection`) so they are
-excluded from screen capture; the strip's tooltip states the protection state.
+shortcuts — they work while the meeting window has focus, and they are held
+only while a session is armed or live, so ⌘K goes back to other apps the
+moment the session ends. Helper windows are always-on-top at floating level,
+visible across spaces, shown without stealing focus, and content-protected by
+default (`setContentProtection`) so they are excluded from screen capture on
+macOS and Windows — **Linux cannot do this at all** (the OS offers no way to
+exclude a window from capture), and the strip's tooltip says so there instead
+of claiming share-safety.
 The strip is frameless, draggable by its background, and remembers its
 position. Panel placement (docked right / floating strip / second screen) is
 chosen on the setup screen; second screen errors gracefully with one line if
@@ -198,25 +296,39 @@ only one display is connected.
 ## Offline models (real capture path)
 
 Transcription uses Whisper and matching uses MiniLM
-(`Xenova/all-MiniLM-L6-v2`) via `@xenova/transformers`, loaded from the app's
+(`Xenova/all-MiniLM-L6-v2`) via `@huggingface/transformers` (transformers.js), loaded from the app's
 `userData/models` directory only (`env.allowRemoteModels = false`). Get them
 once before interview day — the only moment this app ever touches the network
 — either from the **setup screen** ("Download now" on the models notice,
-which shows per-file progress) or with `npm run fetch-models` from a
-checkout. Both write into `userData/models`, and the app then serves them to
-its workers over an internal `lih-models://` protocol.
+which shows per-file and per-byte progress with a Cancel that keeps partial
+files for resume) or with `npm run fetch-models` from a checkout. Every file
+is verified against a pinned sha256 + size before it counts as installed, and
+interrupted downloads resume where they stopped. Both paths write into
+`userData/models`, and the app then serves the files to its workers over an
+internal `lih-models://` protocol.
 
-There are two Whisper tiers, picked on the setup screen and persisted:
+There is **one** speech model: `Xenova/whisper-base.en`, 75MB. There used to be
+a picker offering `tiny.en` beside it as "lower latency on an older machine,
+misses more words" — an invitation to make your own interview worse. The saving
+was never what the screen said either: it read "~145MB", which is the size of
+the *entire* install (base.en + tiny.en + the matching model), so the real
+choice was 34MB against dropped words. A word Whisper drops is a question the
+matcher scores wrong, and this round measured a mangled transcript costing more
+match score than the difference between three different embedding models. That
+is not a trade to put in front of someone six minutes before an interview.
 
-| tier | size | when |
-| --- | --- | --- |
-| `Xenova/whisper-base.en` (default) | ~145MB | noticeably more accurate, still real-time on a modern machine |
-| `Xenova/whisper-tiny.en` | ~40MB | lower latency on an older machine, misses more words |
+Two bigger models were measured against that one — `whisper-small.en` and
+`distil-whisper/distil-small.en` — and neither ships: both cost about **2.2× the
+decode time** at the 8-second window where the early card has its deadline, plus
+about a gigabyte of memory, and neither could be shown to transcribe better
+(`distil-small.en` was measurably worse — it dropped half a sentence). The
+harness is `tools/spike/whisper-spike.mjs` and the table is in DECISIONS.md.
 
-Only the selected tier is downloaded. `npm run fetch-models` follows the same
-rule; pass `--model <id>` for a specific tier or `--all` for both. If the
-selected model can't be loaded, the transcriber falls back to `tiny.en` and
-says so rather than going silent.
+`tiny.en` is still downloaded and still loads automatically if base.en can't be
+loaded — the transcriber says so rather than going silent, and that safety net
+only works if the fallback is actually on disk. `npm run fetch-models` follows
+the same rule; pass `--model <id>` for a specific model or `--all` for
+everything. ⌘⇧D always names the model actually running, fallback included.
 
 Until the models are present (or while they're still warming up), matching
 and coverage run on the lexical fallback paths — bigram Dice plus your

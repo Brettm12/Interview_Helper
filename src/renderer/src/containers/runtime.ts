@@ -31,6 +31,64 @@ let stopPlayback: (() => void) | null = null
 let realSources: { meeting: MeetingAudioSource; mic: MicAudioSource } | null = null
 let audioPrepared = false
 
+// ---- capture watchdog ------------------------------------------------------
+// A source can die without any event reaching us (REVIEW.md C4): the one
+// symptom is chunks stopping. Track the last arrival per stream; a started
+// source that goes quiet for watchdogStallMs gets a visible error and one
+// automatic re-acquire attempt.
+const WATCHDOG_STALL_MS = 5000
+const WATCHDOG_RESTART_COOLDOWN_MS = 15000
+const lastChunkAt = { meeting: 0, mic: 0 }
+const stalled = { meeting: false, mic: false }
+let watchdogTimer: ReturnType<typeof setInterval> | null = null
+let watchdogRestartAt = 0
+
+function noteChunk(stream: 'meeting' | 'mic'): void {
+  lastChunkAt[stream] = Date.now()
+  if (stalled[stream]) {
+    stalled[stream] = false
+    const audio = useAudioStore.getState()
+    audio.setError(stream, null)
+    if (audio.pipelineNotice?.includes('stopped arriving')) audio.setPipelineNotice(null)
+  }
+}
+
+function startWatchdog(): void {
+  if (watchdogTimer) return
+  watchdogTimer = setInterval(() => {
+    if (!realSources) return
+    const now = Date.now()
+    for (const stream of ['meeting', 'mic'] as const) {
+      const status = useAudioStore.getState()[stream]
+      if (status.state === 'no-track' || status.state === 'idle') continue
+      if (lastChunkAt[stream] === 0 || now - lastChunkAt[stream] <= WATCHDOG_STALL_MS) continue
+      if (!stalled[stream]) {
+        stalled[stream] = true
+        const name = stream === 'meeting' ? 'Meeting audio' : 'Microphone audio'
+        useAudioStore
+          .getState()
+          .setError(stream, 'audio stopped arriving — device lost, or the machine slept.')
+        useAudioStore
+          .getState()
+          .setPipelineNotice(`${name} stopped arriving — check the device (⌘⇧D for details).`)
+      }
+      if (now - watchdogRestartAt > WATCHDOG_RESTART_COOLDOWN_MS) {
+        watchdogRestartAt = now
+        restartAudio()
+      }
+    }
+  }, 2000)
+}
+
+function stopWatchdog(): void {
+  if (watchdogTimer) clearInterval(watchdogTimer)
+  watchdogTimer = null
+  lastChunkAt.meeting = 0
+  lastChunkAt.mic = 0
+  stalled.meeting = false
+  stalled.mic = false
+}
+
 /**
  * The on-device models, loaded once and kept.
  *
@@ -52,6 +110,57 @@ let models: {
   cache: EmbeddingCache
   modelId: string
 } | null = null
+
+/**
+ * Embeddings on their own, with no speech model anywhere near them.
+ *
+ * The prep surfaces (the bank check) need to score questions exactly as the
+ * interview will, which means the real encoder. It must NOT mean a
+ * transcription worker: opening a prep tool should not put a speech model in
+ * memory, and it must never be able to start listening to a room.
+ *
+ * Reuses the session models' cache when they are already up, so the bank is
+ * warmed once; the session, in turn, adopts this worker when it starts.
+ */
+let embedOnly: { embeddings: WorkerEmbeddings; cache: EmbeddingCache } | null = null
+
+/**
+ * The encoder failing is the quietest bad outcome this app has.
+ *
+ * Transcription dying is obvious — the transcript stops. The matcher losing
+ * its embeddings is not: everything keeps running, and every question for the
+ * rest of the interview is matched on bigram word overlap. Cards still appear.
+ * They are just wrong more often, in a way nobody can see from the outside.
+ * It used to reach a console.warn and nothing else, so it goes to the same
+ * notice strip the live panel and the setup screen already read (H2/C4).
+ */
+function noteEmbeddingsFailure(message: string): void {
+  useAudioStore
+    .getState()
+    .setPipelineNotice(
+      `Matching is running on word overlap — the matching model did not load (${message}). Re-download it from the setup screen.`
+    )
+}
+
+export function ensureEmbeddings(): EmbeddingCache | null {
+  if (models) return models.cache
+  if (embedOnly) return embedOnly.cache
+  // the browser/mock build has no worker to talk to; the caller falls back to
+  // the lexical path, which is what a mock session matches on anyway
+  if (MOCK) return null
+  const modelPath = IN_ELECTRON ? MODELS_URL_PREFIX : 'models'
+  const embeddings = new WorkerEmbeddings(modelPath)
+  embeddings.onFailure(noteEmbeddingsFailure)
+  embedOnly = { embeddings, cache: new EmbeddingCache(embeddings) }
+  return embedOnly.cache
+}
+
+/** true once the encoder can actually answer — before that the check would be
+ *  scoring on bigram overlap and quietly calling it a match */
+export function embeddingsWarm(): boolean {
+  if (models) return models.embeddings.ready
+  return embedOnly?.embeddings.ready ?? false
+}
 
 export function getEngine(): SessionEngine | null {
   return engine
@@ -84,11 +193,20 @@ function createLevelMeter(stream: 'meeting' | 'mic'): (samples: Float32Array) =>
 
   return (samples: Float32Array) => {
     const now = Date.now()
+    let maxFrameDb = -120
     for (let i = 0; i + frameSize <= samples.length; i += frameSize) {
-      floor.update(dbfs(rms(samples.subarray(i, i + frameSize))), live)
+      const db = dbfs(rms(samples.subarray(i, i + frameSize)))
+      if (db > maxFrameDb) maxFrameDb = db
+      floor.update(db, live)
     }
     const level = ballistics.push(rms(samples), now)
-    live = gate.update(level, now)
+    // liveness follows the same adaptive gate the segmenter uses, so the dot
+    // can never say "silent" about a mic that transcribes fine, or "live"
+    // about one below the speech threshold (REVIEW.md L5). Same hysteresis and
+    // hold, just in dB against the moving floor.
+    const openAtDb = Math.max(floor.value + TUNING.vadOpenDb, TUNING.vadAbsoluteOpenDbfs)
+    const closeAtDb = floor.value + TUNING.vadCloseDb
+    live = gate.update(maxFrameDb, now, openAtDb, closeAtDb)
     const state = live ? 'live' : 'silent'
     // publish on a material state change immediately, otherwise at ~10Hz
     if (state === lastState && now - lastPublishedAt < TUNING.levelPublishMinIntervalMs) return
@@ -177,6 +295,9 @@ export function prepareAudio(): void {
     driver.micSource.onChunk((c) => micMeter(c.samples))
     driver.meetingSource.start()
     driver.micSource.start()
+    // once per DRIVER, not per session — control handlers accumulate, and a
+    // second dry run used to apply every scripted pin/end twice (REVIEW.md L14)
+    wireControlEvents(driver)
     audio.setLabels({ meeting: 'Meeting audio · Google Meet tab', mic: 'Your mic · MacBook Pro' })
     return
   }
@@ -186,10 +307,12 @@ export function prepareAudio(): void {
     mic: new MicAudioSource(settings.micDeviceId)
   }
   realSources.meeting.onChunk((c) => {
+    noteChunk('meeting')
     meetingMeter(c.samples)
     models?.transcription.push('them', stampClock('meeting', c))
   })
   realSources.mic.onChunk((c) => {
+    noteChunk('mic')
     micMeter(c.samples)
     models?.transcription.push('you', stampClock('mic', c))
   })
@@ -207,6 +330,7 @@ export function prepareAudio(): void {
   realSources.mic.onError((e) => useAudioStore.getState().setError('mic', e.message))
   realSources.mic.start()
   realSources.meeting.start()
+  startWatchdog()
   // labels arrive with the track, so the picker needs a refresh once
   // permission has actually been granted
   void useAudioStore.getState().refreshDevices()
@@ -224,6 +348,15 @@ export function ensureModels(): void {
   if (MOCK) return
   const modelId = useSettingsStore.getState().whisperModel
   if (models && models.modelId !== modelId) {
+    // Never mid-session. The engine closes over THIS service's transcribers,
+    // and a disposed service swallows every push in silence — so swapping the
+    // tier during an interview would not change models, it would end
+    // transcription for the rest of the session with nothing on screen saying
+    // so. There is no picker to trigger it from any more, but a settings
+    // migration can rewrite the tier under a running session, and the next
+    // model that earns a place on that screen would make it reachable again.
+    // The change takes effect at the next arm.
+    if (engine) return
     models.transcription.dispose()
     models.embeddings.dispose()
     models = null
@@ -233,9 +366,33 @@ export function ensureModels(): void {
   // never reaches this branch
   const modelPath = IN_ELECTRON ? MODELS_URL_PREFIX : 'models'
   const transcription = new TranscriptionService(modelPath, modelId)
-  const embeddings = new WorkerEmbeddings(modelPath)
-  const cache = new EmbeddingCache(embeddings)
-  transcription.onStateChange(() => useAudioStore.getState().publish('mic', {}))
+  // adopt the check's worker rather than standing a second MiniLM beside it —
+  // and inherit whatever it has already embedded
+  const embeddings = embedOnly?.embeddings ?? new WorkerEmbeddings(modelPath)
+  const cache = embedOnly?.cache ?? new EmbeddingCache(embeddings)
+  embeddings.onFailure(noteEmbeddingsFailure)
+  embedOnly = null
+  transcription.onStateChange((state) => {
+    useAudioStore.getState().publish('mic', {})
+    const audio = useAudioStore.getState()
+    if (state === 'failed') {
+      // mid-session, try to bring a crashed worker back before telling anyone
+      // it's over; a persistent load failure gets a permanent visible notice
+      // instead of dying in the console (REVIEW.md H2)
+      if (engine && transcription.restart()) {
+        audio.setPipelineNotice('Transcription crashed — restarting it now…')
+      } else {
+        audio.setPipelineNotice(
+          `The speech model failed to load${transcription.error ? ` — ${transcription.error}` : ''}. Re-download it from the setup screen.`
+        )
+      }
+    } else if (state === 'warm' && audio.pipelineNotice?.startsWith('Transcription crashed')) {
+      audio.setPipelineNotice(null)
+    }
+  })
+  // decode errors and falling-behind drops — the worker already narrates
+  // these; they just never reached a surface anyone watches
+  transcription.onError((message) => useAudioStore.getState().setPipelineNotice(message))
   models = { transcription, embeddings, cache, modelId }
   warmBank()
 }
@@ -258,6 +415,31 @@ export function modelState(): 'loading' | 'warm' | 'failed' | 'idle' {
   return models?.transcription.state ?? 'idle'
 }
 
+// Truthful signals for the offline probe (tools/verify/wasm-probe.mjs): "did
+// the real pipelines come up on the bundled wasm, without touching the CDN"
+// is not observable from a screenshot. Read-only, and embedSmoke embeds one
+// throwaway string — nothing here can change app state.
+declare global {
+  interface Window {
+    __lihDebug?: {
+      embeddingsReady(): boolean
+      transcriberState(): 'loading' | 'warm' | 'failed' | 'idle'
+      /** embed one string end-to-end; resolves to the vector length (384) */
+      embedSmoke(): Promise<number>
+    }
+  }
+}
+if (typeof window !== 'undefined') {
+  window.__lihDebug = {
+    embeddingsReady: () => models?.embeddings.ready ?? false,
+    transcriberState: () => modelState(),
+    embedSmoke: async () => {
+      const rows = (await models?.embeddings.embed(['offline wasm probe'])) ?? []
+      return rows[0]?.length ?? 0
+    }
+  }
+}
+
 /** tear the capture path down. Pause uses this: for an app whose promise is
  *  "audio stays on this machine and nothing is recorded", pausing has to stop
  *  the tracks, not just flip a flag and keep listening. */
@@ -265,6 +447,7 @@ export function stopAudio(): void {
   // the mock driver's scripted playback *is* the demo — stopping it would look
   // like a broken app rather than a paused one
   if (MOCK || !realSources) return
+  stopWatchdog()
   realSources.meeting.stop()
   realSources.mic.stop()
   realSources = null
@@ -292,6 +475,18 @@ export function restartAudio(): void {
 // you the words back — the same path that will run during the call.
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/** wait up to `ms`, bailing early (false) the moment a session starts — the
+ *  session owns the shared pipeline from that point, and the test's cleanup
+ *  must not touch it (REVIEW.md C3) */
+async function testWait(ms: number): Promise<boolean> {
+  const until = Date.now() + ms
+  while (Date.now() < until) {
+    if (engine) return false
+    await delay(Math.min(150, Math.max(1, until - Date.now())))
+  }
+  return true
+}
 
 export async function runMicTest(): Promise<void> {
   const audio = useAudioStore.getState()
@@ -355,21 +550,26 @@ export async function runMicTest(): Promise<void> {
   audio.setMicTest({ state: 'recording' })
 
   // the same warm model the session will use, rather than a throwaway probe:
-  // spawning one meant every test paid a cold load inside its own timeout
+  // spawning one meant every test paid a cold load inside its own timeout.
+  // Only the mic stream opens — decoding meeting audio during the test both
+  // wastes the decode budget and can starve the test past its deadline
+  // (REVIEW.md L4).
   const heard: string[] = []
   const off = svc.subscribe('you', (s) => {
     if (s.confirmed) heard.push(s.text)
   })
-  svc.setEnabled(true)
+  svc.setEnabled(true, ['you'])
 
   try {
-    await delay(TUNING.micTestRecordMs)
+    if (!(await testWait(TUNING.micTestRecordMs))) return
     useAudioStore.getState().setMicTest({ state: 'thinking' })
     // whatever is mid-sentence still counts — this is a five-second test and
     // losing the tail would report "heard nothing" for a working mic
-    svc.flush()
+    svc.flush('you')
     const deadline = Date.now() + TUNING.micTestDecodeMs
-    while (heard.length === 0 && Date.now() < deadline) await delay(150)
+    while (heard.length === 0 && Date.now() < deadline) {
+      if (!(await testWait(150))) return
+    }
     const text = heard.join(' ').trim()
     useAudioStore.getState().setMicTest(
       text
@@ -387,7 +587,14 @@ export async function runMicTest(): Promise<void> {
     })
   } finally {
     off()
-    svc.setEnabled(false)
+    // A session that started mid-test owns the pipeline now — disabling it
+    // here was REVIEW.md C3: the test's cleanup landed up to 25s after arming
+    // and silently killed transcription for the whole interview.
+    if (!engine) {
+      svc.setEnabled(false, ['you'])
+    } else if (useAudioStore.getState().micTest.state !== 'done') {
+      useAudioStore.getState().setMicTest({ state: 'idle', text: null, error: null })
+    }
   }
 }
 
@@ -481,7 +688,8 @@ function startStripPublisher(): void {
         match: session.match,
         coverage: session.coverage,
         entryAtCollapse,
-        protectionOn: useSettingsStore.getState().contentProtection
+        protectionOn: useSettingsStore.getState().contentProtection,
+        paused: session.status === 'paused'
       })
     )
   }
@@ -512,12 +720,36 @@ function startStripPublisher(): void {
 /** other windows saved the bank — reload so this one isn't stale. Returns the
  *  unsubscribe; App mounts it once per window. */
 export function startBankSync(): () => void {
-  return api.bank.onChanged(() => void useBankStore.getState().load())
+  const offChanged = api.bank.onChanged(() => void useBankStore.getState().load())
+  // The setup screen starts loading models as it mounts, but the bank arrives
+  // from disk a moment later — so that pre-warm found no bank and quietly did
+  // nothing, and the cold-start window came back at the first question
+  // (REVIEW.md L13). Warm from whichever side lands last: ensureModels() warms
+  // when the models finish, this warms when the bank does (and again when the
+  // active loop changes, since a different loop is a different set of texts).
+  let warmedLoop: string | null = null
+  const offBank = useBankStore.subscribe((s) => {
+    const loop = s.bank?.activeLoopId ?? null
+    if (!loop || loop === warmedLoop) return
+    warmedLoop = loop
+    warmBank()
+  })
+  return () => {
+    offChanged()
+    offBank()
+  }
 }
 
 export interface StartOptions {
   /** dry runs replay the scripted fixture even in a real-capture build */
   dryRun?: boolean
+  /**
+   * Rehearse ONE answer against your real microphone: the entry is pinned,
+   * points strike through as you say them, and it ends in a one-entry recap
+   * that is never written to disk (REVIEW.md P10). Before this, "Practice"
+   * replayed the scripted HR fixture — a demo of someone else's interview.
+   */
+  practiceEntryId?: string
 }
 
 export function startSession(opts: StartOptions = {}): void {
@@ -526,10 +758,50 @@ export function startSession(opts: StartOptions = {}): void {
   const settings = useSettingsStore.getState()
   const session = useSessionStore.getState()
   const useMock = MOCK || opts.dryRun === true
+  const practiceEntryId = opts.practiceEntryId ?? null
 
-  session.arm(bank.activeLoopId, settings.keepTranscript)
+  if (!useMock) {
+    // arming a dead pipeline used to look exactly like a working session
+    // (REVIEW.md H2) — refuse, visibly, while there is still time to fix it
+    prepareAudio()
+    ensureModels()
+    if (!models) return
+    if (models.transcription.state === 'failed') {
+      useAudioStore
+        .getState()
+        .setPipelineNotice(
+          `Not starting${opts.practiceEntryId ? ' practice' : ''}: the speech model failed to load${models.transcription.error ? ` — ${models.transcription.error}` : ''}. Re-download it below, then try again.`
+        )
+      return
+    }
+  }
+
+  // A dry run replays the scripted fixture against the user's REAL bank. It
+  // used to persist a session record and stamp lastUsed with the fixture's
+  // coverage numbers — a demo writing into interview history. Mock builds are
+  // their own sandbox and still persist (the e2e asserts it).
+  session.arm(
+    bank.activeLoopId,
+    settings.keepTranscript,
+    practiceEntryId,
+    practiceEntryId != null || opts.dryRun === true
+  )
   zeroClock(true)
   startViewSync()
+  // a latent ⌘K pressed on the setup screen must not pop the overlay the
+  // moment the armed card mounts (REVIEW.md M20)
+  usePanelStore.getState().closeFind()
+  // session shortcuts are registered only for the session's span; an
+  // accelerator another app holds is reported, not silently dead (H15/M19)
+  void api.session.setActive(true).then(({ failedShortcuts }) => {
+    if (failedShortcuts.length > 0) {
+      useAudioStore
+        .getState()
+        .setPipelineNotice(
+          `${failedShortcuts.join(', ')} is held by another app — the shortcut works only while this panel is focused.`
+        )
+    }
+  })
 
   if (useMock) {
     if (!driver) {
@@ -540,6 +812,9 @@ export function startSession(opts: StartOptions = {}): void {
       driver.micSource.onChunk((c) => micMeter(c.samples))
       driver.meetingSource.start()
       driver.micSource.start()
+      // once per DRIVER, not per session — a second dry run used to apply
+      // every scripted pin/end twice (REVIEW.md L14)
+      wireControlEvents(driver)
     }
     const d = driver
     const them = tee(d.meetingTranscriber)
@@ -566,16 +841,15 @@ export function startSession(opts: StartOptions = {}): void {
         transcript[idx] = { ...transcript[idx], highlight: hl }
         useSessionStore.setState({ transcript })
       }
+      // the recap excerpt reads from the engine's own keep, not the UI ring
+      engine?.noteHighlight(seg.text, hl)
     })
-    wireControlEvents(d)
     stopPlayback = d.play()
   } else {
-    prepareAudio()
-    ensureModels()
     const m = models
     if (!m) return
-    // already loaded (and the bank already embedded) from the setup screen —
-    // arming just opens the gate
+    // already loaded (and the bank warmed) from the setup screen — arming
+    // just opens the gate
     m.transcription.clearSubscribers()
     const them = tee(m.transcription.transcriberFor('them'))
     const you = tee(m.transcription.transcriberFor('you'))
@@ -583,7 +857,14 @@ export function startSession(opts: StartOptions = {}): void {
     countSegments(you, 'mic')
     engine = new SessionEngine(them, you, m.cache)
     warmBank() // the active loop may have changed since the models loaded
-    m.transcription.setEnabled(true)
+    if (practiceEntryId) {
+      // rehearsal: your microphone only. There is no interviewer to listen
+      // to, and nothing to match — the answer under practice is pinned.
+      m.transcription.setEnabled(true, ['you'])
+      engine.pinEntry(practiceEntryId)
+    } else {
+      m.transcription.setEnabled(true)
+    }
   }
 
   usePanelStore.getState().setView('armed')
@@ -595,26 +876,54 @@ export function startSession(opts: StartOptions = {}): void {
 export async function endSession(): Promise<void> {
   stopPlayback?.()
   stopPlayback = null
-  if (engine) {
-    const e = engine
-    engine = null
-    await e.end() // saves the record, flips the view to recap
+  void api.session.setActive(false)
+  try {
+    if (engine) {
+      const e = engine
+      engine = null
+      await e.end() // flips the view to recap; a failed save surfaces THERE
+    }
+  } finally {
+    // capture teardown runs no matter what end() hit — a save error used to
+    // leave the mic hot on the live view after the user ended the interview
+    // (REVIEW.md M5)
+    // the models stay loaded: a second session in the same run should cost
+    // nothing, and disposing them here is what made every arm pay a cold start
+    models?.transcription.setEnabled(false)
+    models?.transcription.clearSubscribers()
+    zeroClock(false)
+    stripPublisherStop?.()
+    usePanelStore.getState().setCollapsed(false)
+    if (IN_ELECTRON) void api.windows.showStrip(false)
   }
-  // the models stay loaded: a second session in the same run should cost
-  // nothing, and disposing them here is what made every arm pay a cold start
-  models?.transcription.setEnabled(false)
-  models?.transcription.clearSubscribers()
-  zeroClock(false)
-  stripPublisherStop?.()
-  usePanelStore.getState().setCollapsed(false)
-  if (IN_ELECTRON) void api.windows.showStrip(false)
 }
 
-/** ⌘⇧R: during a session this IS the session end; idle, it reopens the last recap */
+/** ⌘⇧R: during a session this IS the session end; idle, it reopens the last
+ *  recap. Ending takes TWO presses within 2s — ⌘⇧R is also the browsers'
+ *  hard-reload chord, and a single reflexive press in a flaky CoderPad tab
+ *  used to end the interview session instantly (REVIEW.md H17). */
+const RECAP_CONFIRM_NOTICE = 'Press ⌘⇧R again to end the session and open the recap.'
+let recapConfirmTimer: ReturnType<typeof setTimeout> | null = null
+
 export function recapCommand(): void {
   const s = useSessionStore.getState()
   if (s.status === 'armed' || s.status === 'listening' || s.status === 'paused') {
-    void endSession()
+    if (recapConfirmTimer) {
+      clearTimeout(recapConfirmTimer)
+      recapConfirmTimer = null
+      if (useAudioStore.getState().pipelineNotice === RECAP_CONFIRM_NOTICE) {
+        useAudioStore.getState().setPipelineNotice(null)
+      }
+      void endSession()
+      return
+    }
+    useAudioStore.getState().setPipelineNotice(RECAP_CONFIRM_NOTICE)
+    recapConfirmTimer = setTimeout(() => {
+      recapConfirmTimer = null
+      if (useAudioStore.getState().pipelineNotice === RECAP_CONFIRM_NOTICE) {
+        useAudioStore.getState().setPipelineNotice(null)
+      }
+    }, 2000)
   } else if (s.lastSession) {
     usePanelStore.getState().setView('recap')
   }
@@ -630,12 +939,17 @@ export function recapCommand(): void {
 export function pauseSession(): void {
   const s = useSessionStore.getState()
   if (s.status === 'paused') {
+    engine?.resume()
     s.setStatus(s.match.entryId ? 'listening' : 'armed')
     prepareAudio()
     models?.transcription.setEnabled(true)
     return
   }
   if (s.status === 'armed' || s.status === 'listening') {
+    // tell the engine first: it notes the pause clock (so the flushed
+    // mid-sentence tail is still accepted, REVIEW.md M6) and stops the
+    // auto-pick/deferred-swap timers (REVIEW.md M4)
+    engine?.pause()
     s.setStatus('paused')
     // anything mid-sentence still belongs in the transcript
     models?.transcription.setEnabled(false) // flushes what was mid-sentence

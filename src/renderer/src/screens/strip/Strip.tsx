@@ -7,9 +7,10 @@ import './strip.css'
  *  while screen-sharing. Whole strip expands; ▾ / "open" are the explicit
  *  no-drag affordances so clicks land on the frameless window. */
 const Strip = (props: StripProps): JSX.Element => {
-  const { variant, text, counter, overlay, protectionOn, onExpand } = props
+  const { variant, text, counter, overlay, protectionOn, protectionUnsupported, paused, onExpand } =
+    props
 
-  const expandFromAffordance = (e: MouseEvent<HTMLDivElement>): void => {
+  const expandFromAffordance = (e: MouseEvent<HTMLButtonElement>): void => {
     e.stopPropagation()
     onExpand()
   }
@@ -23,32 +24,54 @@ const Strip = (props: StripProps): JSX.Element => {
     .join(' ')
 
   return (
+    // Not a <button>: this element is the frameless window's drag region, and
+    // the affordances below are real buttons that opt out of it — a button
+    // may not contain buttons. The strip window is shown inactive and never
+    // takes keyboard focus, so the affordances carry the semantics
+    // (REVIEW.md P8).
     <div
       className={className}
       title={
-        protectionOn
-          ? 'Excluded from screen capture'
-          : 'Content protection off — this window is visible in shares'
+        // "share-safe" must not be claimed where the OS cannot deliver it
+        // (REVIEW.md M21: setContentProtection is a no-op on Linux)
+        protectionUnsupported
+          ? 'Content protection is not supported on this OS — this window IS visible in shares'
+          : protectionOn
+            ? 'Excluded from screen capture'
+            : 'Content protection off — this window is visible in shares'
       }
       onClick={onExpand}
     >
       <StatusDot
         size={6}
-        color={variant === 'new-question' ? 'var(--status-attention)' : 'var(--status-live)'}
+        color={
+          // a live-green dot with the microphone closed is a lie (REVIEW.md P2)
+          paused
+            ? 'var(--dot-inactive)'
+            : variant === 'new-question'
+              ? 'var(--status-attention)'
+              : 'var(--status-live)'
+        }
       />
       <div className="strip__text">{text}</div>
+      {/* the strip is IN the capture: either protection is switched off, or
+          this OS cannot exclude a window from a share at all. A tooltip
+          nobody hovers mid-share is not a signal (REVIEW.md P4). */}
+      {(protectionUnsupported === true || !protectionOn) && (
+        <div className="strip__share">IN SHARE</div>
+      )}
       {variant !== 'new-question' && counter != null && (
         <div className="strip__counter">{counter}</div>
       )}
       {variant === 'current' && (
-        <div className="strip__affordance strip__caret" onClick={expandFromAffordance}>
+        <button type="button" className="strip__affordance strip__caret" onClick={expandFromAffordance}>
           ▾
-        </div>
+        </button>
       )}
       {variant === 'new-question' && (
-        <div className="strip__affordance strip__open" onClick={expandFromAffordance}>
+        <button type="button" className="strip__affordance strip__open" onClick={expandFromAffordance}>
           open
-        </div>
+        </button>
       )}
     </div>
   )

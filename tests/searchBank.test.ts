@@ -49,3 +49,52 @@ describe('searchBank', () => {
     expect(searchBank(bank, entries, 'the').length).toBeLessThanOrEqual(8)
   })
 })
+
+// REVIEW.md P3: ⌘K opened from "Search bank" means the matcher was
+// close-but-wrong. Bank order puts the entry you want off the bottom of the
+// list, so you type under stress. The empty query is the one place we know
+// something useful about intent.
+describe('empty-query ordering with session context', () => {
+  it('puts the unsure candidates first, in rank order', () => {
+    const results = searchBank(bank, entries, '', {
+      candidateIds: ['a-informal', 'a-invest-run'],
+      askedIds: []
+    })
+    expect(results.slice(0, 2).map((r) => r.id)).toEqual(['a-informal', 'a-invest-run'])
+  })
+
+  it('then the entries this session has not asked yet', () => {
+    const asked = entries.slice(0, 3).map((e) => e.id)
+    const results = searchBank(bank, entries, '', { candidateIds: [], askedIds: asked })
+    const ids = results.map((r) => r.id)
+    // nothing already asked appears before something that has not been
+    const firstAskedAt = ids.findIndex((id) => asked.includes(id))
+    const lastFreshAt = ids.reduce((last, id, i) => (asked.includes(id) ? last : i), -1)
+    if (firstAskedAt !== -1) expect(firstAskedAt).toBeGreaterThan(lastFreshAt - 1)
+    expect(ids).not.toContain(undefined)
+  })
+
+  it('is deterministic and still capped', () => {
+    const ctx = { candidateIds: ['a-informal'], askedIds: [entries[0].id] }
+    const a = searchBank(bank, entries, '', ctx).map((r) => r.id)
+    const b = searchBank(bank, entries, '', ctx).map((r) => r.id)
+    expect(a).toEqual(b)
+    expect(a.length).toBe(Math.min(8, entries.length))
+    expect(new Set(a).size).toBe(a.length)
+  })
+
+  it('leaves a typed query alone — context only helps the blank list', () => {
+    const withCtx = searchBank(bank, entries, 'policy', {
+      candidateIds: ['a-informal'],
+      askedIds: []
+    }).map((r) => r.id)
+    const without = searchBank(bank, entries, 'policy').map((r) => r.id)
+    expect(withCtx).toEqual(without)
+  })
+
+  it('an unknown candidate id cannot break the list', () => {
+    const results = searchBank(bank, entries, '', { candidateIds: ['a-gone'], askedIds: ['a-gone'] })
+    expect(results.length).toBe(Math.min(8, entries.length))
+    expect(results.map((r) => r.id)).not.toContain('a-gone')
+  })
+})

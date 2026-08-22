@@ -120,6 +120,20 @@
   color: var(--text-history);
 }
 
+/* A wrong swap mid-answer is the highest-stress moment in the app: the
+   answer you were reading is right there as history. Clicking it brings it
+   back. Nothing is added to the resting frame — the affordance is hover. */
+.live-earlier__row--resume {
+  display: block;
+  width: 100%;
+  text-align: left;
+  transition: color 120ms ease-out;
+}
+
+.live-earlier__row--resume:hover {
+  color: var(--text-secondary);
+}
+
 /* ---- transcript footer ---- */
 
 .live-transcript {
@@ -390,4 +404,25 @@
   border-left: 1px solid var(--border-window);
   background: var(--bg-panel);
   display: flex;
+}
+
+/* pipeline-problem strip (model failed / audio stalled) — never rendered in
+   any design-reference state, so the pixel gate never sees it */
+.live-notice {
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border-section);
+  background: var(--warn-bg);
+  color: var(--status-attention);
+  font: 400 12px/1.4 var(--font-ui);
+  text-wrap: pretty;
+}
+
+/* A question was heard that matched nothing, so the answer on screen belongs
+   to the previous one. It stays readable — you may still want it — but stops
+   presenting itself as the current answer. Renders only in that state, which
+   the design reference never enters. */
+.live-panel--stale .live-points,
+.live-panel--stale .live-story,
+.live-panel--stale .live-progress {
+  opacity: 0.55;
 }

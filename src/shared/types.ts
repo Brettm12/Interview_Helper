@@ -51,6 +51,10 @@ export interface Loop {
 }
 
 export interface Bank {
+  /** schema version, stamped on save so a future migration has something to
+   *  read — and unknown fields round-trip instead of being silently stripped
+   *  (REVIEW.md L18) */
+  version?: number
   loops: Loop[]
   sections: Section[]
   answers: Answer[]
@@ -78,12 +82,16 @@ export interface SessionQuestion {
   entryId: string | null
   coveredPointIds: PointId[]
   totalPoints: number
-  /** labels of the points that were missed (for the recap sub-line) */
-  missedLabels: string[]
   /** seconds of the candidate's own mic time spent on this answer */
   micSeconds: number
   /** the entry was pulled up by hand via ⌘K */
   pinnedViaFind: boolean
+  /** nothing matched, but this entry was the closest plausible one. The
+   *  difference between "you have no answer for this" and "you have one and
+   *  the matcher did not reach it" is the difference between writing an
+   *  answer and teaching the one you already wrote. Only ever set alongside
+   *  a null entryId. */
+  nearMissEntryId?: string | null
   /** kept only when the transcript toggle was on */
   transcript?: TranscriptLine[]
 }
@@ -147,6 +155,8 @@ export interface CoverageModel {
 // ---- Settings persisted alongside the bank ----
 
 export interface Settings {
+  /** schema version (REVIEW.md L18) */
+  version?: number
   /** exclude helper windows from screen capture */
   contentProtection: boolean
   /** keep a transcript for the recap (default off) */
@@ -165,4 +175,13 @@ export interface Settings {
   meetingDeviceId: string | null
   /** Whisper build to transcribe with; ids come from models.json */
   whisperModel: string
+  /** seconds the unsure card waits before committing its leader, or null for
+   *  "never — wait for me". Four seconds is right for a fast reader watching
+   *  the screen; it is not enough for someone watching the interviewer
+   *  (REVIEW.md P5). */
+  autoPickSec: number | null
+  /** raise the dimmest text and the struck-through points above the design
+   *  default, which fails WCAG AA at 3.36:1 (REVIEW.md P7). Off by default:
+   *  the shipped look is the design reference. */
+  highLegibility: boolean
 }

@@ -6,6 +6,8 @@ import type { EmbeddingCache } from './embeddings'
 import { useSessionStore } from '../state/sessionStore'
 import { useBankStore, answersForLoop } from '../state/bankStore'
 import { usePanelStore } from '../state/panelStore'
+import { useSettingsStore } from '../state/settingsStore'
+import { usePersistHealth } from '../state/persistHealth'
 import { api } from './api'
 
 // The session engine wires transcriber segments → matcher → panel state, and
@@ -13,11 +15,23 @@ import { api } from './api'
 // session runs. UI containers read stores; they never talk to the engine
 // directly except via the small command surface at the bottom.
 
-function isQuestionLike(text: string): boolean {
+/** Does this read as a question or a request to speak? Exported so the
+ *  calibration tests exercise the same detector the engine runs.
+ *  Multi-word lead-ins match anywhere; bare interrogatives only count at a
+ *  clause start — "that's why we moved the interview online" is not a
+ *  question (REVIEW.md M12). */
+export function isQuestionLike(text: string): boolean {
   if (/\?\s*$/.test(text)) return true
-  return /\b(tell me|walk me|talk me through|how do|how would|what's|what is|what would|why|describe|give me an example)\b/i.test(
-    text
-  )
+  if (
+    /\b(tell me|tell us|walk me|walk us|take me through|talk me through|talk about|can you|could you|would you|have you ever|how do|how did|how would|describe|give me|give us|share an?|share your|i'd love to hear|suppose|imagine|say you)\b/i.test(
+      text
+    )
+  ) {
+    return true
+  }
+  // bare interrogatives (including "what's/what is") only at a clause start —
+  // "we know what is at stake" is not a question
+  return /(^|[.;!?]\s+)(why|what|how|when|where)\b/i.test(text)
 }
 
 export class SessionEngine {
@@ -29,16 +43,29 @@ export class SessionEngine {
   private autoPickTimer: ReturnType<typeof setTimeout> | null = null
   private questionSeq = 0
   private youSegments: Segment[] = []
+  /** every confirmed line while the transcript toggle is on. The recap's
+   *  excerpts come from here — the UI's 200-line rolling ring emptied the
+   *  first half of a real-length interview (REVIEW.md H10). */
+  private keptLines: { speaker: 'you' | 'them'; text: string; t: number; highlight?: string }[] = []
   private stopped = false
   /** how many times each entry has been put on screen this session — the
    *  repeat prior reads this */
   private activations = new Map<string, number>()
   /** the question row a partial opened, waiting for the confirmed text */
   private partialQuestionId: string | null = null
+  /** session clock at which the entry now on screen was activated — the live
+   *  pacing cue measures your mic time from here (REVIEW.md P9) */
+  private activeAskedAt: number | null = null
 
   private snapshotTimer: ReturnType<typeof setInterval> | null = null
   /** a confident swap deferred by the debounce window */
   private pendingSwapTimer: ReturnType<typeof setTimeout> | null = null
+  /** bumped by every manual resolution (pick / dismiss / pin) so an async
+   *  warm-embedding rescore can tell its scoring is stale (REVIEW.md M2) */
+  private resolutionSeq = 0
+  /** session clock at pause — trailing flushed segments stamped before this
+   *  still belong to the session (REVIEW.md M6) */
+  private pausedAtSec: number | null = null
 
   constructor(
     themTranscriber: Transcriber,
@@ -56,7 +83,11 @@ export class SessionEngine {
       const s = this.session
       if (this.stopped || (s.status !== 'listening' && s.status !== 'paused')) return
       if (s.questions.length === 0) return
-      void api.sessions.save(this.buildRecord(true)).catch(() => {})
+      if (s.ephemeral) return // rehearsals and dry runs are never persisted
+      void api.sessions
+        .save(this.buildRecord(true))
+        .then(() => usePersistHealth.getState().noteSuccess('sessions'))
+        .catch((err) => usePersistHealth.getState().noteFailure('sessions', err))
     }, TUNING.snapshotIntervalSec * 1000)
   }
 
@@ -73,16 +104,44 @@ export class SessionEngine {
 
   // ---- interviewer stream ----
 
+  private keepLine(speaker: 'you' | 'them', seg: Segment): void {
+    if (!this.session.keepTranscript) return
+    this.keptLines.push({ speaker, text: seg.text, t: seg.t })
+    // ~9h of continuous confirmed speech — a leak guard, not a working limit
+    if (this.keptLines.length > 5000) this.keptLines.splice(0, this.keptLines.length - 5000)
+  }
+
+  /** attach the matched phrase to the kept line it fired on, so the recap can
+   *  show why (same annotation the UI ring gets) */
+  noteHighlight(text: string, highlight: string): void {
+    for (let i = this.keptLines.length - 1; i >= 0; i--) {
+      const line = this.keptLines[i]
+      if (line.speaker === 'them' && line.text === text) {
+        if (!line.highlight) line.highlight = highlight
+        return
+      }
+    }
+  }
+
+  /** is the session accepting segments? While paused, only the trailing
+   *  flush of speech from before the pause is let through (REVIEW.md M6) */
+  private accepts(segT: number): boolean {
+    const s = this.session
+    if (s.status === 'listening' || s.status === 'armed') return true
+    return s.status === 'paused' && this.pausedAtSec != null && segT <= this.pausedAtSec + 1
+  }
+
   private onThem(seg: Segment): void {
     if (this.stopped) return
     const s = this.session
-    if (s.status !== 'listening' && s.status !== 'armed') return
+    if (!this.accepts(seg.t)) return
     s.setClock(Math.max(s.clockSec, seg.t))
     s.appendTranscript({ speaker: 'them', text: seg.text, confirmed: seg.confirmed, t: seg.t })
     if (!seg.confirmed) {
       this.onPartial(seg)
       return
     }
+    this.keepLine('them', seg)
     if (s.status === 'armed') s.setStatus('listening')
 
     this.window.push(seg)
@@ -96,17 +155,30 @@ export class SessionEngine {
     }
 
     const entries = this.entries()
-    if (entries.length === 0) return
+    if (entries.length === 0) {
+      // an empty loop still hears questions — the recap must say so rather
+      // than reporting a silent session (REVIEW.md L12)
+      if (questionLike) {
+        this.recordQuestion(null, seg.t, seg.text, false)
+        this.window = [seg]
+      }
+      return
+    }
     const utterance = this.window.map((w) => w.text).join(' ')
     // warm the embedding cache in the background; scoring stays synchronous
     const wasCold =
       this.embeddings != null && this.embeddings.hasProvider && this.embeddings.get(utterance) == null
-    const warm = this.embeddings?.ensure([utterance, ...entries.map((e) => e.question)])
+    const warm = this.embeddings?.ensure([
+      utterance,
+      ...entries.flatMap((e) => [e.question, ...e.triggerPhrases])
+    ])
     this.applyScores(utterance, seg, questionLike, false)
     // once the vectors land, rescore the same window — a cold Dice-only
-    // decision can flip to a confident match seconds before the next segment
+    // decision can flip to a confident match seconds before the next segment.
+    // The rescore respects anything the user resolved by hand in the meantime.
     if (wasCold && warm) {
-      void warm.then(() => this.rescoreIfUnchanged(utterance, seg, questionLike))
+      const resolutionAt = this.resolutionSeq
+      void warm.then(() => this.rescoreIfUnchanged(utterance, seg, questionLike, resolutionAt))
     }
   }
 
@@ -133,7 +205,7 @@ export class SessionEngine {
     const utterance = [...this.window.map((w) => w.text), seg.text].join(' ')
     void this.embeddings?.ensure([utterance, ...entries.flatMap((e) => [e.question, ...e.triggerPhrases])])
 
-    const candidates = this.matcher.score(utterance, entries, this.priors)
+    const candidates = this.matcher.score(utterance, entries, this.priors, isQuestionLike(seg.text))
     const top = candidates[0]
     if (!top || top.entryId === s.match.entryId) return
     const runnerUp = candidates[1]?.score ?? 0
@@ -164,11 +236,19 @@ export class SessionEngine {
     return -Math.min(TUNING.repeatPenaltyMax, n * TUNING.repeatPenalty)
   }
 
-  private rescoreIfUnchanged(utterance: string, seg: Segment, questionLike: boolean): void {
+  private rescoreIfUnchanged(
+    utterance: string,
+    seg: Segment,
+    questionLike: boolean,
+    resolutionAt: number
+  ): void {
     if (this.stopped) return
     const s = this.session
     if (s.status !== 'listening' && s.status !== 'armed') return
     if (s.match.state === 'pinned') return
+    // the user picked or dismissed since this was scored — their call stands
+    // (REVIEW.md M2)
+    if (this.resolutionSeq !== resolutionAt) return
     if (this.window.map((w) => w.text).join(' ') !== utterance) return
     this.applyScores(utterance, seg, questionLike, true)
   }
@@ -186,10 +266,10 @@ export class SessionEngine {
     // sense, okay, so next one" gets averaged into the question's embedding and
     // dilutes it toward nothing in particular.
     const tail = this.questionTail(utterance)
-    let candidates = this.matcher.score(utterance, entries, this.priors)
+    let candidates = this.matcher.score(utterance, entries, this.priors, questionLike)
     let state = this.matcher.classify(candidates)
     if (tail !== utterance) {
-      const tailCandidates = this.matcher.score(tail, entries, this.priors)
+      const tailCandidates = this.matcher.score(tail, entries, this.priors, questionLike)
       if ((tailCandidates[0]?.score ?? 0) > (candidates[0]?.score ?? 0)) {
         candidates = tailCandidates
         state = this.matcher.classify(tailCandidates)
@@ -206,7 +286,8 @@ export class SessionEngine {
             askedAt: seg.t,
             heard: seg.text,
             viaFind: false,
-            candidates
+            candidates,
+            fromRescore: isRescore
           })
         } else {
           // inside the debounce window: defer instead of dropping — a
@@ -217,6 +298,9 @@ export class SessionEngine {
           )
         }
       } else {
+        // newer evidence re-confirmed the current entry — a swap queued for an
+        // older reading is stale now (REVIEW.md H4)
+        this.clearPendingSwap()
         s.setMatch({ candidates, state: 'confident' })
         this.clearAutoPick()
         // the panel was already on this entry because a partial put it there;
@@ -225,20 +309,52 @@ export class SessionEngine {
         this.patchPartialQuestion(seg)
       }
     } else if (state === 'ambiguous' && questionLike) {
+      // a NEWER question is on the table — a swap deferred for the previous
+      // one must not fire over its unsure card (REVIEW.md H4)
+      this.clearPendingSwap()
       const shortlist = this.matcher.shortlist(candidates)
       const wallNow = this.now()
+      // "never" (autoPickSec null) leaves autoPickAt null: the card waits for
+      // a decision rather than committing a leader you were still reading
+      // (REVIEW.md P5)
+      const autoPickSec = useSettingsStore.getState().autoPickSec
+      const keepDeadline = s.match.state === 'ambiguous' && s.match.autoPickAt != null
       s.setMatch({
         state: 'ambiguous',
         candidates: shortlist,
         heard: seg.text,
-        autoPickAt: s.match.state === 'ambiguous' && s.match.autoPickAt ? s.match.autoPickAt : wallNow + TUNING.autoPickSec * 1000
+        stale: false,
+        autoPickAt: keepDeadline
+          ? s.match.autoPickAt
+          : autoPickSec == null
+            ? null
+            : wallNow + autoPickSec * 1000
       })
       this.armAutoPick()
     } else if (state === 'none' && questionLike && !isRescore) {
+      this.clearPendingSwap()
+      // Nothing was good enough to show, but something may have been close.
+      // The shortlist bar is exactly "plausible but not enough", so the best
+      // thing on it is the answer the user probably HAS and the matcher did
+      // not reach — a different problem from having no answer at all, and the
+      // recap is where that distinction is worth something.
+      const nearMiss = this.matcher.shortlist(candidates)[0]?.entryId ?? null
+      // They asked something this bank does not cover. Whatever is on screen
+      // belongs to the PREVIOUS question, so stop it presenting itself as
+      // current — silently. No instruction: at this moment the user is
+      // improvising under someone's gaze and will not read a hint.
+      if (s.match.entryId) s.setMatch({ stale: true })
       // heard a question that hit nothing in the bank — log it for the recap
       // (a warm rescore that still lands on none must not double-record)
-      this.recordQuestion(null, seg.t, seg.text, false)
+      this.recordQuestion(null, seg.t, seg.text, false, false, false, nearMiss)
       this.window = [seg] // start a fresh window at this question
+    }
+  }
+
+  private clearPendingSwap(): void {
+    if (this.pendingSwapTimer) {
+      clearTimeout(this.pendingSwapTimer)
+      this.pendingSwapTimer = null
     }
   }
 
@@ -301,15 +417,20 @@ export class SessionEngine {
   private onYou(seg: Segment): void {
     if (this.stopped) return
     const s = this.session
-    if (s.status !== 'listening' && s.status !== 'armed') return
+    if (!this.accepts(seg.t)) return
     s.setClock(Math.max(s.clockSec, seg.t))
     s.appendTranscript({ speaker: 'you', text: seg.text, confirmed: seg.confirmed, t: seg.t })
     if (!seg.confirmed) return
+    this.keepLine('you', seg)
     this.youSegments.push(seg)
+    this.updateActiveMicSec()
     this.window = [] // speaking is a turn boundary for the interviewer window
 
     const entryId = s.match.entryId
     if (!entryId || (s.match.state !== 'confident' && s.match.state !== 'pinned')) return
+    // improvising an answer to an unmatched question must not strike through
+    // the previous answer's points, or the recap misattributes them
+    if (s.match.stale) return
     const entry = this.entries().find((e) => e.id === entryId)
     if (!entry) return
     const coveredAlready = new Set(s.coverage[entryId] ?? [])
@@ -354,20 +475,20 @@ export class SessionEngine {
       /** an in-flight partial put this on screen; the confirmed text will
        *  arrive shortly and should replace the recorded question wording */
       fromPartial?: boolean
+      /** a warm-embedding rescore of an already-heard window */
+      fromRescore?: boolean
     }
   ): void {
     const s = this.session
     this.clearAutoPick()
-    this.activations.set(entryId, (this.activations.get(entryId) ?? 0) + 1)
+    const priorActivations = this.activations.get(entryId) ?? 0
+    this.activations.set(entryId, priorActivations + 1)
     // any activation that isn't itself a partial ends the wait for one: a swap
     // to a different entry would otherwise leave the old row marked, and the
     // *next* confirmed segment would patch the wrong question's text
     if (!opts.fromPartial) this.partialQuestionId = null
     // any activation supersedes a deferred swap
-    if (this.pendingSwapTimer) {
-      clearTimeout(this.pendingSwapTimer)
-      this.pendingSwapTimer = null
-    }
+    this.clearPendingSwap()
     // highlight the matched phrase on the transcript entry that triggered it
     if (opts.heard) {
       const entry = this.entries().find((e) => e.id === entryId)
@@ -382,15 +503,34 @@ export class SessionEngine {
         updated[realIdx] = { ...updated[realIdx], highlight: phrase ?? undefined }
         useSessionStore.setState({ transcript: updated })
       }
+      if (phrase) this.noteHighlight(opts.heard, phrase)
     }
     s.setMatch({
       state: opts.viaFind ? 'pinned' : 'confident',
       entryId,
       candidates: opts.candidates ?? [],
       autoPickAt: null,
-      heard: null
+      heard: null,
+      stale: false
     })
-    this.recordQuestion(entryId, opts.askedAt, opts.heard, opts.viaFind, opts.fromPartial === true)
+    // the pacing cue is about THIS asking, so the meter restarts here
+    this.activeAskedAt = opts.askedAt
+    s.setActiveMicSec(0)
+    const outcome = this.recordQuestion(
+      entryId,
+      opts.askedAt,
+      opts.heard,
+      opts.viaFind,
+      opts.fromPartial === true,
+      opts.fromRescore === true
+    )
+    // a genuine re-ask starts its coverage from zero: the new recap row (and
+    // the card) mean "covered THIS time", not "covered at some point today"
+    // (REVIEW.md L19)
+    if (outcome === 'created' && priorActivations > 0) {
+      s.resetCoverage(entryId)
+      this.syncActiveQuestion()
+    }
   }
 
   private recordQuestion(
@@ -398,15 +538,25 @@ export class SessionEngine {
     askedAt: number,
     heard: string | null,
     viaFind: boolean,
-    fromPartial = false
-  ): void {
+    fromPartial = false,
+    fromRescore = false,
+    nearMissEntryId: string | null = null
+  ): 'merged' | 'created' {
     const s = this.session
     const entry = entryId ? this.entries().find((e) => e.id === entryId) : null
-    // an activation arriving just after an unmatched question resolves that
-    // question (e.g. ⌘K pin for the thing they just asked) — merge, don't
-    // record a second row
+    // An activation RESOLVING an unmatched question absorbs its row instead of
+    // double-counting: a ⌘K pin for the thing they just asked, or a warm
+    // rescore of the same window. Nothing else merges — an organic match for
+    // the NEXT question used to swallow a genuine not-in-bank question from
+    // the recap (REVIEW.md H3).
     const last = [...s.questions].sort((a, b) => a.askedAtSec - b.askedAtSec).at(-1)
-    if (entry && last && last.entryId == null && askedAt - last.askedAtSec <= 45) {
+    if (
+      entry &&
+      last &&
+      last.entryId == null &&
+      askedAt - last.askedAtSec <= 45 &&
+      (viaFind || fromRescore)
+    ) {
       s.upsertQuestion({
         ...last,
         entryId: entry.id,
@@ -420,7 +570,7 @@ export class SessionEngine {
         coveredCount: (s.coverage[entry.id] ?? []).length,
         totalPoints: entry.points.length
       })
-      return
+      return 'merged'
     }
     const q: SessionQuestion = {
       id: `q-${this.questionSeq++}`,
@@ -429,9 +579,9 @@ export class SessionEngine {
       entryId,
       coveredPointIds: entryId ? (s.coverage[entryId] ?? []) : [],
       totalPoints: entry?.points.length ?? 0,
-      missedLabels: [],
       micSeconds: 0,
-      pinnedViaFind: viaFind
+      pinnedViaFind: viaFind,
+      nearMissEntryId
     }
     s.upsertQuestion(q)
     // a partial's text is half a sentence; remember the row so the confirmed
@@ -445,6 +595,7 @@ export class SessionEngine {
         totalPoints: entry.points.length
       })
     }
+    return 'created'
   }
 
   /** keep the active question's covered list + history in sync mid-answer */
@@ -459,6 +610,18 @@ export class SessionEngine {
       h.entryId === entryId ? { ...h, coveredCount: covered.length } : h
     )
     useSessionStore.setState({ history })
+  }
+
+  /** mic time spent on the entry currently on screen — the same arithmetic
+   *  buildRecord uses for the recap's "ran long" flag, live (REVIEW.md P9) */
+  private updateActiveMicSec(): void {
+    const from = this.activeAskedAt
+    if (from == null) return
+    const mine = this.youSegments.filter((y) => y.t >= from)
+    if (mine.length === 0) return
+    const last = mine[mine.length - 1]
+    const sec = last.t - mine[0].t + estimateSpokenSeconds(last.text)
+    this.session.setActiveMicSec(Math.max(0, Math.round(sec)))
   }
 
   private armAutoPick(): void {
@@ -489,6 +652,11 @@ export class SessionEngine {
 
   pickCandidate(entryId: string): void {
     const m = this.session.match
+    // the countdown drives clicks right at the deadline — if the auto-pick
+    // (or anything else) resolved this first, a late click must not record a
+    // second question row (REVIEW.md M3)
+    if (m.state !== 'ambiguous') return
+    this.resolutionSeq++
     this.activateEntry(entryId, {
       askedAt: this.session.clockSec,
       heard: m.heard,
@@ -498,17 +666,67 @@ export class SessionEngine {
   }
 
   dismissUnsure(): void {
+    this.resolutionSeq++
     this.clearAutoPick()
     const prev = this.session.match.entryId
-    this.session.setMatch({ state: prev ? 'confident' : 'none', candidates: [], heard: null })
+    this.session.setMatch({
+      state: prev ? 'confident' : 'none',
+      candidates: [],
+      heard: null,
+      stale: false
+    })
+  }
+
+  /** Put an entry from EARLIER back on the panel. This is a RECOVERY, not a
+   *  new asking: a wrong swap mid-answer leaves you reading someone else's
+   *  points while the answer you were actually giving sits in the history as
+   *  text you cannot reach. So unlike ⌘K it records no question, resets no
+   *  coverage, and resumes the pacing meter from when that question was
+   *  really asked. */
+  resumeEntry(entryId: string): void {
+    const s = this.session
+    if (s.match.entryId === entryId) return
+    // only something already asked can be resumed — anything else is a pin
+    const row = s.history.find((h) => h.entryId === entryId)
+    if (!row) return
+    this.resolutionSeq++
+    this.clearAutoPick()
+    this.clearPendingSwap()
+    this.partialQuestionId = null
+    s.setMatch({
+      state: 'pinned',
+      entryId,
+      candidates: [],
+      autoPickAt: null,
+      heard: null,
+      stale: false
+    })
+    this.activeAskedAt = row.askedAt
+    s.setActiveMicSec(0)
+    this.updateActiveMicSec()
+    this.syncActiveQuestion()
   }
 
   pinEntry(entryId: string): void {
+    this.resolutionSeq++
     this.activateEntry(entryId, {
       askedAt: this.session.clockSec,
       heard: this.session.match.heard,
       viaFind: true
     })
+  }
+
+  /** the session paused: stop the timers that would otherwise keep resolving
+   *  questions while "not listening" (REVIEW.md M4), and remember the clock so
+   *  the flushed mid-sentence tail is still accepted (REVIEW.md M6) */
+  pause(): void {
+    this.pausedAtSec = this.session.clockSec
+    this.clearAutoPick()
+    this.clearPendingSwap()
+  }
+
+  resume(): void {
+    this.pausedAtSec = null
   }
 
   togglePoint(entryId: string, pointId: string): void {
@@ -530,10 +748,13 @@ export class SessionEngine {
         mine.length === 0
           ? 0
           : Math.round(mine[mine.length - 1].t - mine[0].t + estimateSpokenSeconds(mine[mine.length - 1].text))
-      // privacy: excerpts only when the recap transcript toggle is on
+      // privacy: excerpts only when the recap transcript toggle is on.
+      // Sourced from the engine's own uncapped keep, not the UI's 200-line
+      // ring — the ring emptied the opening questions of any real-length
+      // interview (REVIEW.md H10).
       const transcript = s.keepTranscript
-        ? s.transcript
-            .filter((e) => e.confirmed && e.t >= from && e.t < to)
+        ? this.keptLines
+            .filter((e) => e.t >= from && e.t < to)
             .map((e) => ({ speaker: e.speaker, text: e.text, highlight: e.highlight }))
         : undefined
       return { ...q, micSeconds, transcript }
@@ -542,7 +763,9 @@ export class SessionEngine {
       id: `session-${startedAt}`,
       loopId: s.loopId ?? '',
       startedAt,
-      endedAt: startedAt + s.clockSec * 1000,
+      // wall clock, not the audio clock: the audio clock stops during pauses
+      // and silence, so it under-reported the recap's "N MINUTES" (REVIEW.md L22)
+      endedAt: Math.max(startedAt, this.now()),
       transcriptKept: s.keepTranscript,
       questions: finalized,
       ...(incomplete ? { incomplete: true } : {})
@@ -560,23 +783,41 @@ export class SessionEngine {
     const record = this.buildRecord(false)
     s.setLastSession(record)
     s.setStatus('idle')
-    await api.sessions.save(record)
-    // stamp lastUsed on every matched entry
-    const bankState = useBankStore.getState()
-    const loop = bankState.bank?.loops.find((l) => l.id === record.loopId)
-    const date = new Date(record.endedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-    for (const q of record.questions) {
-      if (q.entryId) {
-        void bankState.markLastUsed(q.entryId, {
-          loopName: loop?.shortName ?? 'session',
-          date,
-          covered: q.coveredPointIds.length,
-          total: q.totalPoints
-        })
+    // practice AND the scripted dry run: neither may touch sessions.json or
+    // stamp lastUsed on real bank entries
+    const practice = s.ephemeral
+    try {
+      // a disk error here used to strand the app on the live view with the
+      // mic still hot: no recap, no capture teardown (REVIEW.md M5). The recap
+      // opens from memory regardless; the failure is reported on it.
+      // A practice run writes nothing at all (REVIEW.md P10).
+      if (!practice) await api.sessions.save(record)
+      s.setSaveError(null)
+    } catch (err) {
+      s.setSaveError(
+        `This session could not be saved — ${err instanceof Error ? err.message : String(err)}. ` +
+          'The recap below is from memory; export it before closing the app.'
+      )
+    } finally {
+      // stamp lastUsed on every matched entry (persist() surfaces any
+      // failure). Rehearsing is not "last used in an interview", so a
+      // practice run stamps nothing.
+      const bankState = useBankStore.getState()
+      const loop = bankState.bank?.loops.find((l) => l.id === record.loopId)
+      const date = new Date(record.endedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+      for (const q of record.questions) {
+        if (q.entryId && !practice) {
+          void bankState.markLastUsed(q.entryId, {
+            loopName: loop?.shortName ?? 'session',
+            date,
+            covered: q.coveredPointIds.length,
+            total: q.totalPoints
+          })
+        }
       }
+      usePanelStore.getState().setView('recap')
+      usePanelStore.getState().setCollapsed(false)
     }
-    usePanelStore.getState().setView('recap')
-    usePanelStore.getState().setCollapsed(false)
     return record
   }
 }

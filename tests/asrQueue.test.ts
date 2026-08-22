@@ -74,15 +74,31 @@ describe('AsrQueue', () => {
     expect(ids(q)).toEqual(['theirs', 'yours'])
   })
 
-  it('sheds the least urgent job when it overflows, not the oldest', () => {
+  it('sheds the least urgent job when it overflows, not the plain oldest', () => {
     // the single-stream version dropped the plain oldest, which here would
-    // throw away the interviewer's question to keep an answer of your own
+    // throw away the interviewer's question to keep an answer of your own.
+    // Within the least-urgent rank the OLDEST goes (see the next test).
     const q = new AsrQueue<Job>(2)
     q.push(job('theirs', 'them'))
     q.push(job('yours-1', 'you'))
     const r = q.push(job('yours-2', 'you'))
-    expect(r.dropped.map((d) => d.id)).toEqual(['yours-2'])
-    expect(ids(q)).toEqual(['theirs', 'yours-1'])
+    expect(r.dropped.map((d) => d.id)).toEqual(['yours-1'])
+    expect(ids(q)).toEqual(['theirs', 'yours-2'])
+  })
+
+  it('under a same-rank backlog, sheds the oldest and keeps the live edge (REVIEW.md H6)', () => {
+    // decode slower than real time during an interviewer monologue: the queue
+    // fills with confirmed-them jobs. Popping the newest meant the question
+    // being asked RIGHT NOW was discarded to keep minute-old audio.
+    const q = new AsrQueue<Job>(4)
+    q.push(job('them-1', 'them'))
+    q.push(job('them-2', 'them'))
+    q.push(job('them-3', 'them'))
+    q.push(job('them-4', 'them'))
+    const r = q.push(job('them-5-current-question', 'them'))
+    expect(r.queued).toBe(true)
+    expect(r.dropped.map((d) => d.id)).toEqual(['them-1'])
+    expect(ids(q)).toEqual(['them-2', 'them-3', 'them-4', 'them-5-current-question'])
   })
 
   it('shifts in priority order', () => {

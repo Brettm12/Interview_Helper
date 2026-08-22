@@ -29,13 +29,20 @@ try {
   await page.getByText('no story yet — fix now').waitFor()
   stage('setup renders with loop + warning stat')
 
-  await page.locator('.setup-toggle').click()
+  await page.locator('.setup-toggle--transcript').click()
   if (!(await page.locator('.setup-toggle--on').count())) throw new Error('transcript toggle did not turn on')
   stage('transcript toggle on')
 
   await page.locator('.setup-cta:not(.setup-cta--disabled)').waitFor()
   stage('both sources report a level → Start enabled')
-  await page.locator('.setup-cta').click()
+
+  // REVIEW.md P8: the primary control has to be reachable and operable from
+  // the keyboard — it was a plain div, so it was neither. Focus it and press
+  // Enter rather than clicking.
+  const ctaTag = await page.locator('.setup-cta').evaluate((el) => el.tagName)
+  if (ctaTag !== 'BUTTON') throw new Error(`Start listening is a <${ctaTag}>, not a button`)
+  await page.locator('.setup-cta').focus()
+  await page.keyboard.press('Enter')
 
   await page.getByText('ARMED · WAITING FOR THEM').waitFor()
   stage('armed card')
@@ -45,6 +52,19 @@ try {
   await page.keyboard.press('Escape')
   await page.locator('.find-overlay').waitFor({ state: 'detached' })
   stage('⌘K toggles find while armed')
+
+  // REVIEW.md C5: clicking a row that is NOT the current selection must pin
+  // THAT row — the old handler pinned whatever was selected before the click
+  await page.keyboard.press('Control+k')
+  await page.locator('.find-overlay').waitFor()
+  await page.keyboard.type('policy')
+  // 'rolling out a policy…' ranks first (selected); click the bend row below
+  await page.locator('.find-row', { hasText: 'bend a policy' }).click()
+  await page.locator('.find-overlay').waitFor({ state: 'detached' })
+  await page
+    .locator('.live-question', { hasText: 'What would you do if leadership asked you to bend a policy?' })
+    .waitFor({ timeout: 10000 })
+  stage('clicking a non-selected find row pinned that row (C5)')
 
   await page
     .getByText('Tell me about a time you handled a difficult employee relations case.')
@@ -61,12 +81,34 @@ try {
   await page.locator('.autopick-track').waitFor()
   stage(`unsure state with ${candidates} candidates + auto-pick bar`)
 
-  // auto-pick commits the leader into the matched panel (question in the
-  // live-question node, not just a candidate card)
+  // REVIEW.md P1: pressing 1 commits the leader without waiting out the
+  // countdown or reaching for the mouse. (The 4s auto-pick itself is covered
+  // over this same fixture in tests/engine.test.ts.)
+  await page.keyboard.press('1')
   await page
     .locator('.live-question', { hasText: 'Walk me through how you run a harassment investigation.' })
     .waitFor({ timeout: 15000 })
-  stage('auto-pick committed the leader')
+  stage('keyboard pick (1) committed the leader')
+
+  // The way back from a wrong swap: EARLIER rows re-pin that answer. The
+  // engine side is covered in tests/engine.test.ts; this is here because the
+  // failure mode is a handler that never reaches the real DOM.
+  const earlier = page.locator('.live-earlier__row', { hasText: 'employee relations' }).first()
+  await earlier.waitFor({ timeout: 20000 })
+  await earlier.click()
+  await page
+    .locator('.live-question', {
+      hasText: 'Tell me about a time you handled a difficult employee relations case.'
+    })
+    .waitFor({ timeout: 10000 })
+  stage('EARLIER row resumed the answer, without ⌘K')
+
+  // hand the panel back to where the fixture left it, from the other side
+  await page.locator('.live-earlier__row', { hasText: 'harassment investigation' }).first().click()
+  await page
+    .locator('.live-question', { hasText: 'Walk me through how you run a harassment investigation.' })
+    .waitFor({ timeout: 10000 })
+  stage('and back again — the history works both ways')
 
   await page.locator('.find-overlay').waitFor({ timeout: 90000 })
   stage('fixture opened find')
@@ -109,6 +151,39 @@ try {
   )
   if (sessions !== 1) throw new Error(`expected 1 persisted session, got ${sessions}`)
   stage('lastUsed stamped + session persisted')
+
+  // ---- prep-time help, on the way out --------------------------------------
+  // Back into the recap (⌘⇧R), draft an answer from a question that did not
+  // match, and let the app cut what was actually said into points. Extractive
+  // on purpose — every generated word here would be a word the user never
+  // said, and they would say it in the room.
+  await page.keyboard.press('Control+Shift+R')
+  await page.getByText('QUESTION BY QUESTION').waitFor({ timeout: 15000 })
+  await page.locator('.recap-row__add').first().click()
+  await page.locator('.editor-pane').waitFor()
+  const excerptLines = await page.locator('.editor-excerpt__line').allTextContents()
+  if (excerptLines.length === 0) throw new Error('the editor got no excerpt to work from')
+  stage(`editor opened on the excerpt (${excerptLines.length} lines of your own)`)
+
+  const said = excerptLines.join(' ').toLowerCase()
+  const before = await page.locator('.editor-point__input').count()
+  await page.locator('.editor-excerpt__condense').click()
+  await page.waitForFunction(
+    (n) => document.querySelectorAll('.editor-point__input').length > n,
+    before,
+    { timeout: 20000 }
+  )
+  const points = await page.locator('.editor-point__input').evaluateAll((els) =>
+    els.map((el) => el.value)
+  )
+  const made = points.slice(before)
+  if (made.length === 0) throw new Error('condense produced nothing')
+  for (const point of made) {
+    for (const word of point.toLowerCase().match(/[a-z']{4,}/g) ?? []) {
+      if (!said.includes(word)) throw new Error(`"${word}" is not a word they said: "${point}"`)
+    }
+  }
+  stage(`${made.length} points made from their own words, nothing invented`)
 
   console.log('\nE2E PASS')
 } catch (err) {

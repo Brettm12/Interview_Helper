@@ -25,6 +25,11 @@ export interface MatchSlice {
   autoPickAt: number | null
   /** the phrase that led to the unsure state, quoted in the UI */
   heard: string | null
+  /** a question was heard that matched nothing, and the entry still on screen
+   *  is from the PREVIOUS question. The card must stop presenting itself as
+   *  current, and your improvised words must stop striking through its
+   *  points — the panel used to look like it was tracking you. */
+  stale: boolean
 }
 
 export interface HistoryRow {
@@ -42,9 +47,21 @@ interface SessionState {
   /** session clock in seconds (fixture-driven in mock, wall-clock in real) */
   clockSec: number
   keepTranscript: boolean
+  /** rehearsing one answer against the real mic. Practice runs never reach
+   *  sessions.json: an evening of rehearsal must not dilute the interview
+   *  history, or shadow a real recap at boot (REVIEW.md P10). */
+  practiceEntryId: string | null
+  /** this session must never be written to disk. True for practice AND for
+   *  the scripted dry run, which used to save a fake record and stamp
+   *  lastUsed on real bank entries with the fixture's coverage numbers. */
+  ephemeral: boolean
 
   transcript: TranscriptEntry[]
   match: MatchSlice
+  /** seconds of your own mic time on the entry currently on screen. The
+   *  recap already flags an answer that ran long — but only once it can no
+   *  longer help (REVIEW.md P9). */
+  activeMicSec: number
   /** entryId → covered point ids (never shrinks automatically) */
   coverage: Record<string, string[]>
   history: HistoryRow[]
@@ -52,22 +69,42 @@ interface SessionState {
   questions: SessionQuestion[]
   /** finished record, feeds the recap screen */
   lastSession: SessionRecord | null
+  /** the final save failed — the recap shows this instead of pretending the
+   *  record is on disk (REVIEW.md M5) */
+  saveError: string | null
 
-  arm(loopId: string, keepTranscript: boolean): void
+  arm(
+    loopId: string,
+    keepTranscript: boolean,
+    practiceEntryId?: string | null,
+    ephemeral?: boolean
+  ): void
   setStatus(s: SessionStatus): void
   setClock(sec: number): void
+  setActiveMicSec(sec: number): void
   appendTranscript(e: TranscriptEntry): void
   setMatch(m: Partial<MatchSlice>): void
   coverPoints(entryId: string, pointIds: string[]): void
   /** manual click-to-toggle — the one path that may un-cover */
   togglePoint(entryId: string, pointId: string): void
+  /** a genuine re-ask of an entry starts its coverage over — "covered THIS
+   *  time", not "covered at some point today" */
+  resetCoverage(entryId: string): void
   pushHistory(row: HistoryRow): void
   upsertQuestion(q: SessionQuestion): void
   setLastSession(s: SessionRecord | null): void
+  setSaveError(message: string | null): void
   reset(): void
 }
 
-const EMPTY_MATCH: MatchSlice = { state: 'none', entryId: null, candidates: [], autoPickAt: null, heard: null }
+const EMPTY_MATCH: MatchSlice = {
+  state: 'none',
+  entryId: null,
+  candidates: [],
+  autoPickAt: null,
+  heard: null,
+  stale: false
+}
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   status: 'idle',
@@ -75,20 +112,28 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   startedAt: null,
   clockSec: 0,
   keepTranscript: false,
+  practiceEntryId: null,
+  ephemeral: false,
+  activeMicSec: 0,
   transcript: [],
   match: EMPTY_MATCH,
   coverage: {},
   history: [],
   questions: [],
   lastSession: null,
+  saveError: null,
 
-  arm: (loopId, keepTranscript) =>
+  arm: (loopId, keepTranscript, practiceEntryId = null, ephemeral = practiceEntryId != null) =>
     set({
+      saveError: null,
       status: 'armed',
       loopId,
       keepTranscript,
+      practiceEntryId,
+      ephemeral,
       startedAt: Date.now(),
       clockSec: 0,
+      activeMicSec: 0,
       transcript: [],
       match: EMPTY_MATCH,
       coverage: {},
@@ -98,6 +143,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   setStatus: (status) => set({ status }),
   setClock: (clockSec) => set({ clockSec }),
+  setActiveMicSec: (activeMicSec) => set({ activeMicSec }),
 
   appendTranscript: (e) =>
     set((s) => {
@@ -127,6 +173,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       return { coverage: { ...s.coverage, [entryId]: [...cur] } }
     }),
 
+  resetCoverage: (entryId) =>
+    set((s) => ({ coverage: { ...s.coverage, [entryId]: [] } })),
+
   pushHistory: (row) => set((s) => ({ history: [row, ...s.history] })),
 
   upsertQuestion: (q) =>
@@ -139,13 +188,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }),
 
   setLastSession: (lastSession) => set({ lastSession }),
+  setSaveError: (saveError) => set({ saveError }),
 
   reset: () =>
     set({
       status: 'idle',
       loopId: null,
+      practiceEntryId: null,
+      ephemeral: false,
       startedAt: null,
       clockSec: 0,
+      activeMicSec: 0,
       transcript: [],
       match: EMPTY_MATCH,
       coverage: {},

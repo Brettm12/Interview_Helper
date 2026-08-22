@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import './primitives.css'
 
@@ -103,14 +104,15 @@ export function StatCard({
   onClick?: () => void
 }) {
   return (
-    <div
+    <button
+      type="button"
       className={warning ? 'stat-card stat-card--warn' : 'stat-card'}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
     >
       <div className="stat-card__num">{number}</div>
       <div className="stat-card__caption">{caption}</div>
-    </div>
+    </button>
   )
 }
 
@@ -166,8 +168,8 @@ export function PointRow({
   text: string
   onClick?: () => void
 }) {
-  return (
-    <div className={`point-row point-row--${state}`} onClick={onClick}>
+  const inner = (
+    <>
       {state === 'covered' ? (
         <div className="point-row__check">✓</div>
       ) : (
@@ -180,7 +182,18 @@ export function PointRow({
         />
       )}
       <div className="point-row__text pretty">{text}</div>
-    </div>
+    </>
+  )
+  const className = `point-row point-row--${state}`
+  // interactive only where it does something: the live panel's click-to-
+  // toggle. In the bank detail a point is prose, and a button there would be
+  // a tab stop that goes nowhere (REVIEW.md P8).
+  return onClick ? (
+    <button type="button" className={className} onClick={onClick}>
+      {inner}
+    </button>
+  ) : (
+    <div className={className}>{inner}</div>
   )
 }
 
@@ -196,20 +209,72 @@ export function PhraseChip({
   onRemove?: () => void
   onClick?: () => void
 }) {
+  const className = dashed ? 'phrase-chip phrase-chip--dashed' : 'phrase-chip'
+  // the two interactive variants are mutually exclusive: the dashed "add"
+  // chip is itself the control, while a removable chip carries a × button.
+  // Nesting one inside the other would be invalid (REVIEW.md P8).
+  if (onClick) {
+    return (
+      <button type="button" className={className} onClick={onClick}>
+        {children}
+      </button>
+    )
+  }
   return (
-    <div className={dashed ? 'phrase-chip phrase-chip--dashed' : 'phrase-chip'} onClick={onClick}>
+    <div className={className}>
       {children}
       {onRemove && (
-        <span
+        <button
+          type="button"
           className="phrase-chip__x"
+          aria-label="Remove phrase"
           onClick={(e) => {
             e.stopPropagation()
             onRemove()
           }}
         >
           ×
-        </span>
+        </button>
       )}
     </div>
+  )
+}
+
+/** Two-press destructive action: the first press arms and re-labels itself,
+ *  the second one commits, and it disarms after a few seconds on its own.
+ *  Same shape as Esc-to-discard in the editor — no modal to hunt for, and no
+ *  dialog that can eat a keystroke meant for something else. */
+export function ConfirmButton({
+  label,
+  confirmLabel,
+  onConfirm,
+  className = 'action'
+}: {
+  label: string
+  confirmLabel: string
+  onConfirm: () => void
+  className?: string
+}) {
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (!armed) return
+    const id = window.setTimeout(() => setArmed(false), 2500)
+    return () => window.clearTimeout(id)
+  }, [armed])
+  return (
+    <button
+      type="button"
+      className={armed ? `${className} confirm--armed` : className}
+      onClick={() => {
+        if (armed) {
+          setArmed(false)
+          onConfirm()
+        } else {
+          setArmed(true)
+        }
+      }}
+    >
+      {armed ? confirmLabel : label}
+    </button>
   )
 }

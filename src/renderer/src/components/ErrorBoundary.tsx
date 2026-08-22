@@ -2,6 +2,7 @@ import { Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { useBankStore } from '../state/bankStore'
 import { useSessionStore } from '../state/sessionStore'
+import { api } from '../lib/api'
 
 // The worst failure mode is a white screen mid-interview. This boundary reads
 // the stores imperatively (zustand state survives a render crash) and falls
@@ -26,6 +27,27 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, St
 
   render(): ReactNode {
     if (!this.state.error) return this.props.children
+
+    // The 366×39 strip window can't fit the panel fallback — it rendered one
+    // clipped line with the recovery buttons out of reach (REVIEW.md L7).
+    // One line, one action: get the full panel back.
+    if (new URLSearchParams(window.location.search).get('window') === 'strip') {
+      return (
+        <button
+          type="button"
+          style={{
+            padding: '10px 12px',
+            font: '500 12.5px/1.3 var(--font-ui)',
+            color: 'var(--status-attention)',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap'
+          }}
+          onClick={() => void api.strip.expand()}
+        >
+          Strip hit an error — click to reopen the panel
+        </button>
+      )
+    }
 
     const session = useSessionStore.getState()
     const bank = useBankStore.getState().bank

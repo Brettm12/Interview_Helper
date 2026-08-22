@@ -30,15 +30,26 @@ export class EmbeddingCache {
     return this.vectors.get(text) ?? null
   }
 
-  /** kick off embedding for any uncached texts; resolves when all present */
+  /** Kick off embedding for any uncached texts; resolves when every request
+   *  has settled — never rejects. A failed batch leaves its texts uncached
+   *  (scorers fall back to lexical) and, crucially, un-pended, so the next
+   *  ensure() retries them instead of waiting forever on a promise that will
+   *  never settle (REVIEW.md C8). */
   async ensure(texts: string[]): Promise<void> {
     if (!this.provider) return
     const missing = texts.filter((t) => !this.vectors.has(t) && !this.pending.has(t))
     if (missing.length > 0) {
-      const p = this.provider.embed(missing).then((vecs) => {
-        missing.forEach((t, i) => this.vectors.set(t, vecs[i]))
-        missing.forEach((t) => this.pending.delete(t))
-      })
+      const p = this.provider
+        .embed(missing)
+        .then((vecs) => {
+          missing.forEach((t, i) => {
+            if (vecs[i]) this.vectors.set(t, vecs[i])
+          })
+        })
+        .catch(() => {})
+        .finally(() => {
+          missing.forEach((t) => this.pending.delete(t))
+        })
       missing.forEach((t) => this.pending.set(t, p))
     }
     await Promise.all(texts.map((t) => this.pending.get(t)).filter(Boolean))

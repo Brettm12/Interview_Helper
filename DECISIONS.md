@@ -85,9 +85,11 @@ README prose and the reference HTML differ, the HTML won, per the brief.
   (the mock inlines the focused state).
 - Drag-reorder arms on mousedown on the ⠿ handle only, so text selection
   inside the point input still works.
-- "Practice" (bank detail) and "Dry run · 2 min" (setup) both start the
-  scripted mock session — that is what a dry run is, and it works with no
-  hardware.
+- "Dry run · 2 min" (setup) starts the scripted mock session — that is what a
+  dry run is, and it works with no hardware. "Practice" (bank detail) used to
+  do the same, which meant you could watch a demo of someone else's interview
+  but never rehearse your own answer; it now arms the real microphone against
+  that one entry (see the Part 2 round below).
 - Backspace in an empty point input deletes the row.
 
 ## Setup
@@ -261,7 +263,7 @@ README prose and the reference HTML differ, the HTML won, per the brief.
   `package.json` rather than hard-coding a path, so the CLI and the app agree
   on where models live — verified end to end (the app reported the exact
   directory the script wrote to).
-- **`@xenova/transformers` is a devDependency, not a runtime one.** Vite
+- **transformers.js is a devDependency, not a runtime one.** Vite
   bundles it into the renderer chunk at build time (1.4MB), so nothing
   imports it at runtime. Keeping it in `dependencies` dragged ~200MB of
   unused native ONNX builds and `sharp` into the package and triggered a
@@ -356,11 +358,29 @@ window lifecycle.
   the threshold speech has to clear, segments transcribed, model state and
   the last few lines heard — with one plain-language verdict on top. The mic
   bug was invisible precisely because nothing reported any of this.
-- **base.en is the default speech model**, with the tier a persisted setting
-  and only the selected one downloaded. A word Whisper drops is a question the
-  matcher scores wrong, and a panel on the wrong answer costs more than
-  100MB. If the selected tier fails to load the worker falls back to tiny.en
-  and says so, because silence is the failure this whole round is about.
+- **base.en is the speech model, and there is no picker.** tiny.en used to sit
+  beside it on the setup screen, described honestly as "misses more words" —
+  which makes it an offer to trade away the thing the product is for. It is
+  still downloaded, still the automatic fallback when base.en cannot be loaded,
+  and still named honestly in ⌘⇧D when it is what is running; it is simply not
+  a choice on a screen. A word Whisper drops is a question the matcher scores
+  wrong, and the measurement that closed this question is in the round below: a
+  mangled transcript costs more match score than the entire spread between
+  three encoders.
+- **The size the picker quoted was the whole install.** "~145 MB" for base.en
+  was base.en *plus* tiny.en *plus* MiniLM, attributed to one tier — so the
+  choice looked like it saved 105MB when it saved 34. Sizes now come with a
+  test that reads the manifest and fails if a quoted number drifts from the
+  bytes actually downloaded.
+- **A stored tier that is no longer offered is migrated on read.** Both read
+  sites, not just load: `updateSettings` read-merge-writes, so migrating only
+  on load would let the next strip drag write the stale model straight back.
+- **The speech model is never swapped while a session runs.** The engine closes
+  over the transcription service's transcribers, and a disposed service
+  swallows pushes in silence rather than throwing — so a mid-interview swap
+  would not change models, it would end transcription for the rest of the
+  session under a live-green dot. `ensureModels()` refuses; the change lands at
+  the next arm.
 - **Quitting exists.** Every window is frameless, so there was no close
   button anywhere, no menu, no tray, and no quit shortcut — and `showStrip`
   hid the main window rather than closing it, so destroying the strip left a
@@ -435,6 +455,307 @@ first build and were invisible because nothing measured them.
   is written until the preview has been seen: merging pasted text blind into
   someone's prepared material the night before an interview is not a mistake
   they can undo.
+
+## Post-review round
+
+Calls made while fixing the findings of the full-codebase review (REVIEW.md);
+the review's finding IDs are the cross-reference.
+
+- **⌘K steals focus, deliberately (C1).** The find overlay needs real keyboard
+  focus or everything typed lands in the meeting app — which is worse than the
+  interviewer seeing a brief window flash. Closing the overlay (Esc, pin,
+  click-away) blurs the panel so keys drift back toward the meeting. The
+  no-focus-steal rule everywhere else stands; find is the one exception.
+- **The trigger boost is a disambiguator, not a conjurer (C7).** A trigger
+  phrase can lift a plausible semantic match over the confidence bar, but can
+  no longer put a card up on its own: boosted scores cap at the ambiguous band
+  unless the utterance also reads as a question. Triggers exist to break ties
+  between entries the interviewer is plausibly asking about — hearing "your
+  manager" in a war story should never claim a match.
+- **Thresholds come from measurement, not intuition (H1).** The confident/
+  ambiguous bars are now pinned by `tests/calibration.real.test.ts`, which runs
+  honest paraphrases, off-bank questions and trigger-abuse utterances against
+  the real MiniLM. Any future retune has to keep that suite green; symbolic
+  unit tests alone cannot catch thresholds that are consistently wrong.
+- **Coverage has its own calibration, and it is asymmetric.**
+  `tests/coverage.real.test.ts` scores spoken deliveries of the seed points
+  against the real embedder. A missed point leaves something on the card you
+  have already said; a false strike-through hides something you have *not*
+  said and you leave the interview without having made it. So the fixtures
+  assert exactly which points a delivery may cover — including that it strikes
+  nothing on any other answer — and the suite prints the two score
+  populations, because an encoder that cannot separate them at all cannot be
+  fixed by moving a threshold.
+- **The transcript is a variable, not a constant.** The clean fixtures are
+  prose; Whisper is not. `mangled` in the paraphrase fixture carries dropped
+  question marks, run-ons, disfluencies and mishearings, tested as invariants
+  against their own clean wording rather than as new absolute bars: the match
+  may weaken, but it may not vanish, lose the entry off the shortlist, or turn
+  confidently wrong. Measured today, a run-on or a disfluency costs about
+  0.10–0.15 of score — enough on its own to push a question from the confident
+  card onto the unsure one. That is a transcript problem, and no encoder swap
+  fixes it.
+- **The inference library moved from `@xenova/transformers` 2.17 to
+  `@huggingface/transformers` 3.8.1**, so that a modern instruct model is even
+  loadable: the old one could take a single self-contained int8 `.onnx` under
+  2 GB, on an ONNX Runtime from February 2023, with no WebGPU, no 4-bit
+  weights, no external-data files, and no support for any architecture newer
+  than 2023. It runs the interview, so it landed as its own change with every
+  existing gate green and nothing else in it.
+
+  What it cost, in order of how long each took to find:
+  - The new library defaults `allowLocalModels` to **false** in a browser
+    context. Setting only `allowRemoteModels = false`, as before, leaves both
+    disabled and it refuses to load anything: "both local and remote models are
+    disabled". The offline probe caught it; nothing else would have.
+  - Quantization is no longer the default. The old library loaded
+    `model_quantized.onnx` unless told otherwise; the new one wants an explicit
+    `dtype`, and an omitted one asks for an fp32 file that was never
+    downloaded. Every pipeline call now names `dtype: 'q8'`.
+  - The runtime's WebAssembly moved from four feature-detected binaries to one
+    that degrades internally, under new names and a new `wasmPaths` shape.
+  - `onnxruntime-web` 1.22 does not export its `.wasm` as a package subpath, so
+    the build reaches it through a path alias, and it is a direct devDependency
+    pinned to the exact version transformers.js loads. A binary from a
+    different runtime than the JS expects is not a build error — it is a
+    session that fails to create, offline, on the user's machine, with the
+    interview about to start. `tests/inferenceStack.test.ts` fails if the two
+    drift.
+
+  **4.2.0 was tried first and rejected on evidence.** Its ONNX Runtime
+  (1.26-dev) cannot create a session from the quantized Whisper decoders — not
+  the ones we ship and not the current re-exports either: "Missing required
+  scale ... for node model.decoder.embed_tokens.weight_transposed_
+  DequantizeLinear". MiniLM was fine; transcription was dead. 3.8.1 runs the
+  existing model files unchanged, and still brings 4-bit weights, WebGPU,
+  external data and the current architectures.
+
+  The proof that matching did not move is the strongest available: the encoder
+  and coverage reports are **byte-identical** to the ones taken on the old
+  library — same distributions, same d′, same headroom, same word errors — so
+  not one threshold needed a second look.
+- **The prep-time model was measured, and the job shipped without it.** The
+  ask was "compress my own rambling into points I could say". Three candidates
+  small enough to install were run against a real spoken answer
+  (`tools/spike/llm-spike.mjs`, onnxruntime-node — the app's wasm path is
+  slower still):
+
+  | | on disk | generate | peak RSS | what it said |
+  |---|---|---|---|---|
+  | flan-t5-small | 93MB | 0.3s | 620MB | invented a "sex scandal" that is nowhere in the transcript |
+  | LaMini-Flan-T5-248M | 265MB | 1.8s | 1400MB | refused the task as "inappropriate and offensive"; on a second prompt, inverted a fact (said the supervisor had a history of suspending people — the opposite of what was said) |
+  | Qwen1.5-0.5B-Chat | 467MB | 10.9s | 2261MB | best of the three: two faithful lines, one invented ("I wrote each one up as if they were going to happen at any time") |
+  | **extractive, on the encoder already installed** | **0MB** | **0.03s** | **210MB** | three of the speaker's own sentences, trimmed |
+
+  Every model at this size invented something about the user's own
+  experience. A fabricated detail in prep material is worse than no prep
+  material: you rehearse it, and then you say it in the room, about your own
+  career, to someone who may check. So the feature ships extractive — it cuts
+  the user's own clauses, ranks them by what they carry, and drops the ones
+  that say nothing. Every word it returns is a word they said, by
+  construction, and it costs nothing to download and 40ms to run.
+
+  The spike is committed. If a better candidate appears, the comparison is one
+  command; the bar it has to clear is on this table.
+- **The writing model was asked for, built a gate for, and still did not
+  ship.** With the library upgraded, the best candidate inside the agreed
+  budget — Qwen2.5-1.5B-Instruct at 4-bit with fp16 activations, 1.18 GB —
+  was measured against a gate written before the run: a generated line passes
+  only if every content word in it was said (stems compared), every number in
+  it was said, it does not flip a negation, and it sits within 0.6 cosine of
+  something actually said. The bar for shipping was 90% of lines passing.
+
+  | prompt | lines passing | cost |
+  |---|---|---|
+  | plain ask | 0/3 | 23.8s, 5.3 GB peak |
+  | "use only facts and words below" | 0/3 | 10.9s |
+  | few-shot, *showing* it the copy operation | 1/5 | 21.1s |
+  | **the extractive helper that ships** | **3/3** | **0.04s, 0 MB extra** |
+
+  The failures are not pedantry. It wrote "each interview was documented
+  immediately to avoid hindsight bias" (nobody said hindsight bias), "wrote
+  down **decisions** as they happened" (they wrote up *interviews*), "I focused
+  on avoiding any appearance of guilt" (the speaker said *suspension* reads as
+  guilt — the model moved the guilt onto them), and "the site's history made
+  things challenging", which is editorial invention. Forgiving the two pure
+  synonym swaps still leaves 60% against a 90% bar.
+
+  It also cost 21 seconds per request under native ONNX Runtime, where the app
+  runs wasm and would be several times slower, and 5.4 GB of peak memory on a
+  machine that will be running a video call. It fails on fidelity, on memory
+  and on speed at once — and it is competing with something that takes 40
+  milliseconds, downloads nothing and cannot invent anything by construction.
+
+  The gate stays in `tools/spike/llm-spike.mjs`. It is the artifact that makes
+  the answer re-checkable rather than an opinion: when a model can pass it, the
+  question can be re-opened in one command.
+- **The prep-time helper cannot receive interviewer speech, structurally.**
+  Not by policy — by plumbing. The only text that reaches it is the excerpt
+  the recap builds, and that is filtered to `speaker === 'you'` at the source.
+  `tests/condense.test.ts` drives a transcript with interviewer lines in it
+  through the real path and fails if any of them arrive; the e2e does the same
+  against the running app, and additionally fails if any word in the generated
+  points is a word the user never said.
+- **A bigger encoder was measured and declined.** bge-small-en-v1.5 and
+  gte-small (both ~+11MB over MiniLM, quantized ONNX) were scored against the
+  same fixtures by `tests/encoder.real.test.ts`, which reports only
+  threshold-free numbers — d′, pair-ordering, and the best bar each encoder
+  could possibly have — because a comparison made at MiniLM's thresholds
+  would just be measuring MiniLM's thresholds.
+
+  | | MiniLM | bge-small | gte-small |
+  |---|---|---|---|
+  | matching d′ | **2.58** | 2.38 | 1.92 |
+  | right entry top-1 | **23/26** | 21/26 | 21/26 |
+  | right entry top-3 | 26/26 | 26/26 | 26/26 |
+  | coverage d′ | **7.26** | 6.29 | 7.01 |
+  | coverage headroom | **0.112** | 0.107 | 0.034 |
+
+  Every population is perfectly orderable under all three (pair-ordering
+  100%), so the difference is entirely in the margins — and MiniLM has the
+  widest ones. The candidates also compress everything upward: gte's
+  "never said it" median sits at 0.781 against MiniLM's 0.160, which is the
+  failure the review's critique predicted — not "quality regresses" but
+  "everything becomes ambiguous", silently, on a green build. Swapping would
+  cost +11MB, a re-derivation of all ten constants and a fallback path, for no
+  measured gain on this bank. The suite stays, so the question can be re-asked
+  against a different bank or a different candidate in one command.
+- **A bigger speech model was measured and declined too.** The transcript is
+  the bottleneck, so the transcriber is where an upgrade would pay — if it
+  could be afforded. `tools/spike/whisper-spike.mjs` measured the two
+  candidates that exist in this stack's file layout, each in its own process
+  (the first attempt loaded all three into one and reported memory figures that
+  meant nothing):
+
+  | | on disk | 8s partial window | peak RSS | word errors |
+  |---|---|---|---|---|
+  | `whisper-base.en` (incumbent) | 75 MB | **2.82s** | 1388 MB | **0.0%** |
+  | `distil-whisper/distil-small.en` | 167 MB | 6.24s (2.21×) | 2374 MB | 31.8% |
+  | `Xenova/whisper-small.en` | 240 MB | 6.35s (2.25×) | 2730 MB | 0.0% |
+
+  The bar came from `tuning.ts` before any number was taken: a partial covers
+  8 seconds and is produced every 1.6, so an 8-second clip has to decode in
+  under 1.6 or the early card stops being early. Both candidates cost about
+  **2.2× the incumbent** at exactly that window — a floor, since the app runs
+  wasm and this ran native — and about **+1 GB of RSS**, on a machine that will
+  also be running a video call.
+
+  The accuracy case never arrived to argue against the cost. distil-small.en
+  was measurably *worse*: it dropped half a sentence ("ask not what your
+  country can do **for your country**"). small.en matched the incumbent
+  exactly — which is what a ceiling looks like, not what an improvement looks
+  like: base.en has no errors left to fix on a clean clip. Where a gain would
+  show is disfluent interview speech, and that needs a real recording, so it is
+  on the hardware checklist rather than guessed at here.
+- **Distillation is not free.** Two decoder layers instead of twelve did not
+  make distil-small.en faster than small.en in any measured length — they share
+  an encoder byte-for-byte, and Whisper pads every clip to a fixed 30-second
+  window, so the fixed cost dominates a 6-second question.
+- **What actually costs matches is the transcript, not the encoder.** A
+  run-on or a left-in disfluency costs 0.10–0.15 of score — larger than the
+  entire spread between these three encoders. Effort belongs there.
+- **An encoder that fails to load says so.** Transcription dying is obvious:
+  the transcript stops. The matcher losing its embeddings is not — cards keep
+  appearing, matched on bigram overlap, wrong more often, and nothing about
+  the screen changes. It reached a `console.warn` and stopped there; it now
+  raises the same notice strip the live panel and setup screen already read.
+- **The bank check runs the real matcher, or it does not run.** A prep-time
+  check that scores differently from the interview is worse than no check: it
+  sends someone into the room confident about a bank that behaves differently.
+  So it warms the encoder on entry instead of answering from bigram overlap,
+  it constructs embeddings *only* — a prep tool must not put a speech model in
+  memory, let alone one that could start listening — and it refuses outright
+  while a session is running.
+- **A finding without a remedy is homework.** The collision report is capped
+  at the worst three, each carrying a merge or an open-it. The full N² list of
+  confusable pairs is a ranked pile of work the night before an interview,
+  which is exactly when nobody does it. The bar for reporting a rival is one
+  confidence margin below the confident bar, not the ambiguous bar: in a bank
+  of "tell me about a time you…" questions most entries have *some* rival
+  above ambiguous, and three findings drawn from nine are noise.
+- **No score reaches a user-facing surface.** Not in the check, not in the
+  recap. A number invites tuning a bank against a threshold, and it means
+  nothing without the distribution behind it — which is why the distribution
+  lives in the calibration suites instead.
+- **Nothing writes a trigger phrase on the user's behalf.** Both trigger
+  defects in the review (C7, H13) were the app deciding a phrase for someone.
+  The recap's near-miss fix opens the editor with the wording that missed
+  sitting in the trigger *input* — uncommitted, one keystroke from being
+  discarded, and not on disk until the answer is saved.
+- **The excerpt the editor gets is your side only.** The recap has always
+  handed the editor the transcript of an unmatched question and the editor has
+  always thrown it away; it now renders those lines beside the points field,
+  one click from becoming a point. Only `speaker === 'you'` lines travel:
+  the interviewer's words are not the user's to keep, quote, or carry into
+  anything downstream.
+- **The 45s merge only trusts explicit context (H3).** Merging a new question
+  into the current row is limited to ⌘K pins and same-window rescores. The old
+  time-window heuristic swallowed genuine not-in-bank questions whenever any
+  confident match had landed within 45 seconds.
+- **Session chords are held only while a session runs (M19/H15).** Global
+  shortcuts are system-wide; holding ⌘K all day steals it from every other
+  app. Registration results are checked and failures surface on the setup
+  screen — a silently dead panic chord is the worst failure this app has.
+- **⌘⇧R ends a session only on a double press (H17).** It collides with the
+  browsers' hard-reload chord; one reflexive press in a flaky CoderPad tab
+  must not end the interview. Idle behaviour (reopen last recap) is unchanged.
+- **An unreadable bank quarantines; it never silently seeds (H8).** The demo
+  bank appearing where someone's prep should be — and the first save then
+  destroying the original — is the single worst data outcome this app can
+  produce. The corrupt file is renamed aside, the fallback is labelled in the
+  UI, and restoring a JSON export is a first-class import path (M9).
+- **Re-asking a question starts its coverage over (L19).** A recap row records
+  "covered THIS time", not "covered at some point today" — inheriting the
+  morning's strikethroughs made a skipped repeat answer look delivered.
+- **Fresh-run seeding is still silent, by design.** The H8 rule above applies
+  to *failed reads*; on a genuine first run (no bank.json, no backup) the seed
+  is the product and a warning banner would be noise. `loadBank` distinguishes
+  the two ('new' vs 'seed').
+
+## Part 2 round (proposals)
+
+The review's Part 2 was ten proposals rather than defects. Calls made while
+building them:
+
+- **Keyboard picks ship hint-less (P1).** Visible "1 2 3" badges on the
+  candidate cards would change a pixel-gated screen, and the countdown block
+  already says a decision is wanted. The keys are documented on the setup
+  screen instead. The guards matter more than the feature: a bare digit is
+  inert while ⌘K is open, while collapsed to the strip, inside any text field,
+  or with a modifier held — otherwise typing "3 complaints" into find would
+  swap the panel mid-interview.
+- **Pause tells the truth in two places (P2).** The panel header and the strip
+  both go grey and say so. A green dot over a closed microphone was the last
+  dishonest signal in the app, and the strip counting off your next point
+  while the mic is shut is the same lie in a smaller space.
+- **"Never" is a real auto-pick option (P5).** The card then waits
+  indefinitely, which can leave the panel ambiguous through an answer. That is
+  the user's call to make: matching keeps re-resolving underneath, and a
+  wrong answer committed while you were still reading is worse. The default
+  stays 4s.
+- **Legibility is a switch, not a fix (P7).** #6f6b64 on #16181b is 3.36:1 and
+  fails AA — but the design reference IS the shipped look, and changing the
+  tokens outright would fail the pixel gate on two screens and re-baseline the
+  reference for everyone. Default off, three declarations, one root class.
+- **The pixel gate outranked clean markup (P8).** Three elements stay
+  non-buttons deliberately: the recap row (it contains its own button), the
+  strip root (it is the window's drag region and contains the affordance
+  buttons), and point rows and chips in their non-interactive variants (a
+  button there is a tab stop that goes nowhere). Two lessons kept as comments:
+  `all: unset` also resets box-sizing, which silently grew the strip by its
+  padding and border; and the focus ring is scoped away from text fields,
+  since the ⌘K overlay autofocuses its input and would have put a ring in the
+  reference frame.
+- **Practice is firewalled (P10).** A rehearsal writes nothing: no session
+  record, no interim snapshots, no `lastUsed` stamp. An evening of practice
+  runs must not dilute the interview history — and a practice record must
+  never be the "RECOVERED" recap waiting at the next boot. The mini-recap
+  lives in memory, and its header offers Done rather than Save or Delete,
+  because both would be lies.
+- **The pacing cue is text (P9).** No colour change, no motion, no sound. It
+  appears past 150s — the same threshold the recap already uses for "ran
+  long" — and says how long you have been on this one. Anything more
+  attention-grabbing mid-answer would cost more than it gives.
 
 ## Known limitations
 

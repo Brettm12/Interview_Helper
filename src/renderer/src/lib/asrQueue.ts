@@ -75,11 +75,17 @@ export class AsrQueue<T extends QueuedJob> {
     this.items.push(job)
     this.sort()
 
-    // over capacity: shed the lowest-priority job, oldest first. Dropping the
-    // plain oldest — which is what the single-stream version did — could throw
-    // away the interviewer's question to keep a partial of your own answer.
+    // Over capacity: shed from the lowest-priority rank, and within that rank
+    // the OLDEST item. Cross-rank, that keeps the interviewer's question over
+    // a partial of your own answer; within a rank, it keeps the live edge —
+    // popping the newest (what this used to do) meant that under sustained
+    // overload the question being asked right now was discarded to keep
+    // minute-old audio (REVIEW.md H6).
     while (this.items.length > this.capacity) {
-      dropped.push(this.items.pop() as T)
+      const worst = rank(this.items[this.items.length - 1])
+      let first = this.items.length - 1
+      while (first > 0 && rank(this.items[first - 1]) === worst) first--
+      dropped.push(...this.items.splice(first, 1))
     }
     return { queued: true, dropped }
   }

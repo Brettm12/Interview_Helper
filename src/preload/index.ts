@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppCommand, HelperApi, StripState } from '../shared/ipc'
+import type { AppCommand, HelperApi, ModelProgress, StripState } from '../shared/ipc'
+import type { Settings } from '../shared/types'
 
 const api: HelperApi = {
   bank: {
@@ -18,7 +19,12 @@ const api: HelperApi = {
   },
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
-    save: (s) => ipcRenderer.invoke('settings:save', s)
+    update: (patch) => ipcRenderer.invoke('settings:update', patch),
+    onDidChange: (cb) => {
+      const listener = (_e: unknown, s: Settings): void => cb(s)
+      ipcRenderer.on('settings:did-change', listener)
+      return () => ipcRenderer.removeListener('settings:did-change', listener)
+    }
   },
   permissions: {
     status: () => ipcRenderer.invoke('permissions:status'),
@@ -30,7 +36,11 @@ const api: HelperApi = {
     showStrip: (show) => ipcRenderer.invoke('windows:show-strip', show),
     openSecondScreenBank: () => ipcRenderer.invoke('windows:open-second-screen-bank'),
     setContentProtection: (on) => ipcRenderer.invoke('windows:set-content-protection', on),
-    displays: () => ipcRenderer.invoke('windows:displays')
+    displays: () => ipcRenderer.invoke('windows:displays'),
+    findClosed: () => ipcRenderer.invoke('windows:find-closed')
+  },
+  session: {
+    setActive: (active) => ipcRenderer.invoke('session:set-active', active)
   },
   exportFile: {
     saveNotes: (name, contents) => ipcRenderer.invoke('export:save-notes', name, contents)
@@ -48,8 +58,9 @@ const api: HelperApi = {
   models: {
     status: (whisperModel) => ipcRenderer.invoke('models:status', whisperModel),
     download: (whisperModel) => ipcRenderer.invoke('models:download', whisperModel),
+    cancelDownload: () => ipcRenderer.invoke('models:cancel-download'),
     onProgress: (cb) => {
-      const listener = (_e: unknown, p: { done: number; total: number; file: string }): void => cb(p)
+      const listener = (_e: unknown, p: ModelProgress): void => cb(p)
       ipcRenderer.on('models:progress', listener)
       return () => ipcRenderer.removeListener('models:progress', listener)
     }

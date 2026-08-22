@@ -1,5 +1,5 @@
 import type { ImportPaneProps } from '../contracts'
-import { Label } from '../../components/primitives'
+import { ConfirmButton, Label } from '../../components/primitives'
 import './import.css'
 
 // Import / export, in the bank's pane 3. No mock exists for this surface — it
@@ -27,8 +27,10 @@ export default function ImportPane(props: ImportPaneProps): JSX.Element {
     skipDuplicates,
     onSkipDuplicates,
     onImport,
+    onRestore,
     onExport,
     result,
+    starters,
     onClose
   } = props
 
@@ -38,9 +40,9 @@ export default function ImportPane(props: ImportPaneProps): JSX.Element {
     <div className="importer">
       <div className="importer__header">
         <Label crumb>IMPORT · EXPORT</Label>
-        <span className="action importer__close" onClick={onClose}>
+        <button type="button" className="action importer__close" onClick={onClose}>
           Close
-        </span>
+        </button>
       </div>
 
       <div className="importer__body">
@@ -62,6 +64,19 @@ export default function ImportPane(props: ImportPaneProps): JSX.Element {
         {preview != null && (
           <div className="importer__group">
             <Label>WHAT I FOUND</Label>
+            {onRestore != null && (
+              <>
+                <div className="importer__summary">This is a complete bank backup.</div>
+                <div className="importer__hint pretty">
+                  Restore keeps sections, loops, stories and history exactly as exported — and
+                  replaces your ENTIRE current bank. Merging below adds its questions to this loop
+                  instead.
+                </div>
+                <button type="button" className="cta importer__cta" onClick={onRestore}>
+                  Restore this backup
+                </button>
+              </>
+            )}
             {preview.problem != null ? (
               <div className="importer__problem pretty">{preview.problem}</div>
             ) : (
@@ -82,7 +97,8 @@ export default function ImportPane(props: ImportPaneProps): JSX.Element {
                     </div>
                   ))}
                 </div>
-                <div
+                <button
+                  type="button"
                   className="importer__check"
                   role="checkbox"
                   aria-checked={skipDuplicates}
@@ -92,13 +108,14 @@ export default function ImportPane(props: ImportPaneProps): JSX.Element {
                     {skipDuplicates ? '✓' : ''}
                   </span>
                   Skip questions I already have
-                </div>
-                <div
+                </button>
+                <button
+                  type="button"
                   className={canImport ? 'cta importer__cta' : 'cta importer__cta importer__cta--off'}
                   onClick={canImport ? onImport : undefined}
                 >
                   {canImport ? `Add ${preview.importable} to the bank` : 'Nothing to add'}
-                </div>
+                </button>
               </>
             )}
           </div>
@@ -111,14 +128,33 @@ export default function ImportPane(props: ImportPaneProps): JSX.Element {
             survives losing it.
           </div>
           <div className="importer__exports">
-            <span className="action importer__action" onClick={() => onExport('md')}>
+            <button type="button" className="action importer__action" onClick={() => onExport('md')}>
               Export as notes (.md)
-            </span>
-            <span className="action importer__action" onClick={() => onExport('json')}>
+            </button>
+            <button type="button" className="action importer__action" onClick={() => onExport('json')}>
               Export a full backup (.json)
-            </span>
+            </button>
           </div>
         </div>
+
+        {starters != null && starters.count > 0 && (
+          <div className="importer__group">
+            <Label>STARTER ANSWERS</Label>
+            <div className="importer__hint pretty">
+              {starters.count} of the examples this app shipped with are still here, untouched.
+              They sit in your loop and get scored against the interviewer's voice like anything
+              else. Anything you have rewritten is yours and stays.
+            </div>
+            <div className="importer__exports">
+              <ConfirmButton
+                className="action importer__action"
+                label={`Remove the ${starters.count} untouched examples`}
+                confirmLabel="Remove them for good?"
+                onConfirm={starters.onRemove}
+              />
+            </div>
+          </div>
+        )}
 
         {result != null && <div className="importer__result pretty">{result}</div>}
       </div>

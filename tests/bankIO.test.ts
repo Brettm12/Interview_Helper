@@ -170,3 +170,63 @@ describe('entriesToAnswers', () => {
     expect(without.storyId).toBeNull()
   })
 })
+
+// ---- malformed JSON shapes (REVIEW.md M7/M8) --------------------------------
+// `points` as a string, `stories` as an object, non-string triggers: these
+// used to throw inside a render-time useMemo (losing the paste to the error
+// boundary) or sail through the preview and poison the in-memory bank.
+
+describe('malformed JSON shapes are sanitised, never thrown', () => {
+  it('points as a string and triggers as a string become empty arrays', () => {
+    const preview = parseBankText(
+      '{"answers":[{"question":"How do you plan?","points":"not an array","triggerPhrases":"nope"}],"stories":{}}'
+    )
+    expect(preview.problem).toBeNull()
+    expect(preview.entries).toHaveLength(1)
+    expect(preview.entries[0].points).toEqual([])
+    expect(preview.entries[0].triggerPhrases).toEqual([])
+  })
+
+  it('string points are accepted, junk points dropped', () => {
+    const preview = parseBankText(
+      '{"answers":[{"question":"Q?","points":["a plain string",{"text":"a real point"},42,null]}]}'
+    )
+    expect(preview.entries[0].points).toEqual(['a plain string', 'a real point'])
+  })
+
+  it('non-object answers and null questions are skipped, not fatal', () => {
+    const preview = parseBankText('{"answers":[null, 42, {"question":null}, {"question":"Real?"}]}')
+    expect(preview.entries.map((e) => e.question)).toEqual(['Real?'])
+  })
+})
+
+// ---- full-backup restore (REVIEW.md M9) -------------------------------------
+
+describe('a complete bank export is restorable, not just flattenable', () => {
+  it('round-trips the seed through export → parse with everything intact', () => {
+    const json = serializeBank(bank, 'json')
+    const preview = parseBankText(json, bank.answers)
+    expect(preview.fullBank).not.toBeNull()
+    const restored = preview.fullBank!
+    // ids, sections, loop assignments, stories, lastUsed — all survive
+    expect(restored.answers.map((a) => a.id)).toEqual(bank.answers.map((a) => a.id))
+    expect(restored.answers.map((a) => a.loopIds)).toEqual(bank.answers.map((a) => a.loopIds))
+    expect(restored.sections).toEqual(bank.sections)
+    expect(restored.activeLoopId).toBe(bank.activeLoopId)
+    // comma-containing trigger phrases do NOT split (the flatten path's bug)
+    const withComma = restored.answers.flatMap((a) => a.triggerPhrases).filter((t) => t.includes(','))
+    const original = bank.answers.flatMap((a) => a.triggerPhrases).filter((t) => t.includes(','))
+    expect(withComma).toEqual(original)
+  })
+
+  it('prep notes are never offered as a full restore', () => {
+    const preview = parseBankText('### A question?\n- a point')
+    expect(preview.fullBank).toBeNull()
+  })
+
+  it('an answers-only fragment merges but does not offer restore', () => {
+    const preview = parseBankText('{"answers":[{"question":"Frag?","points":[]}]}')
+    expect(preview.fullBank).toBeNull()
+    expect(preview.entries).toHaveLength(1)
+  })
+})

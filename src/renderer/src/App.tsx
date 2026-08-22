@@ -4,7 +4,7 @@ import { useAudioStore } from './state/audioStore'
 import { useBankStore } from './state/bankStore'
 import { usePanelStore } from './state/panelStore'
 import { useSessionStore } from './state/sessionStore'
-import { useSettingsStore } from './state/settingsStore'
+import { startSettingsSync, useSettingsStore } from './state/settingsStore'
 import { formatClock } from './lib/recap'
 import { pauseSession, recapCommand, setCollapsed, startBankSync } from './containers/runtime'
 import LiveContainer from './containers/LiveContainer'
@@ -140,22 +140,41 @@ export default function App(): JSX.Element {
         }
       })
     }
-    return startBankSync()
+    const stopBankSync = startBankSync()
+    // high-legibility mode is a root class so every window (panel, strip,
+    // second screen) picks it up from the same setting (REVIEW.md P7)
+    const applyLegible = (on: boolean): void => {
+      document.documentElement.classList.toggle('lih-legible', on === true)
+    }
+    applyLegible(useSettingsStore.getState().highLegibility) // in case it is already loaded
+    const stopLegible = useSettingsStore.subscribe((s) => applyLegible(s.highLegibility))
+    // main and second windows also write settings (strip drag) — stay fresh
+    const stopSettingsSync = startSettingsSync()
+    return () => {
+      stopBankSync()
+      stopSettingsSync()
+      stopLegible()
+    }
   }, [])
 
   // global shortcuts (Electron globalShortcut → 'command'; browser keydown shim)
   useEffect(() => {
     if (SCREEN) return
-    return api.onCommand((cmd) => {
+    const run = (cmd: Parameters<Parameters<typeof api.onCommand>[0]>[0]): void => {
       const panel = usePanelStore.getState()
       switch (cmd) {
         case 'find':
-          if (panel.view === 'bank') return // bank has its own search field
+          // only where the overlay actually mounts — a press on setup/recap
+          // used to set latent find.open that popped the overlay at arm
+          // (REVIEW.md M20); the bank has its own search field
+          if (panel.view !== 'live' && panel.view !== 'armed') return
           if (panel.find.open) panel.closeFind()
           else panel.openFind()
           break
         case 'toggle-collapse':
-          if (panel.view === 'live') setCollapsed(!panel.collapsed)
+          // the armed card collapses too — with strip placement the session
+          // starts collapsed while still armed (REVIEW.md L16)
+          if (panel.view === 'live' || panel.view === 'armed') setCollapsed(!panel.collapsed)
           break
         case 'recap':
           recapCommand()
@@ -170,7 +189,37 @@ export default function App(): JSX.Element {
           usePanelStore.getState().toggleDiagnostics()
           break
       }
-    })
+    }
+    const offCommand = api.onCommand(run)
+    // Focused-window fallback in Electron: when another app holds one of the
+    // global chords (registration failed, surfaced on arm), the shortcut must
+    // still work while the panel itself has focus (REVIEW.md H15). When the
+    // global registration DID succeed, the OS delivers the chord to the
+    // globalShortcut hook instead of this window, so nothing double-fires.
+    const onKey = (e: KeyboardEvent): void => {
+      if (!IN_ELECTRON) return // the browser shim already installs its own
+      const mod = e.metaKey || e.ctrlKey
+      if (!mod) return
+      const k = e.key.toLowerCase()
+      if (k === 'k' && !e.shiftKey) {
+        e.preventDefault()
+        run('find')
+      } else if (k === 'h' && e.shiftKey) {
+        e.preventDefault()
+        run('toggle-collapse')
+      } else if (k === 'r' && e.shiftKey) {
+        e.preventDefault()
+        run('recap')
+      } else if (k === 'd' && e.shiftKey) {
+        e.preventDefault()
+        run('diagnostics')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      offCommand()
+      window.removeEventListener('keydown', onKey)
+    }
   }, [])
 
   if (SCREEN) {

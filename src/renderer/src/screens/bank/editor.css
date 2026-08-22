@@ -25,6 +25,12 @@
   align-items: center;
 }
 
+.editor-delete {
+  font: 500 11px/1 var(--font-ui);
+  color: var(--text-dim);
+  margin-right: 4px;
+}
+
 .editor-cancel {
   font: 500 11px/1 var(--font-ui);
   color: var(--text-label);
@@ -213,4 +219,48 @@
 .editor-triggers-help {
   font: 400 12px/1.5 var(--font-ui);
   color: var(--text-label);
+}
+
+/* Esc on a dirty draft asks once before discarding it (REVIEW.md P6).
+   Only rendered in that armed state, which the design reference never
+   enters. */
+.editor-cancel--armed {
+  color: var(--status-attention);
+}
+
+/* the recap excerpt: your own words, one click from being a point */
+.editor-excerpt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.editor-excerpt__line {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px dashed var(--border-mid);
+  border-radius: 7px;
+  background: var(--bg-row);
+  padding: 9px 11px;
+  font: 400 12.5px/1.45 var(--font-ui);
+  color: var(--text-muted);
+  transition: color 120ms ease-out, border-color 120ms ease-out;
+}
+
+.editor-excerpt__line:hover {
+  color: var(--text-body);
+  border-color: var(--border-strong);
+}
+
+.editor-excerpt__foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.editor-excerpt__condense {
+  flex: none;
+  font: 500 11px/1 var(--font-ui);
 }

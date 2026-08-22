@@ -3,9 +3,10 @@ import type { Settings } from '@shared/types'
 import SetupScreen from '../screens/setup/SetupScreen'
 import { useAudioStore } from '../state/audioStore'
 import { useBankStore, answersForLoop } from '../state/bankStore'
+import { usePersistHealth } from '../state/persistHealth'
 import { usePanelStore } from '../state/panelStore'
 import { useSettingsStore } from '../state/settingsStore'
-import { WHISPER_TIERS, whisperTier } from '@shared/models'
+import { whisperTier } from '@shared/models'
 import { api } from '../lib/api'
 import { onDeviceChange, suggestLoopback } from '../lib/devices'
 import { prepareAudio, restartAudio, runMicTest, startSession } from './runtime'
@@ -31,6 +32,9 @@ export default function SetupContainer(): JSX.Element | null {
   const micLabel = useAudioStore((s) => s.micLabel)
   const devices = useAudioStore((s) => s.inputDevices)
   const micTest = useAudioStore((s) => s.micTest)
+  const pipelineNotice = useAudioStore((s) => s.pipelineNotice)
+  const saveProblem = usePersistHealth((s) => s.problem)
+  const loadSource = useBankStore((s) => s.loadSource)
   const settings = useSettingsStore()
   const [placementError, setPlacementError] = useState<string | null>(null)
   const [modelsNotice, setModelsNotice] = useState<string | null>(null)
@@ -74,8 +78,14 @@ export default function SetupContainer(): JSX.Element | null {
     let offProgress: (() => void) | null = null
     if (!api.env.mock) {
       refreshModels(useSettingsStore.getState().whisperModel)
+      // byte-level progress: "file 3/11" alone froze for minutes on the 100MB
+      // weight files, which reads as a hang (REVIEW.md M17)
+      const mb = (n: number): string => `${Math.max(1, Math.round(n / 1048576))} MB`
       offProgress = api.models.onProgress((p) =>
-        setModelsNotice(`Downloading models — ${p.done}/${p.total} · ${p.file}`)
+        setModelsNotice(
+          `Downloading models — file ${p.done}/${p.total} · ${p.file}` +
+            (p.totalBytes > 0 ? ` · ${mb(p.loadedBytes)} of ${mb(p.totalBytes)}` : '')
+        )
       )
     }
     return () => {
@@ -98,7 +108,9 @@ export default function SetupContainer(): JSX.Element | null {
       setModelsNotice(
         r.ok
           ? 'On-device models installed — semantic matching is on.'
-          : `Model download failed: ${r.error ?? 'unknown error'}`
+          : r.error === 'download cancelled'
+            ? 'Download cancelled — finished files are kept, and it resumes where it stopped.'
+            : `Model download failed: ${r.error ?? 'unknown error'}`
       )
     })
   }
@@ -242,18 +254,6 @@ export default function SetupContainer(): JSX.Element | null {
               onChange: (v) => pickDevice({ micDeviceId: v || null })
             }
       }}
-      model={
-        api.env.mock
-          ? undefined
-          : {
-              options: WHISPER_TIERS.map((t) => ({ value: t.id, label: `Speech model · ${t.label}` })),
-              value: settings.whisperModel,
-              onChange: (v) => {
-                void settings.update({ whisperModel: v }).then(() => refreshModels(v))
-              },
-              detail: whisperTier(settings.whisperModel).detail
-            }
-      }
       keepTranscript={settings.keepTranscript}
       onToggleTranscript={() => void settings.update({ keepTranscript: !settings.keepTranscript })}
       placement={settings.placement}
@@ -268,14 +268,40 @@ export default function SetupContainer(): JSX.Element | null {
         }
         void settings.update({ placement: p })
       }}
+      autoPick={{
+        options: [
+          { value: '4', label: 'Unsure: picks for me after 4s' },
+          { value: '8', label: 'Unsure: picks for me after 8s' },
+          { value: 'never', label: 'Unsure: waits for me' }
+        ],
+        value: settings.autoPickSec == null ? 'never' : String(settings.autoPickSec),
+        onChange: (v) => void settings.update({ autoPickSec: v === 'never' ? null : Number(v) }),
+        detail:
+          settings.autoPickSec == null
+            ? 'the card stays up until you choose — nothing commits on its own'
+            : 'it commits the leader when the countdown runs out'
+      }}
+      highLegibility={settings.highLegibility}
+      onToggleLegibility={() => void settings.update({ highLegibility: !settings.highLegibility })}
       placementError={placementError}
-      modelsNotice={modelsNotice}
+      alert={
+        saveProblem ??
+        (loadSource === 'bak' || loadSource === 'seed'
+          ? 'Your bank could not be read — check the Bank screen before starting.'
+          : null)
+      }
+      modelsNotice={pipelineNotice ?? modelsNotice}
       onDownloadModels={
         !api.env.mock && !downloading && modelsIncomplete ? downloadModels : null
       }
+      onCancelDownload={downloading ? () => void api.models.cancelDownload() : null}
       canStart={startable}
       onStart={() => startSession()}
       onEditBank={() => panel.setView('bank')}
+      onCheckBank={() => {
+        useBankStore.getState().openCheck()
+        panel.setView('bank')
+      }}
       onFixNoStory={() => {
         useBankStore.getState().setFilter(noStoryIds)
         if (noStoryIds[0]) useBankStore.getState().selectAnswer(noStoryIds[0])

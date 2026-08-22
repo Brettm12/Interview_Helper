@@ -25,6 +25,12 @@ jobs:
       # multi-window plumbing: the strip window must render relayed state
       - run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: npm run e2e:electron
+      # window lifecycle: strip placement morph, off-screen clamp, close
+      # interception during a session, single-instance lock
+      - run: npm run probe:windows
+      # the editor's keyboard, including the guard that stops Esc throwing
+      # away unsaved work
+      - run: npm run probe:editor
       # the packaged app must actually launch: asar contents, preload path,
       # bundled fonts and seed data
       - run: npm run package:linux
@@ -34,3 +40,79 @@ jobs:
         with:
           name: pixel-diffs
           path: tools/verify/.out/shots/
+
+  # The matching thresholds are only meaningful against the real MiniLM
+  # geometry, and the offline promise is only real if inference comes up with
+  # the network dead — both need actual model files, so this job downloads
+  # (and caches) them.
+  real-models:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/cache@v4
+        with:
+          path: ~/lih-models
+          key: models-${{ hashFiles('src/shared/models.json') }}
+      - run: node scripts/fetch-models.mjs --dest "$HOME/lih-models" --model Xenova/whisper-tiny.en
+      # calibration: paraphrases must land, off-bank must stay none, triggers
+      # must not conjure confident matches (REVIEW.md H1/C7/H13). The same run
+      # carries the Whisper-mangled invariants — dropped question marks,
+      # run-ons, disfluencies — which say whether a miss is the encoder's
+      # fault or the transcript's.
+      - run: LIH_REAL_MODELS=1 LIH_MODELS_DIR="$HOME/lih-models" npx vitest run tests/calibration.real.test.ts
+      # coverage: the thresholds that decide whether a point is struck through
+      # while you are still talking. A false strike hides something you never
+      # said, so the fixtures assert exactly which points a delivery may cover
+      - run: LIH_REAL_MODELS=1 LIH_MODELS_DIR="$HOME/lih-models" npx vitest run tests/coverage.real.test.ts
+      # the bank check, pointed at the bank we ship: editing the seed must not
+      # quietly introduce a pair the matcher cannot separate
+      - run: LIH_REAL_MODELS=1 LIH_MODELS_DIR="$HOME/lih-models" npx vitest run tests/seedcheck.real.test.ts
+      # threshold-free encoder report: d′, pair-ordering and the best bar the
+      # encoder could possibly have. Prints the table used to judge a swap,
+      # and fails if the installed encoder stops separating the populations
+      - run: LIH_REAL_MODELS=1 LIH_MODELS_DIR="$HOME/lih-models" npx vitest run tests/encoder.real.test.ts
+      # the onnx wasm binaries must be IN the build, and both workers must
+      # point at them rather than the CDN default (REVIEW.md C2)
+      - run: npm run build
+      - run: ls out/renderer/assets/ort-wasm*.wasm
+      - run: grep -l "lih-models://wasm" out/renderer/assets/transcriber.worker-*.js out/renderer/assets/embeddings.worker-*.js
+      # launch the built app with real drivers and a black-hole proxy — the
+      # pipelines must come up on local files alone, zero CDN requests
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: LIH_MODELS_SRC="$HOME/lih-models" npm run probe:wasm
+
+  macos:
+    runs-on: macos-latest
+    env:
+      # unsigned CI build — do not go hunting the keychain for an identity
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run package:mac
+      - run: npm run smoke:package
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run package:win
+      - run: npm run smoke:package

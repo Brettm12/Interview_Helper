@@ -84,17 +84,22 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
     stats,
     meeting,
     mic,
-    model,
     keepTranscript,
     onToggleTranscript,
+    highLegibility,
+    onToggleLegibility,
     placement,
     onPlacement,
     placementError,
+    alert,
+    autoPick,
     modelsNotice,
     onDownloadModels,
+    onCancelDownload,
     canStart,
     onStart,
     onEditBank,
+    onCheckBank,
     onFixNoStory,
     onTestMic,
     testLabel,
@@ -109,21 +114,29 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
           <div className="setup-header__title">{title}</div>
           <div className="setup-header__sub">{sub}</div>
         </div>
-        <div
+        <button
+          type="button"
           className={canStart ? 'cta setup-cta' : 'cta setup-cta setup-cta--disabled'}
           onClick={canStart ? onStart : undefined}
         >
           Start listening
-        </div>
+        </button>
       </div>
 
       <div className="setup-body">
         <div className="setup-group">
           <div className="setup-group__label-row">
             <Label>BANK LOADED</Label>
-            <span className="action setup-action" onClick={onEditBank}>
-              Edit bank
-            </span>
+            <div className="setup-group__actions">
+              {onCheckBank && (
+                <button type="button" className="action setup-action" onClick={onCheckBank}>
+                  Check bank
+                </button>
+              )}
+              <button type="button" className="action setup-action" onClick={onEditBank}>
+                Edit bank
+              </button>
+            </div>
           </div>
           <div className="setup-stats">
             <StatCard number={stats.answers} caption="answers ready" />
@@ -161,27 +174,50 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
                 <div className="setup-hear__why">{mic.why}</div>
               </div>
               <LevelMeter heights={mic.levels ?? []} live={mic.ok} />
-              <span className="action setup-action" onClick={onTestMic}>
+              <button type="button" className="action setup-action" onClick={onTestMic}>
                 {testLabel ?? 'Test'}
-              </span>
+              </button>
             </div>
-            {model != null && (
+            {autoPick != null && (
               <div className="setup-hear">
                 <div className="setup-hear__main">
                   <select
                     className="setup-hear__title setup-device"
-                    value={model.value}
-                    onChange={(e) => model.onChange(e.target.value)}
-                    aria-label="Speech model"
+                    value={autoPick.value}
+                    onChange={(e) => autoPick.onChange(e.target.value)}
+                    aria-label="When it is unsure"
                   >
-                    {model.options.map((o) => (
+                    {autoPick.options.map((o) => (
                       <option key={o.value} value={o.value}>
                         {o.label}
                       </option>
                     ))}
                   </select>
-                  <div className="setup-hear__why">{model.detail}</div>
+                  <div className="setup-hear__why">{autoPick.detail}</div>
                 </div>
+              </div>
+            )}
+            {onToggleLegibility != null && (
+              <div className="setup-hear">
+                <div className="setup-hear__main">
+                  <div className="setup-hear__title">Raise the faintest text</div>
+                  <div className="setup-hear__why">
+                    for half-second glances — brightens hints and covered points
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={
+                    highLegibility
+                      ? 'setup-toggle setup-toggle--legible setup-toggle--on'
+                      : 'setup-toggle setup-toggle--legible'
+                  }
+                  onClick={onToggleLegibility}
+                  role="switch"
+                  aria-checked={highLegibility === true}
+                >
+                  <div className="setup-toggle__knob" />
+                </button>
               </div>
             )}
             <div className="setup-hear">
@@ -189,28 +225,48 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
                 <div className="setup-hear__title">Keep a transcript for the recap</div>
                 <div className="setup-hear__why">so you can see what you missed afterwards</div>
               </div>
-              <div
-                className={keepTranscript ? 'setup-toggle setup-toggle--on' : 'setup-toggle'}
+              <button
+                type="button"
+                className={
+                  keepTranscript
+                    ? 'setup-toggle setup-toggle--transcript setup-toggle--on'
+                    : 'setup-toggle setup-toggle--transcript'
+                }
                 onClick={onToggleTranscript}
                 role="switch"
                 aria-checked={keepTranscript}
               >
                 <div className="setup-toggle__knob" />
-              </div>
+              </button>
             </div>
           </div>
           <div className="setup-privacy pretty">
             Audio stays on this machine. Nothing is recorded unless you turn on the recap.
           </div>
+          {/* the unsure card is deliberately hint-less on screen — this is
+              where the keys are documented (REVIEW.md P1) */}
+          <div className="setup-privacy pretty">
+            While it is listening: ⌘K finds an answer, ⌘⇧H collapses to the strip. When it is
+            unsure, 1 / 2 / 3 pick a candidate and Esc dismisses.
+          </div>
+          {alert != null && <div className="setup-alert pretty">{alert}</div>}
           {modelsNotice != null && (
             <div className="setup-privacy pretty">
               {modelsNotice}
               {onDownloadModels != null && (
                 <>
                   {' '}
-                  <span className="action setup-models-action" onClick={onDownloadModels}>
+                  <button type="button" className="action setup-models-action" onClick={onDownloadModels}>
                     Download now
-                  </span>
+                  </button>
+                </>
+              )}
+              {onCancelDownload != null && (
+                <>
+                  {' '}
+                  <button type="button" className="action setup-models-action" onClick={onCancelDownload}>
+                    Cancel
+                  </button>
                 </>
               )}
             </div>
@@ -221,7 +277,8 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
           <Label>WHERE THE PANEL SITS</Label>
           <div className="setup-placements">
             {PLACEMENTS.map((p) => (
-              <div
+              <button
+                type="button"
                 key={p.id}
                 className={
                   placement === p.id
@@ -233,7 +290,7 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
                 <Schematic kind={p.schem} />
                 <div className="setup-placement__title">{p.title}</div>
                 <div className="setup-placement__caption">{p.caption}</div>
-              </div>
+              </button>
             ))}
           </div>
           {placementError != null && (
@@ -247,9 +304,9 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
             <span className="footer-hint">⌘⇧H hide panel</span>
             <span className="footer-hint">⌘⇧R recap after</span>
           </div>
-          <span className="footer-hint setup-footer__dryrun" onClick={onDryRun}>
+          <button type="button" className="footer-hint setup-footer__dryrun" onClick={onDryRun}>
             Dry run · 2 min
-          </span>
+          </button>
         </div>
       </div>
     </div>

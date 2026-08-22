@@ -18,7 +18,7 @@ export interface RecapRowData {
   transcript: TranscriptLine[] | null
 }
 
-export type FixKind = 'draft' | 'uncovered' | 'long' | 'override'
+export type FixKind = 'draft' | 'uncovered' | 'long' | 'override' | 'near-miss'
 
 export interface RecapFixData {
   id: string
@@ -27,7 +27,10 @@ export interface RecapFixData {
   why: string
   chip: string
   entryId: string | null
-  /** for 'draft': the question + excerpt to prefill the editor with */
+  /** for 'draft': the question + excerpt to prefill the editor with.
+   *  For 'near-miss': the question is offered as a starting point for a
+   *  trigger phrase — offered, never written. Both trigger defects in the
+   *  review were phrases the app wrote on the user's behalf (C7/H13). */
   question?: string
   excerpt?: string
 }
@@ -47,7 +50,7 @@ export function formatClock(sec: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-function formatRan(sec: number): string {
+export function formatRan(sec: number): string {
   const m = Math.floor(sec / 60)
   const s = Math.round(sec % 60)
   return `${m}:${String(s).padStart(2, '0')}`
@@ -71,9 +74,17 @@ export function deriveRecap(record: SessionRecord, bank: Bank): RecapData {
   const rows: RecapRowData[] = questions.map((q) => {
     const entry = q.entryId ? (bank.answers.find((a) => a.id === q.entryId) ?? null) : null
     const missed = entry ? entry.points.filter((p) => !q.coveredPointIds.includes(p.id)) : []
+    const nearMiss = q.entryId == null && q.nearMissEntryId
+      ? (bank.answers.find((a) => a.id === q.nearMissEntryId) ?? null)
+      : null
     let subLine: string
     if (!entry) {
-      subLine = 'Not in your bank'
+      // "you have no answer for this" and "you have one and it was not
+      // reached" are different problems with different fixes, and the recap
+      // is the only place the difference can still be acted on
+      subLine = nearMiss
+        ? `Nothing came up — closest was “${truncate(nearMiss.question, 46)}”`
+        : 'Not in your bank'
     } else if (missed.length === 0) {
       subLine = `All ${entry.points.length} point${entry.points.length === 1 ? '' : 's'} covered`
     } else {
@@ -103,7 +114,25 @@ export function deriveRecap(record: SessionRecord, bank: Bank): RecapData {
     if (fixes.length < 4) fixes.push({ ...f, id: `fix-${fixSeq++}` })
   }
 
+  // an answer that exists but was not reached is a smaller, likelier fix than
+  // writing a new one, so it goes first
+  const nearMissQ = unmatchedQs.find(
+    (q) => q.nearMissEntryId && bank.answers.some((a) => a.id === q.nearMissEntryId)
+  )
+  if (nearMissQ) {
+    const entry = bank.answers.find((a) => a.id === nearMissQ.nearMissEntryId)!
+    push({
+      kind: 'near-miss',
+      title: `“${truncate(entry.question, 40)}” nearly came up`,
+      why: `You had an answer for this and it did not reach the panel`,
+      chip: 'Teach it this wording',
+      entryId: entry.id,
+      question: nearMissQ.question
+    })
+  }
+
   for (const q of unmatchedQs.slice(0, 1)) {
+    if (q === nearMissQ) continue // already offered the smaller fix
     push({
       kind: 'draft',
       title: 'Draft an answer from what I said',
@@ -111,10 +140,13 @@ export function deriveRecap(record: SessionRecord, bank: Bank): RecapData {
       chip: 'Draft it',
       entryId: null,
       question: q.question,
+      // your lines only, one per line: the editor shows them beside the
+      // points field so you can turn what you actually said into points.
+      // Nothing the interviewer said travels with it.
       excerpt: q.transcript
         ?.filter((l) => l.speaker === 'you')
         .map((l) => l.text)
-        .join(' ')
+        .join('\n')
     })
   }
 
@@ -168,10 +200,13 @@ export function deriveRecap(record: SessionRecord, bank: Bank): RecapData {
       chip: 'Draft it',
       entryId: null,
       question: q.question,
+      // your lines only, one per line: the editor shows them beside the
+      // points field so you can turn what you actually said into points.
+      // Nothing the interviewer said travels with it.
       excerpt: q.transcript
         ?.filter((l) => l.speaker === 'you')
         .map((l) => l.text)
-        .join(' ')
+        .join('\n')
     })
   }
 

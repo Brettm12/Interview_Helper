@@ -1,7 +1,9 @@
 import { create } from 'zustand'
 import type { Settings } from '@shared/types'
 import { DEFAULT_WHISPER_MODEL } from '@shared/models'
+import { TUNING } from '@shared/tuning'
 import { api } from '../lib/api'
+import { usePersistHealth } from './persistHealth'
 
 interface SettingsState extends Settings {
   loaded: boolean
@@ -9,7 +11,7 @@ interface SettingsState extends Settings {
   update(patch: Partial<Settings>): Promise<void>
 }
 
-export const useSettingsStore = create<SettingsState>((set, get) => ({
+export const useSettingsStore = create<SettingsState>((set) => ({
   contentProtection: true,
   keepTranscript: false,
   placement: 'docked',
@@ -17,6 +19,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   micDeviceId: null,
   meetingDeviceId: null,
   whisperModel: DEFAULT_WHISPER_MODEL,
+  autoPickSec: TUNING.autoPickSec,
+  highLegibility: false,
   loaded: false,
 
   load: async () => {
@@ -26,27 +30,32 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   update: async (patch) => {
-    set(patch)
-    const {
-      contentProtection,
-      keepTranscript,
-      placement,
-      stripPosition,
-      micDeviceId,
-      meetingDeviceId,
-      whisperModel
-    } = get()
-    await api.settings.save({
-      contentProtection,
-      keepTranscript,
-      placement,
-      stripPosition,
-      micDeviceId,
-      meetingDeviceId,
-      whisperModel
-    })
+    set(patch) // optimistic — the merged truth from disk lands just below
+    try {
+      // patch semantics via main's read-merge-write: full-object saves used to
+      // race main's strip-drag writes and silently revert them (REVIEW.md L10)
+      const merged = await api.settings.update(patch)
+      set(merged)
+      usePersistHealth.getState().noteSuccess('settings')
+    } catch (err) {
+      // the change is live in memory but NOT on disk — say so (REVIEW.md H9)
+      usePersistHealth.getState().noteFailure('settings', err)
+    }
     if ('contentProtection' in patch) {
       void api.windows.setContentProtection(patch.contentProtection!)
     }
   }
 }))
+
+// another writer changed settings.json (main's strip-drag persistence, or a
+// second window) — refresh so this window doesn't overwrite it with stale state
+let subscribed = false
+export function startSettingsSync(): () => void {
+  if (subscribed) return () => {}
+  subscribed = true
+  const off = api.settings.onDidChange((s) => useSettingsStore.setState(s))
+  return () => {
+    subscribed = false
+    off()
+  }
+}

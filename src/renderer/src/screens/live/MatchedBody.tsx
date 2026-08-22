@@ -6,7 +6,7 @@ import './live.css'
 /** Matched-state body: progress + question (crossfade/height swap), key points,
  *  story card, and the EARLIER history pushed to the bottom. */
 export default function MatchedBody(props: MatchedBodyProps): JSX.Element {
-  const { question, covered, total, points, onTogglePoint, story, earlier } = props
+  const { question, covered, total, pacing, points, onTogglePoint, story, earlier } = props
 
   // Question swap: pin the box height, crossfade old/new, animate to the new
   // height (~200ms ease-out), then release back to auto. No layout jump.
@@ -49,7 +49,7 @@ export default function MatchedBody(props: MatchedBodyProps): JSX.Element {
         <div className="live-progress">
           <ProgressBar pct={total > 0 ? (covered / total) * 100 : 0} />
           <Label>
-            {covered} OF {total} COVERED
+            {covered} OF {total} COVERED{pacing ? ` · ${pacing}` : ''}
           </Label>
         </div>
         <div ref={boxRef} className="live-qbox">
@@ -81,11 +81,22 @@ export default function MatchedBody(props: MatchedBodyProps): JSX.Element {
       {earlier.length > 0 && (
         <div className="live-earlier">
           <Label>EARLIER</Label>
-          {earlier.map((e) => (
-            <div key={`${e.question}-${e.time}`} className="live-earlier__row">
-              {e.question} · {e.time}
-            </div>
-          ))}
+          {earlier.map((e) =>
+            e.onResume ? (
+              <button
+                key={e.key}
+                className="live-earlier__row live-earlier__row--resume"
+                onClick={e.onResume}
+                aria-label={`Back to: ${e.question}`}
+              >
+                {e.question} · {e.time}
+              </button>
+            ) : (
+              <div key={e.key} className="live-earlier__row">
+                {e.question} · {e.time}
+              </div>
+            )
+          )}
         </div>
       )}
     </div>

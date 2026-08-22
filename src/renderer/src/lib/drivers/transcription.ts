@@ -9,20 +9,31 @@ import type { Stream } from '../asrQueue'
 export type ModelState = 'loading' | 'warm' | 'failed'
 
 export class TranscriptionService {
-  private worker: Worker
+  private worker!: Worker
   private subs: Record<Stream, ((s: Segment) => void)[]> = { them: [], you: [] }
   private stateCb: ((state: ModelState) => void) | null = null
+  private errorCb: ((message: string) => void) | null = null
   /** capture runs from the setup screen onward, but nothing is transcribed
    *  until a session arms (or the mic test asks for five seconds) — the model
-   *  is warm, the pipeline is idle */
-  private enabled = false
+   *  is warm, the pipeline is idle. Per-stream, so the mic test can open only
+   *  its own stream without decoding meeting audio (REVIEW.md L4). */
+  private enabled = new Set<Stream>()
   private disposed = false
+  /** crash-loop guard for restart() */
+  private restarts = 0
 
   state: ModelState = 'loading'
   /** why it failed, when it did */
   error: string | null = null
 
-  constructor(modelPath: string, modelId?: string) {
+  constructor(
+    private modelPath: string,
+    private modelId?: string
+  ) {
+    this.spawn()
+  }
+
+  private spawn(): void {
     this.worker = new Worker(new URL('../../workers/transcriber.worker.ts', import.meta.url), {
       type: 'module'
     })
@@ -43,11 +54,18 @@ export class TranscriptionService {
         this.error = msg.message
         this.setState('failed')
       } else if (msg.type === 'error') {
+        // decode failures and shed segments used to die in the console while
+        // the panel looked healthy (REVIEW.md H2) — surface them
         console.warn('[transcriber]', msg.message)
+        this.errorCb?.(msg.message)
       }
     }
-    this.worker.onerror = () => this.setState('failed')
-    this.worker.postMessage({ type: 'init', modelPath, modelId })
+    this.worker.onerror = (e) => {
+      this.error = e.message ?? 'transcription worker crashed'
+      this.setState('failed')
+    }
+    this.setState('loading')
+    this.worker.postMessage({ type: 'init', modelPath: this.modelPath, modelId: this.modelId })
   }
 
   private setState(state: ModelState): void {
@@ -57,6 +75,25 @@ export class TranscriptionService {
 
   onStateChange(cb: (state: ModelState) => void): void {
     this.stateCb = cb
+  }
+
+  /** decode errors and falling-behind drops, for the diagnostics/live banner */
+  onError(cb: (message: string) => void): void {
+    this.errorCb = cb
+  }
+
+  /**
+   * Tear down a failed worker and load a fresh one, keeping subscribers and
+   * the enabled state — mid-session recovery from a worker crash. At most two
+   * per service so a persistent failure can't loop forever.
+   * @returns false when the restart budget is spent
+   */
+  restart(): boolean {
+    if (this.disposed || this.restarts >= 2) return false
+    this.restarts++
+    this.worker.terminate()
+    this.spawn()
+    return true
   }
 
   /** a Transcriber view over one stream; the engine can't tell it isn't a
@@ -83,30 +120,41 @@ export class TranscriptionService {
     if (this.disposed) return
     // dropped here rather than in the worker, so idle capture costs one
     // comparison instead of a structured clone plus a VAD pass per block
-    if (!this.enabled) return
+    if (!this.enabled.has(stream)) return
     this.worker.postMessage({ type: 'audio', stream, samples: chunk.samples, t: chunk.t }, [
       chunk.samples.buffer
     ])
   }
 
-  /** arm/disarm transcription without touching the loaded model */
-  setEnabled(on: boolean): void {
-    if (this.enabled === on) return
-    this.enabled = on
-    // flush rather than reset: whatever was mid-sentence still deserves to be
-    // transcribed, and leaving it in the segmenter would glue it to whatever
-    // is said when transcription resumes, minutes later
-    if (!on) this.flush()
+  /** arm/disarm transcription for the given streams (default both) without
+   *  touching the loaded model */
+  setEnabled(on: boolean, streams: Stream[] = ['them', 'you']): void {
+    for (const stream of streams) {
+      const was = this.enabled.has(stream)
+      if (on === was) continue
+      if (on) this.enabled.add(stream)
+      else {
+        this.enabled.delete(stream)
+        // flush rather than reset: whatever was mid-sentence still deserves to
+        // be transcribed, and leaving it in the segmenter would glue it to
+        // whatever is said when transcription resumes, minutes later
+        this.flush(stream)
+      }
+    }
   }
 
   get isEnabled(): boolean {
-    return this.enabled
+    return this.enabled.size > 0
+  }
+
+  isStreamEnabled(stream: Stream): boolean {
+    return this.enabled.has(stream)
   }
 
   /** end of capture: transcribe whatever is mid-sentence, then clear the
-   *  segmenters. Anything already queued still decodes. */
-  flush(): void {
-    if (!this.disposed) this.worker.postMessage({ type: 'flush' })
+   *  segmenter(s). Anything already queued still decodes. */
+  flush(stream?: Stream): void {
+    if (!this.disposed) this.worker.postMessage({ type: 'flush', stream })
   }
 
   /** throw away audio in progress *and* the queue, keeping the loaded model */

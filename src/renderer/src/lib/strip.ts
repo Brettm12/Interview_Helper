@@ -14,9 +14,25 @@ export function deriveStripState(args: {
    *  afterwards (or an unsure state) is a "new question" nudge */
   entryAtCollapse: string | null
   protectionOn: boolean
+  /** the session is paused — the mic is closed (REVIEW.md P2) */
+  paused?: boolean
 }): StripState {
   const { entries, match, coverage, entryAtCollapse, protectionOn } = args
+  const paused = args.paused === true
   const entry = match.entryId ? entries.find((e) => e.id === match.entryId) : null
+
+  // paused wins over everything: showing the next point you should be making
+  // while the microphone is shut is the same lie as the green dot
+  if (paused) {
+    return { variant: 'current', text: 'Paused — mic is off', counter: null, protectionOn, paused }
+  }
+
+  // a question was heard that matched nothing: the entry still on screen
+  // belongs to the PREVIOUS question, so the strip must not keep feeding its
+  // points as though they were the thing to say next
+  if (match.stale) {
+    return { variant: 'current', text: 'Nothing matched', counter: null, protectionOn, paused }
+  }
 
   const isNew =
     match.state === 'ambiguous' ||
@@ -24,7 +40,7 @@ export function deriveStripState(args: {
 
   if (isNew) {
     const question = match.state === 'ambiguous' ? (match.heard ?? '') : (entry?.question ?? '')
-    return { variant: 'new-question', text: `New: ${question}`, counter: null, protectionOn }
+    return { variant: 'new-question', text: `New: ${question}`, counter: null, protectionOn, paused }
   }
 
   if (entry) {
@@ -38,7 +54,8 @@ export function deriveStripState(args: {
       variant: shown === total - 1 ? 'queued' : 'current',
       text: entry.points[shown]?.text ?? '',
       counter: `${shown + 1}/${total}`,
-      protectionOn
+      protectionOn,
+      paused
     }
   }
 
@@ -46,7 +63,8 @@ export function deriveStripState(args: {
     variant: 'current',
     text: 'Listening — nothing matched yet',
     counter: null,
-    protectionOn
+    protectionOn,
+    paused
   }
 }
 
@@ -56,7 +74,8 @@ export function stripStatesEqual(a: StripState | null, b: StripState | null): bo
     a.variant === b.variant &&
     a.text === b.text &&
     a.counter === b.counter &&
-    a.protectionOn === b.protectionOn
+    a.protectionOn === b.protectionOn &&
+    a.paused === b.paused
   )
 }
 

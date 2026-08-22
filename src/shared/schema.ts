@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { DEFAULT_WHISPER_MODEL } from './models'
+import { TUNING } from './tuning'
 
 // zod schemas used to validate persisted data on read (the repository never
 // trusts the file on disk). Shapes mirror shared/types.ts.
@@ -9,23 +10,27 @@ export const PointSchema = z.object({
   text: z.string()
 })
 
-export const AnswerSchema = z.object({
-  id: z.string(),
-  question: z.string(),
-  sectionId: z.string(),
-  loopIds: z.array(z.string()),
-  points: z.array(PointSchema),
-  storyId: z.string().nullable(),
-  triggerPhrases: z.array(z.string()),
-  lastUsed: z
-    .object({
-      loopName: z.string(),
-      date: z.string(),
-      covered: z.number(),
-      total: z.number()
-    })
-    .nullable()
-})
+// .passthrough(): unknown fields survive a round-trip through an old build
+// instead of being silently stripped on the next save (REVIEW.md L18)
+export const AnswerSchema = z
+  .object({
+    id: z.string(),
+    question: z.string(),
+    sectionId: z.string(),
+    loopIds: z.array(z.string()),
+    points: z.array(PointSchema),
+    storyId: z.string().nullable(),
+    triggerPhrases: z.array(z.string()),
+    lastUsed: z
+      .object({
+        loopName: z.string(),
+        date: z.string(),
+        covered: z.number(),
+        total: z.number()
+      })
+      .nullable()
+  })
+  .passthrough()
 
 export const StorySchema = z.object({
   id: z.string(),
@@ -48,13 +53,16 @@ export const LoopSchema = z.object({
   likelyOpeners: z.array(z.string())
 })
 
-export const BankSchema = z.object({
-  loops: z.array(LoopSchema),
-  sections: z.array(SectionSchema),
-  answers: z.array(AnswerSchema),
-  stories: z.array(StorySchema),
-  activeLoopId: z.string()
-})
+export const BankSchema = z
+  .object({
+    version: z.number().default(1),
+    loops: z.array(LoopSchema),
+    sections: z.array(SectionSchema),
+    answers: z.array(AnswerSchema),
+    stories: z.array(StorySchema),
+    activeLoopId: z.string()
+  })
+  .passthrough()
 
 export const TranscriptLineSchema = z.object({
   speaker: z.enum(['you', 'them']),
@@ -62,28 +70,36 @@ export const TranscriptLineSchema = z.object({
   highlight: z.string().optional()
 })
 
-export const SessionQuestionSchema = z.object({
-  id: z.string(),
-  askedAtSec: z.number(),
-  question: z.string(),
-  entryId: z.string().nullable(),
-  coveredPointIds: z.array(z.string()),
-  totalPoints: z.number(),
-  missedLabels: z.array(z.string()),
-  micSeconds: z.number(),
-  pinnedViaFind: z.boolean(),
-  transcript: z.array(TranscriptLineSchema).optional()
-})
+// .passthrough() here for the same reason as the bank (REVIEW.md L18): a
+// session written by a newer build, read by an older one and saved again —
+// which happens on every recap visit — must not come back with its new fields
+// quietly removed.
+export const SessionQuestionSchema = z
+  .object({
+    id: z.string(),
+    askedAtSec: z.number(),
+    question: z.string(),
+    entryId: z.string().nullable(),
+    coveredPointIds: z.array(z.string()),
+    totalPoints: z.number(),
+    micSeconds: z.number(),
+    pinnedViaFind: z.boolean(),
+    nearMissEntryId: z.string().nullable().optional(),
+    transcript: z.array(TranscriptLineSchema).optional()
+  })
+  .passthrough()
 
-export const SessionRecordSchema = z.object({
-  id: z.string(),
-  loopId: z.string(),
-  startedAt: z.number(),
-  endedAt: z.number(),
-  transcriptKept: z.boolean(),
-  questions: z.array(SessionQuestionSchema),
-  incomplete: z.boolean().optional()
-})
+export const SessionRecordSchema = z
+  .object({
+    id: z.string(),
+    loopId: z.string(),
+    startedAt: z.number(),
+    endedAt: z.number(),
+    transcriptKept: z.boolean(),
+    questions: z.array(SessionQuestionSchema),
+    incomplete: z.boolean().optional()
+  })
+  .passthrough()
 
 export const SessionsFileSchema = z.array(SessionRecordSchema)
 
@@ -92,11 +108,14 @@ export const SessionsFileSchema = z.array(SessionRecordSchema)
 // required field would silently wipe an existing user's placement, transcript
 // preference and strip position on upgrade.
 export const SettingsSchema = z.object({
+  version: z.number().default(1),
   contentProtection: z.boolean(),
   keepTranscript: z.boolean(),
   placement: z.enum(['docked', 'strip', 'second-screen']),
   stripPosition: z.object({ x: z.number(), y: z.number() }).nullable(),
   micDeviceId: z.string().nullable().default(null),
   meetingDeviceId: z.string().nullable().default(null),
-  whisperModel: z.string().default(DEFAULT_WHISPER_MODEL)
+  whisperModel: z.string().default(DEFAULT_WHISPER_MODEL),
+  autoPickSec: z.number().nullable().default(TUNING.autoPickSec),
+  highLegibility: z.boolean().default(false)
 })

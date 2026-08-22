@@ -4,6 +4,7 @@ import { DEFAULT_WHISPER_MODEL, FALLBACK_WHISPER_MODEL } from '@shared/models'
 import { VadSegmenter, normalizeForAsr, type Utterance } from '@/lib/dsp/vad'
 import { cleanTranscript, isLikelyHallucination } from '@/lib/asrText'
 import { AsrQueue, rank, type Stream } from '@/lib/asrQueue'
+import { localWasmPaths } from '@/lib/ortWasm'
 
 export {}
 
@@ -22,8 +23,10 @@ export {}
 type InMsg =
   | { type: 'init'; modelPath: string; modelId?: string }
   | { type: 'audio'; stream: Stream; samples: Float32Array; t: number }
-  /** end of capture: emit whatever is still open rather than losing it */
-  | { type: 'flush' }
+  /** end of capture: emit whatever is still open rather than losing it.
+   *  With a stream, only that segmenter — the mic test detaching must not
+   *  splice the interviewer's open sentence (REVIEW.md L4). */
+  | { type: 'flush'; stream?: Stream }
   /** pause/resume: drop in-progress audio without tearing the model down */
   | { type: 'reset' }
 
@@ -53,21 +56,42 @@ function post(msg: OutMsg): void {
 }
 
 async function init(modelPath: string, modelId: string): Promise<void> {
-  const { pipeline, env } = await import('@xenova/transformers')
+  const { pipeline, env } = await import('@huggingface/transformers')
+  // Both flags, explicitly. The new library defaults allowLocalModels to
+  // FALSE in a browser context, so setting only allowRemoteModels leaves both
+  // disabled and it refuses to load anything at all — "Invalid configuration
+  // detected: both local and remote models are disabled", which is what the
+  // offline probe caught. Remote stays off: nothing here may reach a network.
+  env.allowLocalModels = true
   env.allowRemoteModels = false
   env.localModelPath = modelPath
-  let asr: Awaited<ReturnType<typeof pipeline>>
+  // the onnx runtime's default wasmPaths is a CDN — point it at the bundled
+  // binaries before the first pipeline() constructs a session (REVIEW.md C2)
+  // the typings allow this to be absent (a build with no wasm backend); the
+  // app only ever runs the wasm one, and a missing backend here would mean the
+  // CDN default is not even reachable to be overridden
+  if (env.backends.onnx.wasm) env.backends.onnx.wasm.wasmPaths = localWasmPaths()
+  // Narrow, hand-written: the library's own return type for pipeline() is a
+  // union over every task it supports, and asking the compiler to resolve it
+  // is "union type that is too complex to represent". The worker only ever
+  // calls the thing, and the call shape is pinned right below.
+  type Asr = (audio: Float32Array, opts: object) => Promise<{ text: string }>
+  let asr: Asr
   try {
-    asr = await pipeline('automatic-speech-recognition', modelId)
+    asr = (await pipeline('automatic-speech-recognition', modelId, {
+      dtype: 'q8'
+    })) as unknown as Asr
   } catch (err) {
     // the chosen tier isn't on disk, or its download was interrupted.
     // Transcribing with the smaller model beats transcribing nothing —
     // silence is exactly the failure this whole round is about.
     if (modelId === FALLBACK_WHISPER_MODEL) throw err
     post({ type: 'error', message: `${modelId} failed to load — falling back to the smaller model` })
-    asr = await pipeline('automatic-speech-recognition', FALLBACK_WHISPER_MODEL)
+    asr = (await pipeline('automatic-speech-recognition', FALLBACK_WHISPER_MODEL, {
+      dtype: 'q8'
+    })) as unknown as Asr
   }
-  transcribe = (audio: Float32Array, opts: object) => asr(audio, opts) as Promise<{ text: string }>
+  transcribe = (audio: Float32Array, opts: object) => asr(audio, opts)
   // compile the graph on silence now rather than partway through the first
   // answer, where the delay is indistinguishable from "it isn't working"
   try {
@@ -193,9 +217,9 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
         onAudio(msg.stream, msg.samples, msg.t)
         break
       case 'flush':
-        // emit whatever is open, then clear the segmenters. Queued work still
-        // decodes — this is "capture stopped", not "throw it away".
-        for (const stream of STREAMS) {
+        // emit whatever is open, then clear the segmenter(s). Queued work
+        // still decodes — this is "capture stopped", not "throw it away".
+        for (const stream of msg.stream ? [msg.stream] : STREAMS) {
           const tail = vad[stream].flush()
           if (tail) emit(stream, tail)
           clearStream(stream)

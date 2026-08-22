@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import type { StoriesPaneProps } from '../contracts'
-import { Label } from '../../components/primitives'
+import { ConfirmButton, Label } from '../../components/primitives'
 import './stories.css'
 
 // Shared stories library, living in the bank's pane 3. No mock exists for
@@ -20,6 +20,8 @@ const StoriesPane = (props: StoriesPaneProps): JSX.Element => {
     onMetricAdd,
     onMetricRemove,
     onSave,
+    onDelete,
+    draftUsedIn = 0,
     onClose
   } = props
 
@@ -54,14 +56,15 @@ const StoriesPane = (props: StoriesPaneProps): JSX.Element => {
           {rows.map((r) => {
             const selected = draft?.storyId === r.id
             return (
-              <div
+              <button
+                type="button"
                 key={r.id}
                 className={selected ? 'stories-row stories-row--selected' : 'stories-row'}
                 onClick={() => onSelect(r.id)}
               >
                 <div className="stories-row__title">{r.title}</div>
                 <div className="stories-row__sub">{r.sub}</div>
-              </div>
+              </button>
             )
           })}
         </div>
@@ -96,9 +99,9 @@ const StoriesPane = (props: StoriesPaneProps): JSX.Element => {
                 {draft.metrics.map((m) => (
                   <div key={m} className="metric-chip stories-metric">
                     {m}
-                    <span className="stories-metric__x" onClick={() => onMetricRemove(m)}>
+                    <button type="button" className="stories-metric__x" onClick={() => onMetricRemove(m)}>
                       ×
-                    </span>
+                    </button>
                   </div>
                 ))}
                 <input
@@ -116,9 +119,23 @@ const StoriesPane = (props: StoriesPaneProps): JSX.Element => {
               <div className="stories-note pretty">
                 Shared story — saving updates every answer that uses it.
               </div>
-              <button className="stories-save" onClick={onSave}>
-                Save
-              </button>
+              <div className="stories-save-row__actions">
+                {onDelete && (
+                  <ConfirmButton
+                    className="stories-delete"
+                    label="Delete"
+                    confirmLabel={
+                      draftUsedIn > 0
+                        ? `Delete — clears it from ${draftUsedIn} ${draftUsedIn === 1 ? 'answer' : 'answers'}?`
+                        : 'Delete for good?'
+                    }
+                    onConfirm={onDelete}
+                  />
+                )}
+                <button className="stories-save" onClick={onSave}>
+                  Save
+                </button>
+              </div>
             </div>
           </div>
         )}

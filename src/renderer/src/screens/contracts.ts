@@ -23,10 +23,17 @@ export interface MatchedBodyProps {
   question: string
   covered: number
   total: number
+  /** "2:40 on this one" once this answer has run long — null below the
+   *  threshold, which is every state the design reference renders
+   *  (REVIEW.md P9) */
+  pacing?: string | null
   points: PointView[]
   onTogglePoint: (id: string) => void
   story: { label: string; body: string; metrics: string[] } | null
-  earlier: { question: string; time: string }[]
+  /** questions already asked, most recent first. `onResume` puts that answer
+   *  back on the panel after a wrong swap — the data is already on screen, so
+   *  the way back should not require typing into ⌘K while someone watches. */
+  earlier: { key: string; question: string; time: string; onResume?: () => void }[]
 }
 
 export interface UnsureCandidateView {
@@ -43,8 +50,9 @@ export interface UnsureBodyProps {
   heard: string
   /** ranked, first = leader */
   candidates: UnsureCandidateView[]
-  /** whole seconds remaining, e.g. 4 */
-  countdownSec: number
+  /** whole seconds remaining, e.g. 4 — null when auto-pick is set to "never",
+   *  in which case the card waits for a decision (REVIEW.md P5) */
+  countdownSec: number | null
   /** 0–100 fill of the auto-pick bar */
   countdownPct: number
   onPick: (entryId: string) => void
@@ -58,6 +66,16 @@ export interface LivePanelProps {
   unsure: UnsureBodyProps | null
   transcript: TranscriptLineView | null
   transcriptVisible: boolean
+  /** the session is paused: pause closes the microphone, so the header must
+   *  stop claiming it is listening (REVIEW.md P2) */
+  paused?: boolean
+  /** a question was heard that matched nothing — what is on screen belongs to
+   *  the previous one. Says so and dims; deliberately carries no instruction,
+   *  because at this moment the user is improvising under someone's gaze. */
+  stale?: boolean
+  /** pipeline problem (model failed, audio stalled) — renders a one-line
+   *  warning strip; null in every design-reference state */
+  notice?: string | null
   onToggleTranscript: () => void
   onFind: () => void
   onCollapse: () => void
@@ -91,6 +109,9 @@ export interface FindOverlayProps {
   results: FindResultView[]
   selectedIndex: number
   onQueryChange: (q: string) => void
+  /** click on a specific row pins THAT row — never the current selection,
+   *  which is one render behind the click (REVIEW.md C5) */
+  onPinEntry: (entryId: string) => void
   /** +1 / −1 */
   onMove: (delta: number) => void
   onPin: () => void
@@ -109,6 +130,11 @@ export interface StripProps {
   overlay: boolean
   /** content-protection state, surfaced in the tooltip */
   protectionOn: boolean
+  /** the OS cannot exclude windows from capture at all (Linux) — the tooltip
+   *  must say so instead of claiming share-safety (REVIEW.md M21) */
+  protectionUnsupported?: boolean
+  /** session paused, microphone closed — the dot goes grey (REVIEW.md P2) */
+  paused?: boolean
   onExpand: () => void
 }
 
@@ -149,6 +175,8 @@ export interface BankDetailProps {
 }
 
 export interface BankScreenProps {
+  /** failure strip: unreadable bank on load, or saves not landing (H8/H9) */
+  banner?: string | null
   loops: { id: string; shortName: string }[]
   selectedLoopId: string
   sections: { id: string; name: string; count: number }[]
@@ -194,9 +222,16 @@ export interface ImportPaneProps {
   skipDuplicates: boolean
   onSkipDuplicates: (skip: boolean) => void
   onImport: () => void
+  /** the paste is a complete bank backup — offered as an exact restore that
+   *  REPLACES the whole bank (REVIEW.md M9); null when it isn't one */
+  onRestore?: (() => void) | null
   onExport: (format: 'md' | 'json') => void
   /** "Added 12 answers", "Saved to ~/Documents/bank.md" */
   result: string | null
+  /** the example answers the app ships with are still in the bank, untouched.
+   *  They are scored against the interviewer's voice like anything else, so
+   *  there has to be a way out of them. Null once none are left. */
+  starters?: { count: number; onRemove: () => void } | null
   onClose: () => void
 }
 
@@ -220,6 +255,58 @@ export interface StoriesPaneProps {
   onMetricAdd: (m: string) => void
   onMetricRemove: (m: string) => void
   onSave: () => void
+  /** delete the story being edited; every answer using it loses the
+   *  reference rather than keeping a dangling one. Null while it is new. */
+  onDelete?: (() => void) | null
+  /** how many answers currently point at the story being edited — deleting a
+   *  shared entity should say what it is about to touch */
+  draftUsedIn?: number
+  onClose: () => void
+}
+
+// ---- bank check (pane 3) ----------------------------------------------------
+
+export interface CheckAnswerView {
+  entryId: string
+  question: string
+  onOpen: () => void
+}
+
+export interface CheckFindingView {
+  id: string
+  /** the entry that loses the collision, in its own words */
+  question: string
+  /** one sentence about what happens live — never a score */
+  detail: string
+  onMerge: (() => void) | null
+  onOpen: () => void
+  /** "Merge them" reads wrong for a shared phrase: the fix is to take the
+   *  phrase off one of them, which is an edit */
+  mergeLabel: string
+}
+
+export interface CheckPaneProps {
+  /** the pasted question */
+  text: string
+  onTextChange: (t: string) => void
+  /** null until something has been asked */
+  result: {
+    /** "This one goes straight up", "You would get the pick-one card",
+     *  "Nothing would come up" */
+    verdict: string
+    tone: 'good' | 'unsure' | 'none'
+    answers: CheckAnswerView[]
+    /** offered when nothing matched — drafts it with the question filled in */
+    onAddToBank: (() => void) | null
+  } | null
+  /** the worst three, each with something to do about it */
+  findings: CheckFindingView[]
+  /** the encoder is still loading: results would be lexical guesses, so the
+   *  pane waits rather than showing a worse answer than the interview will */
+  warming: boolean
+  /** a session is running — this wants the same model the interview is using */
+  blocked: boolean
+  entryCount: number
   onClose: () => void
 }
 
@@ -239,6 +326,25 @@ export interface EditorPaneProps {
   onTriggerAdd: (t: string) => void
   onTriggerRemove: (t: string) => void
   onSwapStory: () => void
+  /** the draft has unsaved changes — Esc asks before discarding them
+   *  (REVIEW.md P6) */
+  dirty?: boolean
+  /** delete this entry for good — absent while drafting a new one, since
+   *  there is nothing yet to delete. Two presses, no modal. */
+  onDelete?: (() => void) | null
+  /** what you actually said when this question came up, one line per breath,
+   *  carried in from the recap. Yours only — the interviewer's words never
+   *  travel with it. Clicking a line drops it into the points as a draft. */
+  excerpt?: string[] | null
+  onUseExcerptLine?: (text: string) => void
+  /** turn the whole excerpt into a few sayable points, in the user's own
+   *  words. Absent when there is nothing to work from. */
+  onCondenseExcerpt?: (() => void) | null
+  /** the condense pass is running (it warms the encoder on first use) */
+  condensing?: boolean
+  /** a phrase sitting in the trigger input, uncommitted. The user edits it
+   *  down and presses Enter, or ignores it — nothing is written for them. */
+  seedTriggerPhrase?: string
   onCancel: () => void
   onSave: () => void
 }
@@ -278,27 +384,43 @@ export interface SetupScreenProps {
   stats: { answers: number; stories: number; noStory: number }
   meeting: AudioRowView & { levels: number[] | null; picker?: DevicePickerView }
   mic: AudioRowView & { hasSignal: boolean; levels?: number[] | null; picker?: DevicePickerView }
-  /** which Whisper build transcribes, and the cost of switching */
-  model?: {
+  // There is no speech-model picker. tiny.en used to sit here as a "Fast"
+  // option that misses more words — an invitation to make your own interview
+  // worse to save 34 MB. It is still the automatic fallback; it is not a
+  // choice. If a second model ever earns its place (measured, not assumed),
+  // the picker comes back with two options that are both good.
+  /** how long the unsure card waits before committing its leader
+   *  (REVIEW.md P5) */
+  autoPick?: {
     options: DeviceOption[]
     value: string
     onChange: (value: string) => void
-    /** "~145 MB · noticeably better, still real-time" */
     detail: string
   }
   keepTranscript: boolean
   onToggleTranscript: () => void
+  /** raise the dimmest text above the design default (REVIEW.md P7) */
+  highLegibility?: boolean
+  onToggleLegibility?: () => void
   placement: 'docked' | 'strip' | 'second-screen'
   onPlacement: (p: 'docked' | 'strip' | 'second-screen') => void
   /** one-line graceful error, e.g. only one display for second-screen */
   placementError: string | null
+  /** persistence failure strip: unreadable bank, or saves not landing (H8/H9) */
+  alert?: string | null
   /** on-device models missing → matching runs on the lexical fallback */
   modelsNotice?: string | null
   /** offered next to the notice; null while a download is running or done */
   onDownloadModels?: (() => void) | null
+  /** offered next to the notice while a download runs; partial files resume */
+  onCancelDownload?: (() => void) | null
   canStart: boolean
   onStart: () => void
   onEditBank: () => void
+  /** open the bank check — what a question would match, and which entries the
+   *  matcher will confuse. Belongs here because this is the "am I ready"
+   *  surface, and it is the last screen before a session arms. */
+  onCheckBank?: () => void
   onFixNoStory: () => void
   onTestMic: () => void
   /** "Test" | "Listening…" | "Thinking…" | "Test again" */
@@ -394,6 +516,13 @@ export interface RecapScreenProps {
   fixes: RecapFixView[]
   /** "Practice the N I missed →"; 0 hides the link */
   practiceCount: number
+  /** the final save failed — this recap exists only in memory (REVIEW.md M5) */
+  notice?: string | null
+  /** nothing about this session was written to disk — a rehearsal or a dry
+   *  run — so the storage actions are replaced by a way back. "Save to loop"
+   *  here would write a fixture into real interview history. */
+  ephemeral?: boolean
+  onDone?: () => void
   onDeleteSession: () => void
   onSaveToLoop: () => void
   onExport: () => void

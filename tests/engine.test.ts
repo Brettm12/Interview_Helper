@@ -4,6 +4,10 @@ import { MockTranscriber } from '@/lib/drivers/mock'
 import { deriveRecap } from '@/lib/recap'
 import { useSessionStore } from '@/state/sessionStore'
 import { useBankStore } from '@/state/bankStore'
+import { useSettingsStore } from '@/state/settingsStore'
+import { TUNING } from '@shared/tuning'
+import { usePanelStore } from '@/state/panelStore'
+import { api } from '@/lib/api'
 import script from '@/fixtures/demo-session.json'
 import type { SessionRecord } from '@shared/types'
 
@@ -238,5 +242,734 @@ describe('a partial that turns out to be wrong', () => {
     const rows = useSessionStore.getState().questions
     const original = rows.find((q) => q.id === first.id)!
     expect(original.question).toBe(first.question)
+  })
+})
+
+// ---- races found in review (REVIEW.md H3 H4 M2 M3 M4 M6 L12) ---------------
+
+describe('question-record integrity under close-together events', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  const ER = 'Tell me about a time you handled a really difficult employee relations case.'
+  const COACH = "I've got a manager who's burning their team out — how do you coach a manager in that spot?"
+  const AMBIG = 'Say a harassment complaint lands on your desk — how do you run the investigation?'
+  const UNMATCHED = "What's your approach to pay transparency conversations, when someone finds out a peer earns more?"
+
+  async function armed(): Promise<{ them: MockTranscriber; you: MockTranscriber; engine: SessionEngine }> {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', true)
+    return { them, you, engine }
+  }
+  const say = (t: MockTranscriber, text: string, at: number): void =>
+    t.emit({ speaker: 'them', text, confirmed: true, t: at })
+
+  it('an organic match for the NEXT question does not swallow a prior unmatched one (H3)', async () => {
+    const { them } = await armed()
+    say(them, UNMATCHED, 10)
+    expect(useSessionStore.getState().questions).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(3000)
+    say(them, ER, 40)
+    const qs = [...useSessionStore.getState().questions].sort((a, b) => a.askedAtSec - b.askedAtSec)
+    expect(qs).toHaveLength(2)
+    expect(qs[0].entryId).toBeNull()
+    expect(qs[0].question).toMatch(/pay transparency/i)
+    expect(qs[1].entryId).toBe('a-er-case')
+  })
+
+  it('a ⌘K pin still resolves a just-heard unmatched question into one row', async () => {
+    const { them, engine } = await armed()
+    say(them, UNMATCHED, 10)
+    engine.pinEntry('a-policy')
+    const qs = useSessionStore.getState().questions
+    expect(qs).toHaveLength(1)
+    expect(qs[0].entryId).toBe('a-policy')
+    expect(qs[0].pinnedViaFind).toBe(true)
+  })
+
+  it('a deferred swap is invalidated by a newer unsure question (H4)', async () => {
+    const { them } = await armed()
+    // session-clock gaps (> windowGapSec) keep each question its own turn;
+    // the wall clock still packs them inside the 2.5s swap debounce
+    say(them, ER, 2) // confident swap; debounce window opens
+    expect(useSessionStore.getState().match.entryId).toBe('a-er-case')
+    await vi.advanceTimersByTimeAsync(200)
+    say(them, COACH, 20) // confident again, inside the debounce → deferred
+    await vi.advanceTimersByTimeAsync(100)
+    say(them, AMBIG, 40) // NEWER question goes ambiguous — countdown starts
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+
+    // past the point where the deferred swap would have fired
+    await vi.advanceTimersByTimeAsync(2600)
+    const m = useSessionStore.getState().match
+    expect(m.state).toBe('ambiguous') // the unsure card survived
+    expect(m.entryId).toBe('a-er-case') // no stale flip to a-coach
+
+    // and the countdown resolves the ambiguous question, not the stale swap
+    await vi.advanceTimersByTimeAsync(4200)
+    const resolved = useSessionStore.getState().match
+    expect(resolved.state).toBe('confident')
+    expect(['a-invest-run', 'a-informal']).toContain(resolved.entryId)
+  })
+
+  it('a user pick beats a warm rescore landing later (M2)', async () => {
+    await useBankStore.getState().load()
+    let release: () => void = () => {}
+    const vecs: Record<string, number[]> = {
+      [AMBIG]: [1, 0],
+      'Walk me through how you run a harassment investigation.': [1, 0]
+    }
+    const { EmbeddingCache } = await import('@/lib/embeddings')
+    const cache = new EmbeddingCache({
+      ready: true,
+      embed: (texts: string[]) =>
+        new Promise((res) => {
+          release = () => res(texts.map((t) => Float32Array.from(vecs[t] ?? [0, 1])))
+        })
+    })
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you, cache)
+    useSessionStore.getState().arm('loop-meridian', true)
+
+    say(them, AMBIG, 5) // cold: ambiguous on the twins, rescore scheduled
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+    engine.pickCandidate('a-informal') // the user resolves it by hand
+    expect(useSessionStore.getState().match.entryId).toBe('a-informal')
+
+    release() // embeddings land, favouring a-invest-run overwhelmingly
+    await vi.advanceTimersByTimeAsync(50)
+    expect(useSessionStore.getState().match.entryId).toBe('a-informal') // their call stands
+    expect(useSessionStore.getState().questions).toHaveLength(1)
+  })
+
+  it('a click racing the auto-pick does not record a second row (M3)', async () => {
+    const { them, engine } = await armed()
+    say(them, AMBIG, 10)
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+    await vi.advanceTimersByTimeAsync(4200) // auto-pick fires first
+    const picked = useSessionStore.getState().match.entryId
+    expect(picked).not.toBeNull()
+    engine.pickCandidate('a-informal') // the in-flight click lands late
+    expect(useSessionStore.getState().match.entryId).toBe(picked)
+    expect(useSessionStore.getState().questions).toHaveLength(1)
+  })
+
+  it('pause stops the auto-pick and keeps only the pre-pause tail (M4/M6)', async () => {
+    const { them, you, engine } = await armed()
+    say(them, ER, 2)
+    say(them, AMBIG, 10)
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+
+    engine.pause()
+    useSessionStore.getState().setStatus('paused')
+    await vi.advanceTimersByTimeAsync(6000)
+    // nothing auto-picked while paused, no phantom row (the unresolved
+    // ambiguous question records only when something resolves it)
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+    expect(useSessionStore.getState().questions).toHaveLength(1)
+
+    // the flushed mid-sentence tail (stamped before the pause) still lands...
+    const before = useSessionStore.getState().transcript.length
+    you.emit({ speaker: 'you', text: 'and that wrapped the case up.', confirmed: true, t: 10 })
+    expect(useSessionStore.getState().transcript.length).toBe(before + 1)
+    // ...but speech from after the pause does not
+    you.emit({ speaker: 'you', text: 'this should be dropped.', confirmed: true, t: 200 })
+    expect(useSessionStore.getState().transcript.length).toBe(before + 1)
+  })
+
+  it('an empty loop still records unmatched questions (L12)', async () => {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-that-does-not-exist', true)
+    say(them, ER, 3)
+    say(them, AMBIG, 8)
+    const qs = useSessionStore.getState().questions
+    expect(qs).toHaveLength(2)
+    expect(qs.every((q) => q.entryId === null)).toBe(true)
+  })
+})
+
+// ---- persistence semantics at the end of a session --------------------------
+
+describe('session record durability', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+    useSessionStore.getState().setSaveError(null)
+  })
+
+  const ER = 'Tell me about a time you handled a really difficult employee relations case.'
+
+  it('minute-5 excerpts survive an hour-long session (REVIEW.md H10)', async () => {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', true)
+
+    // the opening question at minute 5, then ~55 minutes of talking: far more
+    // confirmed lines than the UI's 200-entry rolling ring holds
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 300 })
+    you.emit({ speaker: 'you', text: 'It started with two complaints about one supervisor.', confirmed: true, t: 310 })
+    for (let i = 0; i < 500; i++) {
+      you.emit({ speaker: 'you', text: `context line ${i} of the answer`, confirmed: true, t: 320 + i * 6 })
+    }
+    expect(useSessionStore.getState().transcript.length).toBeLessThanOrEqual(200) // the UI ring stays capped
+
+    const record = await engine.end()
+    const q = record.questions.find((x) => x.entryId === 'a-er-case')
+    const texts = (q?.transcript ?? []).map((l) => l.text)
+    // the ring-based derivation returned [] here — the first half of the
+    // interview had scrolled out before the recap was built
+    expect(texts).toContain(ER)
+    expect(texts).toContain('It started with two complaints about one supervisor.')
+    expect(texts.length).toBeGreaterThan(490)
+  })
+
+  it('a failed final save still tears down into the recap, visibly (REVIEW.md M5)', async () => {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', true)
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 3 })
+
+    const originalSave = api.sessions.save
+    api.sessions.save = () => Promise.reject(new Error('ENOSPC: disk full'))
+    try {
+      const record = await engine.end() // must NOT throw
+      expect(record.questions.length).toBeGreaterThan(0)
+      const s = useSessionStore.getState()
+      expect(s.status).toBe('idle')
+      expect(s.lastSession?.id).toBe(record.id)
+      expect(s.saveError).toMatch(/disk full/)
+      expect(usePanelStore.getState().view).toBe('recap')
+    } finally {
+      api.sessions.save = originalSave
+    }
+  })
+})
+
+// ---- auto-pick delay setting (REVIEW.md P5) ---------------------------------
+
+describe('the unsure card honours the auto-pick setting', () => {
+  const AMBIG = 'Say a harassment complaint lands on your desk — how do you run the investigation?'
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+    useSettingsStore.setState({ autoPickSec: TUNING.autoPickSec })
+  })
+
+  async function ambiguous(): Promise<{ them: MockTranscriber; engine: SessionEngine }> {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', false)
+    them.emit({ speaker: 'them', text: AMBIG, confirmed: true, t: 3 })
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+    return { them, engine }
+  }
+
+  it('"never" leaves no deadline at all — the card waits for you', async () => {
+    useSettingsStore.setState({ autoPickSec: null })
+    await ambiguous()
+    expect(useSessionStore.getState().match.autoPickAt).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    // still asking, nothing committed on its own, and no phantom question row
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+    expect(useSessionStore.getState().questions).toHaveLength(0)
+  })
+
+  it('8s waits twice as long as the default before committing the leader', async () => {
+    useSettingsStore.setState({ autoPickSec: 8 })
+    await ambiguous()
+
+    await vi.advanceTimersByTimeAsync(5000) // past the old 4s default
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(useSessionStore.getState().match.state).toBe('confident')
+    expect(useSessionStore.getState().match.entryId).toBeTruthy()
+  })
+
+  it('a manual pick still resolves it while set to never', async () => {
+    useSettingsStore.setState({ autoPickSec: null })
+    const { engine } = await ambiguous()
+    const leader = useSessionStore.getState().match.candidates[0].entryId
+    engine.pickCandidate(leader)
+    expect(useSessionStore.getState().match.state).toBe('confident')
+    expect(useSessionStore.getState().match.entryId).toBe(leader)
+  })
+})
+
+// ---- live pacing cue (REVIEW.md P9) ----------------------------------------
+
+describe('mic time on the entry currently on screen', () => {
+  const ER = 'Tell me about a time you handled a really difficult employee relations case.'
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  it('accrues while you answer and resets when a new question takes the panel', async () => {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', false)
+
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 10 })
+    expect(useSessionStore.getState().activeMicSec).toBe(0)
+
+    you.emit({ speaker: 'you', text: 'Two complainants, one supervisor.', confirmed: true, t: 15 })
+    you.emit({ speaker: 'you', text: 'I opened it the same afternoon.', confirmed: true, t: 100 })
+    // ~85s of answering: real, but not yet worth interrupting anyone about
+    expect(useSessionStore.getState().activeMicSec).toBeGreaterThan(80)
+    expect(useSessionStore.getState().activeMicSec).toBeLessThan(TUNING.longAnswerSec)
+
+    you.emit({ speaker: 'you', text: 'And that is roughly where it landed.', confirmed: true, t: 200 })
+    expect(useSessionStore.getState().activeMicSec).toBeGreaterThan(TUNING.longAnswerSec)
+
+    // the cue is about THIS answer — whatever takes the panel next starts
+    // from zero, however it got there
+    engine.pinEntry('a-coach')
+    expect(useSessionStore.getState().activeMicSec).toBe(0)
+  })
+})
+
+// ---- practice mode (REVIEW.md P10) -----------------------------------------
+// Rehearsing one answer must leave no trace: an evening of practice runs
+// cannot dilute the interview history, and a practice record must never end
+// up as the "RECOVERED" recap waiting at the next boot.
+
+describe('a practice run persists nothing', () => {
+  const ER = 'Tell me about a time you handled a really difficult employee relations case.'
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  it('writes no session record and stamps no lastUsed', async () => {
+    await useBankStore.getState().load()
+    const saves: string[] = []
+    const realSave = api.sessions.save
+    const realList = api.sessions.list
+    api.sessions.save = async (s) => void saves.push(s.id)
+    api.sessions.list = async () => []
+
+    try {
+      const them = new MockTranscriber('them')
+      const you = new MockTranscriber('you')
+      const engine = new SessionEngine(them, you)
+      // whatever earlier tests in this file left on the entry (the shim's
+      // storage is shared): a practice run must not change it
+      const lastUsedBefore = JSON.stringify(
+        useBankStore.getState().bank!.answers.find((a) => a.id === 'a-er-case')!.lastUsed
+      )
+      // armed AS a practice run against one entry
+      useSessionStore.getState().arm('loop-meridian', true, 'a-er-case')
+      engine.pinEntry('a-er-case')
+      you.emit({ speaker: 'you', text: 'Two complainants, one supervisor.', confirmed: true, t: 5 })
+
+      // interim snapshots are skipped too, however long it runs
+      await vi.advanceTimersByTimeAsync(TUNING.snapshotIntervalSec * 3000)
+      expect(saves).toEqual([])
+
+      const record = await engine.end()
+      expect(saves).toEqual([])
+      // the recap still works — it just lives in memory
+      expect(record.questions.length).toBeGreaterThan(0)
+      expect(useSessionStore.getState().lastSession?.id).toBe(record.id)
+      // and nothing was stamped on the bank entry
+      const entry = useBankStore.getState().bank!.answers.find((a) => a.id === 'a-er-case')!
+      expect(JSON.stringify(entry.lastUsed)).toBe(lastUsedBefore)
+    } finally {
+      api.sessions.save = realSave
+      api.sessions.list = realList
+    }
+  })
+
+  it('a dry run persists nothing either — it replays a fixture over the real bank', async () => {
+    await useBankStore.getState().load()
+    const saves: string[] = []
+    const realSave = api.sessions.save
+    api.sessions.save = async (s) => void saves.push(s.id)
+    try {
+      const them = new MockTranscriber('them')
+      const you = new MockTranscriber('you')
+      const engine = new SessionEngine(them, you)
+      const lastUsedBefore = JSON.stringify(
+        useBankStore.getState().bank!.answers.find((a) => a.id === 'a-er-case')!.lastUsed
+      )
+      // the dry-run shape: ephemeral, but no practice entry — this used to
+      // write an incomplete record and stamp the fixture's coverage numbers
+      // onto the user's real bank entries
+      useSessionStore.getState().arm('loop-meridian', true, null, true)
+      them.emit({ speaker: 'them', text: ER, confirmed: true, t: 3 })
+      await vi.advanceTimersByTimeAsync(TUNING.snapshotIntervalSec * 3000)
+      expect(saves).toEqual([])
+
+      await engine.end()
+      expect(saves).toEqual([])
+      const entry = useBankStore.getState().bank!.answers.find((a) => a.id === 'a-er-case')!
+      expect(JSON.stringify(entry.lastUsed)).toBe(lastUsedBefore)
+    } finally {
+      api.sessions.save = realSave
+    }
+  })
+
+  it('a real session still saves — the firewall is the ephemeral flag alone', async () => {
+    await useBankStore.getState().load()
+    const saves: string[] = []
+    const realSave = api.sessions.save
+    api.sessions.save = async (s) => void saves.push(s.id)
+    try {
+      const them = new MockTranscriber('them')
+      const you = new MockTranscriber('you')
+      const engine = new SessionEngine(them, you)
+      useSessionStore.getState().arm('loop-meridian', true)
+      them.emit({ speaker: 'them', text: ER, confirmed: true, t: 3 })
+      const record = await engine.end()
+      expect(saves).toEqual([record.id])
+    } finally {
+      api.sessions.save = realSave
+    }
+  })
+})
+
+// ---- a question that matched nothing ---------------------------------------
+// The branch that records an unmatched question used to leave `match`
+// untouched: the previous answer stayed on screen under a live-green dot
+// while the words you improvised struck through ITS points, and the recap
+// then reported coverage you never spoke.
+
+describe('a question the bank does not cover', () => {
+  const ER = 'Tell me about a time you handled a really difficult employee relations case.'
+  const UNMATCHED =
+    "What's your approach to pay transparency conversations, when someone finds out a peer earns more?"
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  async function armed(): Promise<{ them: MockTranscriber; you: MockTranscriber; engine: SessionEngine }> {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', true)
+    return { them, you, engine }
+  }
+
+  it('marks the entry still on screen as stale instead of leaving it current', async () => {
+    const { them, you } = await armed()
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 10 })
+    expect(useSessionStore.getState().match).toMatchObject({
+      state: 'confident',
+      entryId: 'a-er-case',
+      stale: false
+    })
+
+    you.emit({
+      speaker: 'you',
+      text: 'Two complainants, one supervisor, and a site used to silence people.',
+      confirmed: true,
+      t: 20
+    })
+    const covered = [...(useSessionStore.getState().coverage['a-er-case'] ?? [])]
+    expect(covered).toContain('p-erc-1')
+
+    await vi.advanceTimersByTimeAsync(3000)
+    them.emit({ speaker: 'them', text: UNMATCHED, confirmed: true, t: 60 })
+
+    const s = useSessionStore.getState()
+    // the card is still up — throwing it away would lose the only thing on
+    // screen — but it no longer claims to be the current answer
+    expect(s.match.entryId).toBe('a-er-case')
+    expect(s.match.stale).toBe(true)
+    expect(s.questions.some((q) => q.entryId === null)).toBe(true)
+  })
+
+  it('stops accruing coverage against it while you improvise', async () => {
+    const { them, you } = await armed()
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 10 })
+    you.emit({
+      speaker: 'you',
+      text: 'Two complainants, one supervisor, and a site used to silence people.',
+      confirmed: true,
+      t: 20
+    })
+    const before = [...(useSessionStore.getState().coverage['a-er-case'] ?? [])]
+
+    await vi.advanceTimersByTimeAsync(3000)
+    them.emit({ speaker: 'them', text: UNMATCHED, confirmed: true, t: 60 })
+
+    // a line that would otherwise have struck a point straight off the ER card
+    you.emit({
+      speaker: 'you',
+      text: 'Eleven interviews in five days, documented as I went.',
+      confirmed: true,
+      t: 70
+    })
+    expect(useSessionStore.getState().coverage['a-er-case'] ?? []).toEqual(before)
+  })
+
+  it('the recap reports only what you actually said about that answer', async () => {
+    const { them, you, engine } = await armed()
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 10 })
+    you.emit({
+      speaker: 'you',
+      text: 'Two complainants, one supervisor, and a site used to silence people.',
+      confirmed: true,
+      t: 20
+    })
+    await vi.advanceTimersByTimeAsync(3000)
+    them.emit({ speaker: 'them', text: UNMATCHED, confirmed: true, t: 60 })
+    you.emit({
+      speaker: 'you',
+      text: 'Eleven interviews in five days, documented as I went.',
+      confirmed: true,
+      t: 70
+    })
+    const record = await engine.end()
+    const bank = useBankStore.getState().bank!
+    const recap = deriveRecap(record, bank)
+    const erRow = recap.rows.find((r) => r.id === record.questions.find((q) => q.entryId === 'a-er-case')!.id)!
+    expect(erRow.coveredPct).toBe(25) // one of four, not two
+  })
+
+  it('a later match clears it — the next card is current again', async () => {
+    const { them } = await armed()
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 10 })
+    await vi.advanceTimersByTimeAsync(3000)
+    them.emit({ speaker: 'them', text: UNMATCHED, confirmed: true, t: 60 })
+    expect(useSessionStore.getState().match.stale).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(3000)
+    them.emit({
+      speaker: 'them',
+      text: "I've got a manager who's burning their team out — how do you coach a manager in that spot?",
+      confirmed: true,
+      t: 120
+    })
+    expect(useSessionStore.getState().match).toMatchObject({ entryId: 'a-coach', stale: false })
+  })
+
+  it('a ⌘K pin clears it too', async () => {
+    const { them, engine } = await armed()
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 10 })
+    await vi.advanceTimersByTimeAsync(3000)
+    them.emit({ speaker: 'them', text: UNMATCHED, confirmed: true, t: 60 })
+    expect(useSessionStore.getState().match.stale).toBe(true)
+    engine.pinEntry('a-policy')
+    expect(useSessionStore.getState().match).toMatchObject({ entryId: 'a-policy', stale: false })
+  })
+})
+
+// ---- getting back after a wrong swap ---------------------------------------
+// Mid-answer the matcher hears a fragment and swaps the panel to a different
+// entry. The answer being given is now history text you cannot click, and the
+// only route back is ⌘K — an overlay that steals focus and wants typing while
+// someone watches your face. EARLIER rows are that route back, and resuming is
+// explicitly NOT a new asking.
+
+describe('resuming an answer from EARLIER', () => {
+  const ER = 'Tell me about a time you handled a really difficult employee relations case.'
+  const COACH =
+    "I've got a manager who's burning their team out — how do you coach a manager in that spot?"
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  async function swapped(): Promise<{ them: MockTranscriber; you: MockTranscriber; engine: SessionEngine }> {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', true)
+
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 10 })
+    you.emit({
+      speaker: 'you',
+      text: 'Two complainants, one supervisor, and a site used to silence people.',
+      confirmed: true,
+      t: 20
+    })
+    await vi.advanceTimersByTimeAsync(3000)
+    // the swap: something in the room matches another entry, and the panel
+    // moves off the answer still being given
+    them.emit({ speaker: 'them', text: COACH, confirmed: true, t: 60 })
+    expect(useSessionStore.getState().match.entryId).toBe('a-coach')
+    return { them, you, engine }
+  }
+
+  it('puts the answer back on the panel', async () => {
+    const { engine } = await swapped()
+    engine.resumeEntry('a-er-case')
+    expect(useSessionStore.getState().match).toMatchObject({
+      entryId: 'a-er-case',
+      state: 'pinned',
+      stale: false
+    })
+  })
+
+  it('keeps the coverage already earned — it is the same answer, still running', async () => {
+    const { engine } = await swapped()
+    engine.resumeEntry('a-er-case')
+    expect(useSessionStore.getState().coverage['a-er-case']).toContain('p-erc-1')
+  })
+
+  it('records no second asking, so the recap still has one row per question', async () => {
+    const { engine } = await swapped()
+    const before = useSessionStore.getState().questions.length
+    engine.resumeEntry('a-er-case')
+    const qs = useSessionStore.getState().questions
+    expect(qs).toHaveLength(before)
+    expect(qs.filter((q) => q.entryId === 'a-er-case')).toHaveLength(1)
+  })
+
+  it('keeps accruing coverage onto that same row afterwards', async () => {
+    const { you, engine } = await swapped()
+    engine.resumeEntry('a-er-case')
+    you.emit({
+      speaker: 'you',
+      text: 'Eleven interviews in five days, documented as I went.',
+      confirmed: true,
+      t: 80
+    })
+    const row = useSessionStore.getState().questions.find((q) => q.entryId === 'a-er-case')!
+    expect(row.coveredPointIds).toContain('p-erc-3')
+    expect(useSessionStore.getState().coverage['a-er-case']).toHaveLength(2)
+  })
+
+  it('resumes the pacing meter from when that question was really asked', async () => {
+    const { you, engine } = await swapped()
+    engine.resumeEntry('a-er-case')
+    you.emit({ speaker: 'you', text: 'And that is where it landed.', confirmed: true, t: 200 })
+    // ~190s since the ER question at t=10 — not a fresh meter reading zero
+    expect(useSessionStore.getState().activeMicSec).toBeGreaterThan(TUNING.longAnswerSec)
+  })
+
+  it('is inert for an entry that was never asked, and for the one already up', async () => {
+    const { engine } = await swapped()
+    const before = useSessionStore.getState().questions.length
+    engine.resumeEntry('a-policy') // never asked — that is what ⌘K is for
+    expect(useSessionStore.getState().match.entryId).toBe('a-coach')
+    engine.resumeEntry('a-coach') // already on screen
+    expect(useSessionStore.getState().questions).toHaveLength(before)
+  })
+
+  it('clears a stale card too — you chose what is current', async () => {
+    const { them, engine } = await swapped()
+    await vi.advanceTimersByTimeAsync(3000)
+    them.emit({
+      speaker: 'them',
+      text: "What's your approach to pay transparency conversations, when someone finds out a peer earns more?",
+      confirmed: true,
+      t: 120
+    })
+    expect(useSessionStore.getState().match.stale).toBe(true)
+    engine.resumeEntry('a-er-case')
+    expect(useSessionStore.getState().match).toMatchObject({ entryId: 'a-er-case', stale: false })
+  })
+})
+
+// The recap can only tell "you have no answer for this" from "you have one
+// and it was not reached" if the engine writes down which entry was closest.
+describe('recording what nearly matched', () => {
+  const UNMATCHED =
+    "What's your approach to pay transparency conversations, when someone finds out a peer earns more?"
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  async function armed(): Promise<MockTranscriber> {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', false)
+    return them
+  }
+
+  it('leaves it null when nothing was even plausible', async () => {
+    const them = await armed()
+    them.emit({ speaker: 'them', text: 'How was your weekend?', confirmed: true, t: 5 })
+    them.emit({ speaker: 'them', text: UNMATCHED, confirmed: true, t: 10 })
+    const q = useSessionStore.getState().questions.find((x) => x.question === UNMATCHED)
+    expect(q?.entryId).toBeNull()
+    // nothing in this HR bank is close to pay transparency
+    expect(q?.nearMissEntryId ?? null).toBeNull()
+  })
+
+  it('records the closest plausible answer when there was one', async () => {
+    const them = await armed()
+    // vague wording that reaches the shortlist bar but not the card: the
+    // matcher had a best guess, it just was not good enough to show
+    them.emit({
+      speaker: 'them',
+      text: 'How do you think about coaching, as an idea?',
+      confirmed: true,
+      t: 20
+    })
+    const q = useSessionStore.getState().questions.at(-1)!
+    expect(q.entryId).toBeNull()
+    expect(q.nearMissEntryId).toBe('a-multi')
+    expect(useBankStore.getState().bank!.answers.some((a) => a.id === q.nearMissEntryId)).toBe(true)
+  })
+
+  it('never sets it on a question that DID match', async () => {
+    const them = await armed()
+    them.emit({
+      speaker: 'them',
+      text: 'Tell me about a time you handled a really difficult employee relations case.',
+      confirmed: true,
+      t: 10
+    })
+    const q = useSessionStore.getState().questions.at(-1)!
+    expect(q.entryId).toBe('a-er-case')
+    expect(q.nearMissEntryId ?? null).toBeNull()
   })
 })
