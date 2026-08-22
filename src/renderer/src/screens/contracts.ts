@@ -263,6 +263,9 @@ export interface EditorPaneProps {
   onTriggerAdd: (t: string) => void
   onTriggerRemove: (t: string) => void
   onSwapStory: () => void
+  /** the draft has unsaved changes — Esc asks before discarding them
+   *  (REVIEW.md P6) */
+  dirty?: boolean
   onCancel: () => void
   onSave: () => void
 }

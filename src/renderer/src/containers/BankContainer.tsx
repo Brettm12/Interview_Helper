@@ -25,6 +25,19 @@ function EditorContainer(): JSX.Element | null {
   const store = useBankStore.getState()
   const story = storyById(bank, draft.storyId)
 
+  // Esc must not throw away work silently. A new answer counts as dirty the
+  // moment it has anything in it; an edit, when it differs from what is
+  // stored (REVIEW.md P6).
+  const stored = draft.answerId ? bank.answers.find((a) => a.id === draft.answerId) : null
+  const points = draft.points.filter((p) => p.text.trim() !== '')
+  const dirty = stored
+    ? stored.question !== draft.question.trim() ||
+      stored.sectionId !== draft.sectionId ||
+      stored.storyId !== draft.storyId ||
+      stored.triggerPhrases.join('\u0000') !== draft.triggerPhrases.join('\u0000') ||
+      stored.points.map((p) => p.text).join('\u0000') !== points.map((p) => p.text).join('\u0000')
+    : draft.question.trim() !== '' || points.length > 0 || draft.triggerPhrases.length > 0
+
   const swapStory = (): void => {
     // no picker modal in the design: Swap cycles through the shared library
     const ids = bank.stories.map((s) => s.id)
@@ -76,6 +89,7 @@ function EditorContainer(): JSX.Element | null {
         store.updateDraft({ triggerPhrases: draft.triggerPhrases.filter((x) => x !== t) })
       }
       onSwapStory={swapStory}
+      dirty={dirty}
       onCancel={() => store.cancelEdit()}
       onSave={() => void store.saveEdit()}
     />

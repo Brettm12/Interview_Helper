@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isTypingTarget, unsureKeyAction } from '@/lib/keys'
+import { editorKeyAction, isTypingTarget, unsureKeyAction } from '@/lib/keys'
 
 // REVIEW.md P1: the unsure card gives you four seconds to choose between two
 // or three candidates. Reaching for the mouse costs most of them, so 1/2/3
@@ -65,5 +65,50 @@ describe('isTypingTarget', () => {
     expect(isTypingTarget({ tagName: 'DIV', isContentEditable: true })).toBe(true)
     expect(isTypingTarget({ tagName: 'DIV' })).toBe(false)
     expect(isTypingTarget(null)).toBe(false)
+  })
+})
+
+// REVIEW.md P6: entering fifteen answers the night before is a hands-off-the-
+// keyboard dance per point without these — and Esc must never throw away
+// unsaved work on the first press.
+
+describe('editorKeyAction', () => {
+  const clean = { dirty: false, discardArmed: false }
+  const dirty = { dirty: true, discardArmed: false }
+
+  it('⌘↵ and ^↵ save', () => {
+    expect(editorKeyAction({ key: 'Enter', metaKey: true }, clean)).toEqual({ kind: 'save' })
+    expect(editorKeyAction({ key: 'Enter', ctrlKey: true }, dirty)).toEqual({ kind: 'save' })
+  })
+
+  it('a bare ↵ is not a save — it commits the point being typed', () => {
+    expect(editorKeyAction({ key: 'Enter' }, dirty)).toBeNull()
+  })
+
+  it('Esc cancels a clean draft outright', () => {
+    expect(editorKeyAction({ key: 'Escape' }, clean)).toEqual({ kind: 'cancel' })
+  })
+
+  it('Esc on unsaved work asks first, and the second press discards', () => {
+    expect(editorKeyAction({ key: 'Escape' }, dirty)).toEqual({ kind: 'arm-discard' })
+    expect(editorKeyAction({ key: 'Escape' }, { dirty: true, discardArmed: true })).toEqual({
+      kind: 'cancel'
+    })
+  })
+
+  it('⌥↑ / ⌥↓ move the focused point', () => {
+    expect(editorKeyAction({ key: 'ArrowUp', altKey: true }, clean)).toEqual({
+      kind: 'move',
+      delta: -1
+    })
+    expect(editorKeyAction({ key: 'ArrowDown', altKey: true }, clean)).toEqual({
+      kind: 'move',
+      delta: 1
+    })
+  })
+
+  it('leaves bare arrows to the caret', () => {
+    expect(editorKeyAction({ key: 'ArrowUp' }, clean)).toBeNull()
+    expect(editorKeyAction({ key: 'ArrowDown' }, clean)).toBeNull()
   })
 })

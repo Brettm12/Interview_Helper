@@ -1,7 +1,8 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { DragEvent, KeyboardEvent } from 'react'
 import type { EditorPaneProps } from '../contracts'
 import { Label, PhraseChip } from '../../components/primitives'
+import { editorKeyAction } from '../../lib/keys'
 import './editor.css'
 
 /** Entry editor pane — reference: docs/reference/3b-editor.html (handoff §6). */
@@ -19,6 +20,7 @@ const EditorPane = (props: EditorPaneProps): JSX.Element => {
     onTriggerAdd,
     onTriggerRemove,
     onSwapStory,
+    dirty,
     onCancel,
     onSave
   } = props
@@ -47,6 +49,44 @@ const EditorPane = (props: EditorPaneProps): JSX.Element => {
     setDragFrom(null)
     setDragOver(null)
   }
+
+  // Esc on a draft with unsaved work asks once before throwing it away —
+  // the same two-press shape as ending a session (REVIEW.md P6)
+  const [discardArmed, setDiscardArmed] = useState(false)
+  useEffect(() => {
+    if (!discardArmed) return
+    const id = window.setTimeout(() => setDiscardArmed(false), 2500)
+    return () => window.clearTimeout(id)
+  }, [discardArmed])
+
+  // Bound on the window, not the pane: opening the editor leaves focus on the
+  // button that opened it, so a handler on the pane div never sees the
+  // keystroke. Only mounted while the editor is.
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent): void => {
+      const action = editorKeyAction(e, { dirty: dirty === true, discardArmed })
+      if (!action) return
+      if (action.kind === 'move') {
+        // which point row has focus, straight from the DOM
+        const attr = document.activeElement?.getAttribute('data-point-index')
+        const from = attr == null ? -1 : Number(attr)
+        const to = from + action.delta
+        if (from < 0 || to < 0 || to >= points.length) return
+        e.preventDefault()
+        onPointsReorder(from, to)
+        return
+      }
+      e.preventDefault()
+      if (action.kind === 'save') onSave()
+      else if (action.kind === 'arm-discard') setDiscardArmed(true)
+      else {
+        setDiscardArmed(false)
+        onCancel()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [dirty, discardArmed, points.length, onPointsReorder, onSave, onCancel])
 
   const handlePointKeyDown = (e: KeyboardEvent<HTMLInputElement>, id: string): void => {
     if (e.key === 'Backspace' && e.currentTarget.value === '') {
@@ -80,8 +120,11 @@ const EditorPane = (props: EditorPaneProps): JSX.Element => {
       <div className="editor-header">
         <Label crumb>EDITING</Label>
         <div className="editor-header__actions">
-          <button className="editor-cancel" onClick={onCancel}>
-            Cancel
+          <button
+            className={discardArmed ? 'editor-cancel editor-cancel--armed' : 'editor-cancel'}
+            onClick={onCancel}
+          >
+            {discardArmed ? 'Esc again to discard' : 'Cancel'}
           </button>
           <button className="editor-save" onClick={onSave}>
             Save
@@ -148,6 +191,7 @@ const EditorPane = (props: EditorPaneProps): JSX.Element => {
                   <input
                     className="editor-point__input"
                     type="text"
+                    data-point-index={i}
                     value={p.text}
                     onChange={(e) => onPointChange(p.id, e.target.value)}
                     onKeyDown={(e) => handlePointKeyDown(e, p.id)}

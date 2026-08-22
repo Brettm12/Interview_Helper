@@ -28,6 +28,9 @@ jobs:
       # window lifecycle: strip placement morph, off-screen clamp, close
       # interception during a session, single-instance lock
       - run: npm run probe:windows
+      # the editor's keyboard, including the guard that stops Esc throwing
+      # away unsaved work
+      - run: npm run probe:editor
       # the packaged app must actually launch: asar contents, preload path,
       # bundled fonts and seed data
       - run: npm run package:linux

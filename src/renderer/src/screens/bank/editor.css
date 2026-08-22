@@ -214,3 +214,10 @@
   font: 400 12px/1.5 var(--font-ui);
   color: var(--text-label);
 }
+
+/* Esc on a dirty draft asks once before discarding it (REVIEW.md P6).
+   Only rendered in that armed state, which the design reference never
+   enters. */
+.editor-cancel--armed {
+  color: var(--status-attention);
+}

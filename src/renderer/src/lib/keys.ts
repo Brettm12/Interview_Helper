@@ -59,3 +59,39 @@ export function unsureKeyAction(e: KeyEventLike, ctx: UnsureKeyContext): UnsureK
   if (index < 0 || index >= ctx.candidateCount) return null
   return { kind: 'pick', index }
 }
+
+// ---- entry editor (REVIEW.md P6) -------------------------------------------
+
+export interface EditorKeyContext {
+  /** the draft differs from what is stored — Esc would throw work away */
+  dirty: boolean
+  /** an Esc has already been pressed on a dirty draft and is awaiting the
+   *  second one (same two-press shape as ending a session with ⌘⇧R) */
+  discardArmed: boolean
+}
+
+export type EditorKeyAction =
+  | { kind: 'save' }
+  | { kind: 'cancel' }
+  | { kind: 'arm-discard' }
+  | { kind: 'move'; delta: -1 | 1 }
+  | null
+
+/**
+ * Entering fifteen answers the night before is a hands-off-keyboard dance per
+ * point without these: ⌘↵ saves, Esc cancels (twice when there is work to
+ * lose), ⌥↑/⌥↓ move the focused point. ⌥-arrows are claimed deliberately —
+ * the caller preventDefaults them, or the caret jumps a word instead.
+ */
+export function editorKeyAction(e: KeyEventLike, ctx: EditorKeyContext): EditorKeyAction {
+  const mod = e.metaKey === true || e.ctrlKey === true
+  if (e.key === 'Enter' && mod) return { kind: 'save' }
+  if (e.key === 'Escape' && !mod && !e.altKey) {
+    return ctx.dirty && !ctx.discardArmed ? { kind: 'arm-discard' } : { kind: 'cancel' }
+  }
+  if (e.altKey === true && !mod) {
+    if (e.key === 'ArrowUp') return { kind: 'move', delta: -1 }
+    if (e.key === 'ArrowDown') return { kind: 'move', delta: 1 }
+  }
+  return null
+}
