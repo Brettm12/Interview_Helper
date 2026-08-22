@@ -664,3 +664,136 @@ describe('a practice run persists nothing', () => {
     }
   })
 })
+
+// ---- a question that matched nothing ---------------------------------------
+// The branch that records an unmatched question used to leave `match`
+// untouched: the previous answer stayed on screen under a live-green dot
+// while the words you improvised struck through ITS points, and the recap
+// then reported coverage you never spoke.
+
+describe('a question the bank does not cover', () => {
+  const ER = 'Tell me about a time you handled a really difficult employee relations case.'
+  const UNMATCHED =
+    "What's your approach to pay transparency conversations, when someone finds out a peer earns more?"
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  async function armed(): Promise<{ them: MockTranscriber; you: MockTranscriber; engine: SessionEngine }> {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', true)
+    return { them, you, engine }
+  }
+
+  it('marks the entry still on screen as stale instead of leaving it current', async () => {
+    const { them, you } = await armed()
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 10 })
+    expect(useSessionStore.getState().match).toMatchObject({
+      state: 'confident',
+      entryId: 'a-er-case',
+      stale: false
+    })
+
+    you.emit({
+      speaker: 'you',
+      text: 'Two complainants, one supervisor, and a site used to silence people.',
+      confirmed: true,
+      t: 20
+    })
+    const covered = [...(useSessionStore.getState().coverage['a-er-case'] ?? [])]
+    expect(covered).toContain('p-erc-1')
+
+    await vi.advanceTimersByTimeAsync(3000)
+    them.emit({ speaker: 'them', text: UNMATCHED, confirmed: true, t: 60 })
+
+    const s = useSessionStore.getState()
+    // the card is still up — throwing it away would lose the only thing on
+    // screen — but it no longer claims to be the current answer
+    expect(s.match.entryId).toBe('a-er-case')
+    expect(s.match.stale).toBe(true)
+    expect(s.questions.some((q) => q.entryId === null)).toBe(true)
+  })
+
+  it('stops accruing coverage against it while you improvise', async () => {
+    const { them, you } = await armed()
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 10 })
+    you.emit({
+      speaker: 'you',
+      text: 'Two complainants, one supervisor, and a site used to silence people.',
+      confirmed: true,
+      t: 20
+    })
+    const before = [...(useSessionStore.getState().coverage['a-er-case'] ?? [])]
+
+    await vi.advanceTimersByTimeAsync(3000)
+    them.emit({ speaker: 'them', text: UNMATCHED, confirmed: true, t: 60 })
+
+    // a line that would otherwise have struck a point straight off the ER card
+    you.emit({
+      speaker: 'you',
+      text: 'Eleven interviews in five days, documented as I went.',
+      confirmed: true,
+      t: 70
+    })
+    expect(useSessionStore.getState().coverage['a-er-case'] ?? []).toEqual(before)
+  })
+
+  it('the recap reports only what you actually said about that answer', async () => {
+    const { them, you, engine } = await armed()
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 10 })
+    you.emit({
+      speaker: 'you',
+      text: 'Two complainants, one supervisor, and a site used to silence people.',
+      confirmed: true,
+      t: 20
+    })
+    await vi.advanceTimersByTimeAsync(3000)
+    them.emit({ speaker: 'them', text: UNMATCHED, confirmed: true, t: 60 })
+    you.emit({
+      speaker: 'you',
+      text: 'Eleven interviews in five days, documented as I went.',
+      confirmed: true,
+      t: 70
+    })
+    const record = await engine.end()
+    const bank = useBankStore.getState().bank!
+    const recap = deriveRecap(record, bank)
+    const erRow = recap.rows.find((r) => r.id === record.questions.find((q) => q.entryId === 'a-er-case')!.id)!
+    expect(erRow.coveredPct).toBe(25) // one of four, not two
+  })
+
+  it('a later match clears it — the next card is current again', async () => {
+    const { them } = await armed()
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 10 })
+    await vi.advanceTimersByTimeAsync(3000)
+    them.emit({ speaker: 'them', text: UNMATCHED, confirmed: true, t: 60 })
+    expect(useSessionStore.getState().match.stale).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(3000)
+    them.emit({
+      speaker: 'them',
+      text: "I've got a manager who's burning their team out — how do you coach a manager in that spot?",
+      confirmed: true,
+      t: 120
+    })
+    expect(useSessionStore.getState().match).toMatchObject({ entryId: 'a-coach', stale: false })
+  })
+
+  it('a ⌘K pin clears it too', async () => {
+    const { them, engine } = await armed()
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 10 })
+    await vi.advanceTimersByTimeAsync(3000)
+    them.emit({ speaker: 'them', text: UNMATCHED, confirmed: true, t: 60 })
+    expect(useSessionStore.getState().match.stale).toBe(true)
+    engine.pinEntry('a-policy')
+    expect(useSessionStore.getState().match).toMatchObject({ entryId: 'a-policy', stale: false })
+  })
+})

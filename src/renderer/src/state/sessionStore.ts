@@ -25,6 +25,11 @@ export interface MatchSlice {
   autoPickAt: number | null
   /** the phrase that led to the unsure state, quoted in the UI */
   heard: string | null
+  /** a question was heard that matched nothing, and the entry still on screen
+   *  is from the PREVIOUS question. The card must stop presenting itself as
+   *  current, and your improvised words must stop striking through its
+   *  points — the panel used to look like it was tracking you. */
+  stale: boolean
 }
 
 export interface HistoryRow {
@@ -92,7 +97,14 @@ interface SessionState {
   reset(): void
 }
 
-const EMPTY_MATCH: MatchSlice = { state: 'none', entryId: null, candidates: [], autoPickAt: null, heard: null }
+const EMPTY_MATCH: MatchSlice = {
+  state: 'none',
+  entryId: null,
+  candidates: [],
+  autoPickAt: null,
+  heard: null,
+  stale: false
+}
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   status: 'idle',

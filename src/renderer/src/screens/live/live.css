@@ -402,3 +402,13 @@
   font: 400 12px/1.4 var(--font-ui);
   text-wrap: pretty;
 }
+
+/* A question was heard that matched nothing, so the answer on screen belongs
+   to the previous one. It stays readable — you may still want it — but stops
+   presenting itself as the current answer. Renders only in that state, which
+   the design reference never enters. */
+.live-panel--stale .live-points,
+.live-panel--stale .live-story,
+.live-panel--stale .live-progress {
+  opacity: 0.55;
+}

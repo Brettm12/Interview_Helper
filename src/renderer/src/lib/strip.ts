@@ -27,6 +27,13 @@ export function deriveStripState(args: {
     return { variant: 'current', text: 'Paused — mic is off', counter: null, protectionOn, paused }
   }
 
+  // a question was heard that matched nothing: the entry still on screen
+  // belongs to the PREVIOUS question, so the strip must not keep feeding its
+  // points as though they were the thing to say next
+  if (match.stale) {
+    return { variant: 'current', text: 'Nothing matched', counter: null, protectionOn, paused }
+  }
+
   const isNew =
     match.state === 'ambiguous' ||
     (entry != null && entryAtCollapse != null && entry.id !== entryAtCollapse)

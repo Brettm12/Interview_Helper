@@ -26,6 +26,7 @@ export default function LiveContainer(): JSX.Element | null {
   const history = useSessionStore((s) => s.history)
   const transcript = useSessionStore((s) => s.transcript)
   const paused = useSessionStore((s) => s.status === 'paused')
+  const stale = useSessionStore((s) => s.match.stale)
   const autoPickSec = useSettingsStore((s) => s.autoPickSec)
   const activeMicSec = useSessionStore((s) => s.activeMicSec)
   const bank = useBankStore((s) => s.bank)
@@ -157,6 +158,7 @@ export default function LiveContainer(): JSX.Element | null {
       unsure={unsure}
       transcript={line}
       paused={paused}
+      stale={stale}
       notice={notice}
       transcriptVisible={transcriptVisible}
       onToggleTranscript={toggleTranscript}

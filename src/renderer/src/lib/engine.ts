@@ -323,6 +323,7 @@ export class SessionEngine {
         state: 'ambiguous',
         candidates: shortlist,
         heard: seg.text,
+        stale: false,
         autoPickAt: keepDeadline
           ? s.match.autoPickAt
           : autoPickSec == null
@@ -332,6 +333,11 @@ export class SessionEngine {
       this.armAutoPick()
     } else if (state === 'none' && questionLike && !isRescore) {
       this.clearPendingSwap()
+      // They asked something this bank does not cover. Whatever is on screen
+      // belongs to the PREVIOUS question, so stop it presenting itself as
+      // current — silently. No instruction: at this moment the user is
+      // improvising under someone's gaze and will not read a hint.
+      if (s.match.entryId) s.setMatch({ stale: true })
       // heard a question that hit nothing in the bank — log it for the recap
       // (a warm rescore that still lands on none must not double-record)
       this.recordQuestion(null, seg.t, seg.text, false)
@@ -416,6 +422,9 @@ export class SessionEngine {
 
     const entryId = s.match.entryId
     if (!entryId || (s.match.state !== 'confident' && s.match.state !== 'pinned')) return
+    // improvising an answer to an unmatched question must not strike through
+    // the previous answer's points, or the recap misattributes them
+    if (s.match.stale) return
     const entry = this.entries().find((e) => e.id === entryId)
     if (!entry) return
     const coveredAlready = new Set(s.coverage[entryId] ?? [])
@@ -495,7 +504,8 @@ export class SessionEngine {
       entryId,
       candidates: opts.candidates ?? [],
       autoPickAt: null,
-      heard: null
+      heard: null,
+      stale: false
     })
     // the pacing cue is about THIS asking, so the meter restarts here
     this.activeAskedAt = opts.askedAt
@@ -651,7 +661,12 @@ export class SessionEngine {
     this.resolutionSeq++
     this.clearAutoPick()
     const prev = this.session.match.entryId
-    this.session.setMatch({ state: prev ? 'confident' : 'none', candidates: [], heard: null })
+    this.session.setMatch({
+      state: prev ? 'confident' : 'none',
+      candidates: [],
+      heard: null,
+      stale: false
+    })
   }
 
   pinEntry(entryId: string): void {

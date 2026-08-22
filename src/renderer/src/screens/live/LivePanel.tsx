@@ -70,6 +70,7 @@ export default function LivePanel(props: LivePanelProps): JSX.Element {
     transcript,
     transcriptVisible,
     paused,
+    stale,
     notice,
     onToggleTranscript,
     onFind,
@@ -80,7 +81,7 @@ export default function LivePanel(props: LivePanelProps): JSX.Element {
   const showLine = transcriptVisible && transcript !== null
 
   return (
-    <div className="live-panel">
+    <div className={stale ? 'live-panel live-panel--stale' : 'live-panel'}>
       {notice && <div className="live-notice pretty">{notice}</div>}
       <div className="live-panel__header">
         <div className="live-panel__status">
@@ -88,16 +89,23 @@ export default function LivePanel(props: LivePanelProps): JSX.Element {
             size={7}
             color={
               // pause actually closes the tracks, so a green "Listening" here
-              // is the last dishonest dot in the app (REVIEW.md P2)
+              // is the last dishonest dot in the app (REVIEW.md P2); a stale
+              // card is the same lie about a different fact
               paused
                 ? 'var(--dot-inactive)'
-                : isUnsure
+                : isUnsure || stale
                   ? 'var(--status-attention)'
                   : 'var(--status-live)'
             }
           />
           <div className="live-panel__status-text">
-            {paused ? 'Paused — mic is off' : isUnsure ? 'Not sure which one' : 'Listening'}
+            {paused
+              ? 'Paused — mic is off'
+              : stale
+                ? 'Nothing matched'
+                : isUnsure
+                  ? 'Not sure which one'
+                  : 'Listening'}
           </div>
         </div>
         {isUnsure ? (

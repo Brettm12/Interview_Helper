@@ -66,6 +66,10 @@ export interface LivePanelProps {
   /** the session is paused: pause closes the microphone, so the header must
    *  stop claiming it is listening (REVIEW.md P2) */
   paused?: boolean
+  /** a question was heard that matched nothing — what is on screen belongs to
+   *  the previous one. Says so and dims; deliberately carries no instruction,
+   *  because at this moment the user is improvising under someone's gaze. */
+  stale?: boolean
   /** pipeline problem (model failed, audio stalled) — renders a one-line
    *  warning strip; null in every design-reference state */
   notice?: string | null
