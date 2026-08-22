@@ -138,6 +138,11 @@ Two things to do on the setup screen, in this order:
    heard — with one plain-language verdict on top naming the most likely
    problem. If the mic is 8dB under the threshold, this is where it says so.
 
+`docs/hardware-checklist.md` is the longer version: the handful of things no
+automated suite here can prove — a real microphone, a second monitor, a real
+screen share, a screen reader — with what "working" looks like for each. Worth
+one pass the evening before, not ten minutes prior.
+
 ## Building the bank
 
 The bank is the product: matching can only ever be as good as what it is

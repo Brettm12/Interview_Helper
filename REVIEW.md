@@ -2,6 +2,15 @@
 
 Read-only review, 2026-08-21, on `58ac584`. No code was changed; this file is the only addition.
 
+> **Status: every finding below has been addressed.** All 68 defects (C1–C8, H1–H17,
+> M1–M21, L1–L22) and all ten Part 2 proposals (P1–P10) were fixed across thirteen
+> commits on `claude/lih-codebase-review-7e5j60`; see [What happened to each
+> finding](#what-happened-to-each-finding) at the end for the finding-to-commit map.
+> The text below is preserved exactly as written during the audit, including
+> severity calls and the `[ran]`/`[read]` labels — it is the record of what was
+> found, not a list of open work. Where a fix departed from the remedy suggested
+> here, DECISIONS.md ("post-review round" and "Part 2 round") says why.
+
 **Method and labels.** Every check the repo defines was executed. Findings marked **[ran]** were confirmed by executing something — a scratch test against the real module, a probe driving the built Electron app under xvfb, a real MiniLM downloaded and run against the seed bank, or a grep of the built artifacts. Findings marked **[read]** come from reading the source; each critical/high [read] finding had the cited code and its callers re-read independently at least twice (review agent + my own pass), but nothing was executed to demonstrate it. Anything neither pass could settle is in **Unsure** at the end, not asserted.
 
 ---
@@ -390,3 +399,47 @@ Flagged rather than asserted; each would take hardware or a platform this contai
 10. **Wayland**: global shortcuts and frameless-window drag behaviour on Wayland Electron are known-flaky upstream; untested here.
 11. **macOS 15 Gatekeeper wording** (Packaging #4) — from platform knowledge, not verified on a current machine.
 12. **Menu accelerator delivery on frameless Windows/Linux windows** (no visible menu bar) — standard Electron behaviour says it works; untested here.
+
+---
+
+## What happened to each finding
+
+Fixes landed in phases; each row names the commit whose message documents that
+finding's fix. The reasoning behind any departure from the remedy proposed above
+is in DECISIONS.md.
+
+| Commit | What it covered | Findings |
+| --- | --- | --- |
+| `7d5167d` | Test harnesses: electron stub, worker harness, real-MiniLM calibration suite | (harness for C7, H1) |
+| `2a863cf` | The session-killers: capture death, mic-test race, worker failure | C3, C4, C8, H2, H5, H6, H7, L4, L5 |
+| `28abe32` | Matching recalibrated against the real model; engine races closed | C7, H1, H3, H4, H13, M2, M3, M4, M6, M12, M13, M14, M15, L12, L19, L22 |
+| `b5950fe` | The window and shortcut layer: panic path, frames, lifecycle | C1, C5, C6, H14, H15, H16, H17, M18, M19, M20, L7, L8, L16, L17 |
+| `701d715` | The offline promise: bundled wasm, verified model downloads | C2, H11, H12, M1, M16, M17, L1, L15 |
+| `6b5ce12` | Persistence: quarantine, verify, report | H8, H9, H10, M5, M7, M8, M9, M10, M11, L9, L10, L11, L18, L20 |
+| `8c76fe7` | Hardening lows, platform honesty, docs, CI matrix | M21, L2, L3 (accepted, documented), L6, L14, L21 |
+| `28abe32` + `b6e08bb` | Bank warmed from whichever of models/bank lands last | L13 |
+| `ade1d49` | Live-session surfaces | P1, P2, P5, P9 |
+| `558126b` | Find and strip | P3, P4 |
+| `1365918` | Editor keyboard completeness | P6 |
+| `ff91450` | Legibility toggle and the keyboard/focus pass | P7, P8 |
+| `70342c6` | Per-entry practice mode | P10 |
+| `e42b8cc` | CI: verification servers bound to IPv4 (see below) | — |
+
+Two notes on the map, because both are the kind of thing this review was written
+to catch:
+
+- **L13 was the one that nearly slipped.** Its two halves were fixed in different
+  places — the missing trigger phrases in the warm list went with the Phase 2
+  matching work, but the "warms before the bank has loaded" half was only ever
+  half-closed by the arm-time call. Building this table is what surfaced it: every
+  other finding was claimed by some commit message and L13 was claimed by none.
+- **CI had never been green on this branch**, including at the review commit
+  itself — `verify:pixels` timed out waiting for a server that had bound IPv6
+  while the harness polled IPv4, and every step after it was skipped. So `e2e`,
+  `e2e:electron`, both probes and Linux packaging had never actually run in CI
+  while these fixes were being pushed. Fixed in `e42b8cc`; the local runs quoted
+  in each commit message were real, but CI was not corroborating them.
+
+**Still unverified anywhere:** the hardware- and OS-dependent behaviour listed in
+`docs/hardware-checklist.md`, plus the open questions in **Unsure** above. This
+container has no audio hardware, one virtual display, and no macOS or Windows.
