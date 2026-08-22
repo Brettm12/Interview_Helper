@@ -120,6 +120,20 @@
   color: var(--text-history);
 }
 
+/* A wrong swap mid-answer is the highest-stress moment in the app: the
+   answer you were reading is right there as history. Clicking it brings it
+   back. Nothing is added to the resting frame — the affordance is hover. */
+.live-earlier__row--resume {
+  display: block;
+  width: 100%;
+  text-align: left;
+  transition: color 120ms ease-out;
+}
+
+.live-earlier__row--resume:hover {
+  color: var(--text-secondary);
+}
+
 /* ---- transcript footer ---- */
 
 .live-transcript {

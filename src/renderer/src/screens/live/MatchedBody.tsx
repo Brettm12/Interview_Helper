@@ -81,11 +81,22 @@ export default function MatchedBody(props: MatchedBodyProps): JSX.Element {
       {earlier.length > 0 && (
         <div className="live-earlier">
           <Label>EARLIER</Label>
-          {earlier.map((e) => (
-            <div key={e.key} className="live-earlier__row">
-              {e.question} · {e.time}
-            </div>
-          ))}
+          {earlier.map((e) =>
+            e.onResume ? (
+              <button
+                key={e.key}
+                className="live-earlier__row live-earlier__row--resume"
+                onClick={e.onResume}
+                aria-label={`Back to: ${e.question}`}
+              >
+                {e.question} · {e.time}
+              </button>
+            ) : (
+              <div key={e.key} className="live-earlier__row">
+                {e.question} · {e.time}
+              </div>
+            )
+          )}
         </div>
       )}
     </div>

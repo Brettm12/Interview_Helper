@@ -71,8 +71,15 @@ function LiveMatched(): JSX.Element {
               metrics: ['9 days', '−18% drop-off']
             },
             earlier: [
-              { key: 'g-1', question: 'Why this team?', time: '08:12' },
-              { key: 'g-2', question: 'Walk me through the last thing you shipped', time: '04:50' }
+              // resumable, as they are in the running app — the gate has to
+              // see the element that actually ships (a button, not a div)
+              { key: 'g-1', question: 'Why this team?', time: '08:12', onResume: () => {} },
+              {
+                key: 'g-2',
+                question: 'Walk me through the last thing you shipped',
+                time: '04:50',
+                onResume: () => {}
+              }
             ]
           }}
           unsure={null}

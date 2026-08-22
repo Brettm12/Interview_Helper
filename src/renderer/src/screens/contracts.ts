@@ -30,7 +30,10 @@ export interface MatchedBodyProps {
   points: PointView[]
   onTogglePoint: (id: string) => void
   story: { label: string; body: string; metrics: string[] } | null
-  earlier: { key: string; question: string; time: string }[]
+  /** questions already asked, most recent first. `onResume` puts that answer
+   *  back on the panel after a wrong swap — the data is already on screen, so
+   *  the way back should not require typing into ⌘K while someone watches. */
+  earlier: { key: string; question: string; time: string; onResume?: () => void }[]
 }
 
 export interface UnsureCandidateView {

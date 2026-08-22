@@ -145,7 +145,10 @@ export default function LiveContainer(): JSX.Element | null {
             // share question+minute after a merge (REVIEW.md L8)
             key: `${h.entryId}-${h.askedAt}`,
             question: entries.find((e) => e.id === h.entryId)?.question ?? '',
-            time: formatClock(h.askedAt)
+            time: formatClock(h.askedAt),
+            // the way back from a wrong swap, without ⌘K stealing focus and
+            // asking you to type while someone watches your face
+            onResume: () => getEngine()?.resumeEntry(h.entryId)
           }))
       }
     }

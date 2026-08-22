@@ -90,6 +90,26 @@ try {
     .waitFor({ timeout: 15000 })
   stage('keyboard pick (1) committed the leader')
 
+  // The way back from a wrong swap: EARLIER rows re-pin that answer. The
+  // engine side is covered in tests/engine.test.ts; this is here because the
+  // failure mode is a handler that never reaches the real DOM.
+  const earlier = page.locator('.live-earlier__row', { hasText: 'employee relations' }).first()
+  await earlier.waitFor({ timeout: 20000 })
+  await earlier.click()
+  await page
+    .locator('.live-question', {
+      hasText: 'Tell me about a time you handled a difficult employee relations case.'
+    })
+    .waitFor({ timeout: 10000 })
+  stage('EARLIER row resumed the answer, without ⌘K')
+
+  // hand the panel back to where the fixture left it, from the other side
+  await page.locator('.live-earlier__row', { hasText: 'harassment investigation' }).first().click()
+  await page
+    .locator('.live-question', { hasText: 'Walk me through how you run a harassment investigation.' })
+    .waitFor({ timeout: 10000 })
+  stage('and back again — the history works both ways')
+
   await page.locator('.find-overlay').waitFor({ timeout: 90000 })
   stage('fixture opened find')
   await page

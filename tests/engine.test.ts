@@ -797,3 +797,116 @@ describe('a question the bank does not cover', () => {
     expect(useSessionStore.getState().match).toMatchObject({ entryId: 'a-policy', stale: false })
   })
 })
+
+// ---- getting back after a wrong swap ---------------------------------------
+// Mid-answer the matcher hears a fragment and swaps the panel to a different
+// entry. The answer being given is now history text you cannot click, and the
+// only route back is ⌘K — an overlay that steals focus and wants typing while
+// someone watches your face. EARLIER rows are that route back, and resuming is
+// explicitly NOT a new asking.
+
+describe('resuming an answer from EARLIER', () => {
+  const ER = 'Tell me about a time you handled a really difficult employee relations case.'
+  const COACH =
+    "I've got a manager who's burning their team out — how do you coach a manager in that spot?"
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  async function swapped(): Promise<{ them: MockTranscriber; you: MockTranscriber; engine: SessionEngine }> {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', true)
+
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 10 })
+    you.emit({
+      speaker: 'you',
+      text: 'Two complainants, one supervisor, and a site used to silence people.',
+      confirmed: true,
+      t: 20
+    })
+    await vi.advanceTimersByTimeAsync(3000)
+    // the swap: something in the room matches another entry, and the panel
+    // moves off the answer still being given
+    them.emit({ speaker: 'them', text: COACH, confirmed: true, t: 60 })
+    expect(useSessionStore.getState().match.entryId).toBe('a-coach')
+    return { them, you, engine }
+  }
+
+  it('puts the answer back on the panel', async () => {
+    const { engine } = await swapped()
+    engine.resumeEntry('a-er-case')
+    expect(useSessionStore.getState().match).toMatchObject({
+      entryId: 'a-er-case',
+      state: 'pinned',
+      stale: false
+    })
+  })
+
+  it('keeps the coverage already earned — it is the same answer, still running', async () => {
+    const { engine } = await swapped()
+    engine.resumeEntry('a-er-case')
+    expect(useSessionStore.getState().coverage['a-er-case']).toContain('p-erc-1')
+  })
+
+  it('records no second asking, so the recap still has one row per question', async () => {
+    const { engine } = await swapped()
+    const before = useSessionStore.getState().questions.length
+    engine.resumeEntry('a-er-case')
+    const qs = useSessionStore.getState().questions
+    expect(qs).toHaveLength(before)
+    expect(qs.filter((q) => q.entryId === 'a-er-case')).toHaveLength(1)
+  })
+
+  it('keeps accruing coverage onto that same row afterwards', async () => {
+    const { you, engine } = await swapped()
+    engine.resumeEntry('a-er-case')
+    you.emit({
+      speaker: 'you',
+      text: 'Eleven interviews in five days, documented as I went.',
+      confirmed: true,
+      t: 80
+    })
+    const row = useSessionStore.getState().questions.find((q) => q.entryId === 'a-er-case')!
+    expect(row.coveredPointIds).toContain('p-erc-3')
+    expect(useSessionStore.getState().coverage['a-er-case']).toHaveLength(2)
+  })
+
+  it('resumes the pacing meter from when that question was really asked', async () => {
+    const { you, engine } = await swapped()
+    engine.resumeEntry('a-er-case')
+    you.emit({ speaker: 'you', text: 'And that is where it landed.', confirmed: true, t: 200 })
+    // ~190s since the ER question at t=10 — not a fresh meter reading zero
+    expect(useSessionStore.getState().activeMicSec).toBeGreaterThan(TUNING.longAnswerSec)
+  })
+
+  it('is inert for an entry that was never asked, and for the one already up', async () => {
+    const { engine } = await swapped()
+    const before = useSessionStore.getState().questions.length
+    engine.resumeEntry('a-policy') // never asked — that is what ⌘K is for
+    expect(useSessionStore.getState().match.entryId).toBe('a-coach')
+    engine.resumeEntry('a-coach') // already on screen
+    expect(useSessionStore.getState().questions).toHaveLength(before)
+  })
+
+  it('clears a stale card too — you chose what is current', async () => {
+    const { them, engine } = await swapped()
+    await vi.advanceTimersByTimeAsync(3000)
+    them.emit({
+      speaker: 'them',
+      text: "What's your approach to pay transparency conversations, when someone finds out a peer earns more?",
+      confirmed: true,
+      t: 120
+    })
+    expect(useSessionStore.getState().match.stale).toBe(true)
+    engine.resumeEntry('a-er-case')
+    expect(useSessionStore.getState().match).toMatchObject({ entryId: 'a-er-case', stale: false })
+  })
+})

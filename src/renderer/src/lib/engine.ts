@@ -669,6 +669,36 @@ export class SessionEngine {
     })
   }
 
+  /** Put an entry from EARLIER back on the panel. This is a RECOVERY, not a
+   *  new asking: a wrong swap mid-answer leaves you reading someone else's
+   *  points while the answer you were actually giving sits in the history as
+   *  text you cannot reach. So unlike ⌘K it records no question, resets no
+   *  coverage, and resumes the pacing meter from when that question was
+   *  really asked. */
+  resumeEntry(entryId: string): void {
+    const s = this.session
+    if (s.match.entryId === entryId) return
+    // only something already asked can be resumed — anything else is a pin
+    const row = s.history.find((h) => h.entryId === entryId)
+    if (!row) return
+    this.resolutionSeq++
+    this.clearAutoPick()
+    this.clearPendingSwap()
+    this.partialQuestionId = null
+    s.setMatch({
+      state: 'pinned',
+      entryId,
+      candidates: [],
+      autoPickAt: null,
+      heard: null,
+      stale: false
+    })
+    this.activeAskedAt = row.askedAt
+    s.setActiveMicSec(0)
+    this.updateActiveMicSec()
+    this.syncActiveQuestion()
+  }
+
   pinEntry(entryId: string): void {
     this.resolutionSeq++
     this.activateEntry(entryId, {
