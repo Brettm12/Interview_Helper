@@ -24,6 +24,8 @@ const EditorPane = (props: EditorPaneProps): JSX.Element => {
     onDelete,
     excerpt,
     onUseExcerptLine,
+    onCondenseExcerpt,
+    condensing,
     seedTriggerPhrase,
     onCancel,
     onSave
@@ -248,9 +250,21 @@ const EditorPane = (props: EditorPaneProps): JSX.Element => {
                 </button>
               ))}
             </div>
-            <div className="editor-triggers-help pretty">
-              Your side of it, from the session. Click a line to make it a point, then cut it
-              down to something sayable.
+            <div className="editor-excerpt__foot">
+              <div className="editor-triggers-help pretty">
+                Your side of it, from the session. Click a line to make it a point, then cut it
+                down to something sayable.
+              </div>
+              {onCondenseExcerpt && (
+                <button
+                  type="button"
+                  className="action editor-excerpt__condense"
+                  onClick={onCondenseExcerpt}
+                  disabled={condensing === true}
+                >
+                  {condensing ? 'Working…' : 'Make points from this'}
+                </button>
+              )}
             </div>
           </div>
         )}

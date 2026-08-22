@@ -252,3 +252,15 @@
   color: var(--text-body);
   border-color: var(--border-strong);
 }
+
+.editor-excerpt__foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.editor-excerpt__condense {
+  flex: none;
+  font: 500 11px/1 var(--font-ui);
+}

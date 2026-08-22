@@ -477,6 +477,36 @@ the review's finding IDs are the cross-reference.
   0.10–0.15 of score — enough on its own to push a question from the confident
   card onto the unsure one. That is a transcript problem, and no encoder swap
   fixes it.
+- **The prep-time model was measured, and the job shipped without it.** The
+  ask was "compress my own rambling into points I could say". Three candidates
+  small enough to install were run against a real spoken answer
+  (`tools/spike/llm-spike.mjs`, onnxruntime-node — the app's wasm path is
+  slower still):
+
+  | | on disk | generate | peak RSS | what it said |
+  |---|---|---|---|---|
+  | flan-t5-small | 93MB | 0.3s | 620MB | invented a "sex scandal" that is nowhere in the transcript |
+  | LaMini-Flan-T5-248M | 265MB | 1.8s | 1400MB | refused the task as "inappropriate and offensive"; on a second prompt, inverted a fact (said the supervisor had a history of suspending people — the opposite of what was said) |
+  | Qwen1.5-0.5B-Chat | 467MB | 10.9s | 2261MB | best of the three: two faithful lines, one invented ("I wrote each one up as if they were going to happen at any time") |
+  | **extractive, on the encoder already installed** | **0MB** | **0.03s** | **210MB** | three of the speaker's own sentences, trimmed |
+
+  Every model at this size invented something about the user's own
+  experience. A fabricated detail in prep material is worse than no prep
+  material: you rehearse it, and then you say it in the room, about your own
+  career, to someone who may check. So the feature ships extractive — it cuts
+  the user's own clauses, ranks them by what they carry, and drops the ones
+  that say nothing. Every word it returns is a word they said, by
+  construction, and it costs nothing to download and 40ms to run.
+
+  The spike is committed. If a better candidate appears, the comparison is one
+  command; the bar it has to clear is on this table.
+- **The prep-time helper cannot receive interviewer speech, structurally.**
+  Not by policy — by plumbing. The only text that reaches it is the excerpt
+  the recap builds, and that is filtered to `speaker === 'you'` at the source.
+  `tests/condense.test.ts` drives a transcript with interviewer lines in it
+  through the real path and fails if any of them arrive; the e2e does the same
+  against the running app, and additionally fails if any word in the generated
+  points is a word the user never said.
 - **A bigger encoder was measured and declined.** bge-small-en-v1.5 and
   gte-small (both ~+11MB over MiniLM, quantized ONNX) were scored against the
   same fixtures by `tests/encoder.real.test.ts`, which reports only

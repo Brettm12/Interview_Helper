@@ -166,6 +166,25 @@ deleted — two presses on the same button, no modal. "Remove the untouched
 examples" in the import pane keys on both the example ids and their content,
 so anything you have rewritten is yours and stays.
 
+## Turning what you said into points
+
+Draft an answer from the recap and the editor shows **your own lines from the
+session** beside the points field. Click one to make it a point; click **"Make
+points from this"** to have the app cut the whole thing down for you — it picks
+the clauses that carry the most, drops the ones that say nothing, and keeps
+them in the order you said them.
+
+It is extractive, not generative: every word it gives back is a word you said.
+Three small instruction models were measured against this exact job first
+(`node tools/spike/llm-spike.mjs --models-dir <dir>`) and all three invented
+details about the speaker's own experience — one of them a scandal that never
+happened. A fabricated detail in prep material is the worst kind, because you
+rehearse it and then say it in the room. The table is in DECISIONS.md.
+
+Nothing the interviewer said reaches this. The excerpt is filtered to your own
+lines where it is built, and both the unit tests and the end-to-end run fail
+if an interviewer line — or any word you did not say — turns up in the result.
+
 ## Building the bank
 
 The bank is the product: matching can only ever be as good as what it is

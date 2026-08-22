@@ -337,6 +337,11 @@ export interface EditorPaneProps {
    *  travel with it. Clicking a line drops it into the points as a draft. */
   excerpt?: string[] | null
   onUseExcerptLine?: (text: string) => void
+  /** turn the whole excerpt into a few sayable points, in the user's own
+   *  words. Absent when there is nothing to work from. */
+  onCondenseExcerpt?: (() => void) | null
+  /** the condense pass is running (it warms the encoder on first use) */
+  condensing?: boolean
   /** a phrase sitting in the trigger input, uncommitted. The user edits it
    *  down and presses Enter, or ignores it — nothing is written for them. */
   seedTriggerPhrase?: string

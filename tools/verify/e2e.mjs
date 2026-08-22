@@ -152,6 +152,39 @@ try {
   if (sessions !== 1) throw new Error(`expected 1 persisted session, got ${sessions}`)
   stage('lastUsed stamped + session persisted')
 
+  // ---- prep-time help, on the way out --------------------------------------
+  // Back into the recap (⌘⇧R), draft an answer from a question that did not
+  // match, and let the app cut what was actually said into points. Extractive
+  // on purpose — every generated word here would be a word the user never
+  // said, and they would say it in the room.
+  await page.keyboard.press('Control+Shift+R')
+  await page.getByText('QUESTION BY QUESTION').waitFor({ timeout: 15000 })
+  await page.locator('.recap-row__add').first().click()
+  await page.locator('.editor-pane').waitFor()
+  const excerptLines = await page.locator('.editor-excerpt__line').allTextContents()
+  if (excerptLines.length === 0) throw new Error('the editor got no excerpt to work from')
+  stage(`editor opened on the excerpt (${excerptLines.length} lines of your own)`)
+
+  const said = excerptLines.join(' ').toLowerCase()
+  const before = await page.locator('.editor-point__input').count()
+  await page.locator('.editor-excerpt__condense').click()
+  await page.waitForFunction(
+    (n) => document.querySelectorAll('.editor-point__input').length > n,
+    before,
+    { timeout: 20000 }
+  )
+  const points = await page.locator('.editor-point__input').evaluateAll((els) =>
+    els.map((el) => el.value)
+  )
+  const made = points.slice(before)
+  if (made.length === 0) throw new Error('condense produced nothing')
+  for (const point of made) {
+    for (const word of point.toLowerCase().match(/[a-z']{4,}/g) ?? []) {
+      if (!said.includes(word)) throw new Error(`"${word}" is not a word they said: "${point}"`)
+    }
+  }
+  stage(`${made.length} points made from their own words, nothing invented`)
+
   console.log('\nE2E PASS')
 } catch (err) {
   console.error(`\nE2E FAIL: ${err.message}`)

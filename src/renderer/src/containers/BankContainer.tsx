@@ -22,6 +22,7 @@ import {
 import { usePersistHealth } from '../state/persistHealth'
 import { entriesToAnswers, parseBankText, serializeBank } from '../lib/bankIO'
 import { checkQuestion, findCollisions, type Collision } from '../lib/bankCheck'
+import { condense } from '../lib/condense'
 import { HybridMatcher } from '../lib/matcher'
 import { useSessionStore } from '../state/sessionStore'
 import { normalize } from '../lib/text'
@@ -37,6 +38,7 @@ let pointSeq = 0
 function EditorContainer(): JSX.Element | null {
   const draft = useBankStore((s) => s.draft)
   const bank = useBankStore((s) => s.bank)
+  const [condensing, setCondensing] = useState(false)
   if (!draft || !bank) return null
   const store = useBankStore.getState()
   const story = storyById(bank, draft.storyId)
@@ -112,6 +114,30 @@ function EditorContainer(): JSX.Element | null {
         store.updateDraft({
           points: [...draft.points, { id: `p-draft-${pointSeq++}`, text }]
         })
+      }
+      condensing={condensing}
+      // The prep-time "help me write this". Extractive on purpose: every
+      // candidate generative model small enough to install invented details
+      // about the user's own experience (tools/spike/llm-spike.mjs), and a
+      // fabricated fact in prep material gets said out loud in the room.
+      onCondenseExcerpt={
+        draft.seedTranscript
+          ? () => {
+              setCondensing(true)
+              void condense(draft.seedTranscript!, ensureEmbeddings())
+                .then((lines) => {
+                  const current = useBankStore.getState().draft
+                  if (!current) return
+                  store.updateDraft({
+                    points: [
+                      ...current.points,
+                      ...lines.map((text) => ({ id: `p-draft-${pointSeq++}`, text }))
+                    ]
+                  })
+                })
+                .finally(() => setCondensing(false))
+            }
+          : null
       }
       // nothing to delete while the answer is still a draft
       onDelete={draft.answerId ? () => void store.deleteAnswer(draft.answerId!) : null}
