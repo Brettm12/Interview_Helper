@@ -662,6 +662,13 @@ export function startBankSync(): () => void {
 export interface StartOptions {
   /** dry runs replay the scripted fixture even in a real-capture build */
   dryRun?: boolean
+  /**
+   * Rehearse ONE answer against your real microphone: the entry is pinned,
+   * points strike through as you say them, and it ends in a one-entry recap
+   * that is never written to disk (REVIEW.md P10). Before this, "Practice"
+   * replayed the scripted HR fixture — a demo of someone else's interview.
+   */
+  practiceEntryId?: string
 }
 
 export function startSession(opts: StartOptions = {}): void {
@@ -670,6 +677,7 @@ export function startSession(opts: StartOptions = {}): void {
   const settings = useSettingsStore.getState()
   const session = useSessionStore.getState()
   const useMock = MOCK || opts.dryRun === true
+  const practiceEntryId = opts.practiceEntryId ?? null
 
   if (!useMock) {
     // arming a dead pipeline used to look exactly like a working session
@@ -681,13 +689,13 @@ export function startSession(opts: StartOptions = {}): void {
       useAudioStore
         .getState()
         .setPipelineNotice(
-          `Not starting: the speech model failed to load${models.transcription.error ? ` — ${models.transcription.error}` : ''}. Re-download it below, then try again.`
+          `Not starting${opts.practiceEntryId ? ' practice' : ''}: the speech model failed to load${models.transcription.error ? ` — ${models.transcription.error}` : ''}. Re-download it below, then try again.`
         )
       return
     }
   }
 
-  session.arm(bank.activeLoopId, settings.keepTranscript)
+  session.arm(bank.activeLoopId, settings.keepTranscript, practiceEntryId)
   zeroClock(true)
   startViewSync()
   // a latent ⌘K pressed on the setup screen must not pop the overlay the
@@ -759,7 +767,14 @@ export function startSession(opts: StartOptions = {}): void {
     countSegments(you, 'mic')
     engine = new SessionEngine(them, you, m.cache)
     warmBank() // the active loop may have changed since the models loaded
-    m.transcription.setEnabled(true)
+    if (practiceEntryId) {
+      // rehearsal: your microphone only. There is no interviewer to listen
+      // to, and nothing to match — the answer under practice is pinned.
+      m.transcription.setEnabled(true, ['you'])
+      engine.pinEntry(practiceEntryId)
+    } else {
+      m.transcription.setEnabled(true)
+    }
   }
 
   usePanelStore.getState().setView('armed')

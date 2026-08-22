@@ -83,6 +83,7 @@ export class SessionEngine {
       const s = this.session
       if (this.stopped || (s.status !== 'listening' && s.status !== 'paused')) return
       if (s.questions.length === 0) return
+      if (s.practiceEntryId != null) return // rehearsals are never persisted
       void api.sessions
         .save(this.buildRecord(true))
         .then(() => usePersistHealth.getState().noteSuccess('sessions'))
@@ -729,11 +730,13 @@ export class SessionEngine {
     const record = this.buildRecord(false)
     s.setLastSession(record)
     s.setStatus('idle')
+    const practice = s.practiceEntryId != null
     try {
       // a disk error here used to strand the app on the live view with the
       // mic still hot: no recap, no capture teardown (REVIEW.md M5). The recap
       // opens from memory regardless; the failure is reported on it.
-      await api.sessions.save(record)
+      // A practice run writes nothing at all (REVIEW.md P10).
+      if (!practice) await api.sessions.save(record)
       s.setSaveError(null)
     } catch (err) {
       s.setSaveError(
@@ -741,12 +744,14 @@ export class SessionEngine {
           'The recap below is from memory; export it before closing the app.'
       )
     } finally {
-      // stamp lastUsed on every matched entry (persist() surfaces any failure)
+      // stamp lastUsed on every matched entry (persist() surfaces any
+      // failure). Rehearsing is not "last used in an interview", so a
+      // practice run stamps nothing.
       const bankState = useBankStore.getState()
       const loop = bankState.bank?.loops.find((l) => l.id === record.loopId)
       const date = new Date(record.endedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
       for (const q of record.questions) {
-        if (q.entryId) {
+        if (q.entryId && !practice) {
           void bankState.markLastUsed(q.entryId, {
             loopName: loop?.shortName ?? 'session',
             date,

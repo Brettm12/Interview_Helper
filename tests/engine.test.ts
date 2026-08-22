@@ -560,3 +560,78 @@ describe('mic time on the entry currently on screen', () => {
     expect(useSessionStore.getState().activeMicSec).toBe(0)
   })
 })
+
+// ---- practice mode (REVIEW.md P10) -----------------------------------------
+// Rehearsing one answer must leave no trace: an evening of practice runs
+// cannot dilute the interview history, and a practice record must never end
+// up as the "RECOVERED" recap waiting at the next boot.
+
+describe('a practice run persists nothing', () => {
+  const ER = 'Tell me about a time you handled a really difficult employee relations case.'
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  it('writes no session record and stamps no lastUsed', async () => {
+    await useBankStore.getState().load()
+    const saves: string[] = []
+    const realSave = api.sessions.save
+    const realList = api.sessions.list
+    api.sessions.save = async (s) => void saves.push(s.id)
+    api.sessions.list = async () => []
+
+    try {
+      const them = new MockTranscriber('them')
+      const you = new MockTranscriber('you')
+      const engine = new SessionEngine(them, you)
+      // whatever earlier tests in this file left on the entry (the shim's
+      // storage is shared): a practice run must not change it
+      const lastUsedBefore = JSON.stringify(
+        useBankStore.getState().bank!.answers.find((a) => a.id === 'a-er-case')!.lastUsed
+      )
+      // armed AS a practice run against one entry
+      useSessionStore.getState().arm('loop-meridian', true, 'a-er-case')
+      engine.pinEntry('a-er-case')
+      you.emit({ speaker: 'you', text: 'Two complainants, one supervisor.', confirmed: true, t: 5 })
+
+      // interim snapshots are skipped too, however long it runs
+      await vi.advanceTimersByTimeAsync(TUNING.snapshotIntervalSec * 3000)
+      expect(saves).toEqual([])
+
+      const record = await engine.end()
+      expect(saves).toEqual([])
+      // the recap still works — it just lives in memory
+      expect(record.questions.length).toBeGreaterThan(0)
+      expect(useSessionStore.getState().lastSession?.id).toBe(record.id)
+      // and nothing was stamped on the bank entry
+      const entry = useBankStore.getState().bank!.answers.find((a) => a.id === 'a-er-case')!
+      expect(JSON.stringify(entry.lastUsed)).toBe(lastUsedBefore)
+    } finally {
+      api.sessions.save = realSave
+      api.sessions.list = realList
+    }
+  })
+
+  it('a real session still saves — the firewall is the practice flag alone', async () => {
+    await useBankStore.getState().load()
+    const saves: string[] = []
+    const realSave = api.sessions.save
+    api.sessions.save = async (s) => void saves.push(s.id)
+    try {
+      const them = new MockTranscriber('them')
+      const you = new MockTranscriber('you')
+      const engine = new SessionEngine(them, you)
+      useSessionStore.getState().arm('loop-meridian', true)
+      them.emit({ speaker: 'them', text: ER, confirmed: true, t: 3 })
+      const record = await engine.end()
+      expect(saves).toEqual([record.id])
+    } finally {
+      api.sessions.save = realSave
+    }
+  })
+})

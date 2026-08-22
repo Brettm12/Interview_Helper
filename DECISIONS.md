@@ -85,9 +85,11 @@ README prose and the reference HTML differ, the HTML won, per the brief.
   (the mock inlines the focused state).
 - Drag-reorder arms on mousedown on the ⠿ handle only, so text selection
   inside the point input still works.
-- "Practice" (bank detail) and "Dry run · 2 min" (setup) both start the
-  scripted mock session — that is what a dry run is, and it works with no
-  hardware.
+- "Dry run · 2 min" (setup) starts the scripted mock session — that is what a
+  dry run is, and it works with no hardware. "Practice" (bank detail) used to
+  do the same, which meant you could watch a demo of someone else's interview
+  but never rehearse your own answer; it now arms the real microphone against
+  that one entry (see the Part 2 round below).
 - Backspace in an empty point input deletes the row.
 
 ## Setup
@@ -480,6 +482,51 @@ the review's finding IDs are the cross-reference.
   to *failed reads*; on a genuine first run (no bank.json, no backup) the seed
   is the product and a warning banner would be noise. `loadBank` distinguishes
   the two ('new' vs 'seed').
+
+## Part 2 round (proposals)
+
+The review's Part 2 was ten proposals rather than defects. Calls made while
+building them:
+
+- **Keyboard picks ship hint-less (P1).** Visible "1 2 3" badges on the
+  candidate cards would change a pixel-gated screen, and the countdown block
+  already says a decision is wanted. The keys are documented on the setup
+  screen instead. The guards matter more than the feature: a bare digit is
+  inert while ⌘K is open, while collapsed to the strip, inside any text field,
+  or with a modifier held — otherwise typing "3 complaints" into find would
+  swap the panel mid-interview.
+- **Pause tells the truth in two places (P2).** The panel header and the strip
+  both go grey and say so. A green dot over a closed microphone was the last
+  dishonest signal in the app, and the strip counting off your next point
+  while the mic is shut is the same lie in a smaller space.
+- **"Never" is a real auto-pick option (P5).** The card then waits
+  indefinitely, which can leave the panel ambiguous through an answer. That is
+  the user's call to make: matching keeps re-resolving underneath, and a
+  wrong answer committed while you were still reading is worse. The default
+  stays 4s.
+- **Legibility is a switch, not a fix (P7).** #6f6b64 on #16181b is 3.36:1 and
+  fails AA — but the design reference IS the shipped look, and changing the
+  tokens outright would fail the pixel gate on two screens and re-baseline the
+  reference for everyone. Default off, three declarations, one root class.
+- **The pixel gate outranked clean markup (P8).** Three elements stay
+  non-buttons deliberately: the recap row (it contains its own button), the
+  strip root (it is the window's drag region and contains the affordance
+  buttons), and point rows and chips in their non-interactive variants (a
+  button there is a tab stop that goes nowhere). Two lessons kept as comments:
+  `all: unset` also resets box-sizing, which silently grew the strip by its
+  padding and border; and the focus ring is scoped away from text fields,
+  since the ⌘K overlay autofocuses its input and would have put a ring in the
+  reference frame.
+- **Practice is firewalled (P10).** A rehearsal writes nothing: no session
+  record, no interim snapshots, no `lastUsed` stamp. An evening of practice
+  runs must not dilute the interview history — and a practice record must
+  never be the "RECOVERED" recap waiting at the next boot. The mini-recap
+  lives in memory, and its header offers Done rather than Save or Delete,
+  because both would be lies.
+- **The pacing cue is text (P9).** No colour change, no motion, no sound. It
+  appears past 150s — the same threshold the recap already uses for "ran
+  long" — and says how long you have been on this one. Anything more
+  attention-grabbing mid-answer would cost more than it gives.
 
 ## Known limitations
 

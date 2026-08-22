@@ -115,6 +115,15 @@ silently switches to a narrowband Bluetooth headset is otherwise invisible.
 The device name comes off the live track, so what you read is what is
 actually open.
 
+## Rehearsing an answer
+
+**Practice** on any bank entry arms your microphone against that one answer:
+points strike through as you actually say them, and it ends in a one-entry
+recap showing what you covered and how long you took. Nothing is written —
+rehearsals never enter your session history. It needs the same models and
+microphone a real session does, and refuses with the same plain explanation
+if either is missing.
+
 ## Checking it works before the interview
 
 Two things to do on the setup screen, in this order:
@@ -134,7 +143,10 @@ Two things to do on the setup screen, in this order:
 The bank is the product: matching can only ever be as good as what it is
 matching against. Three ways in:
 
-- **Type it** — "New answer" in the bank screen opens the editor.
+- **Type it** — "New answer" in the bank screen opens the editor. It is
+  keyboard-complete: ↵ commits a point and opens the next row, ⌥↑/⌥↓ move the
+  one you are on, ⌘↵ saves, and Esc cancels — asking first if there is unsaved
+  work.
 - **Paste it** — "Import from a job post" in the bank sidebar opens an
   import/export pane. Paste prep notes in whatever shape you already keep them:
   a question per line (or as a heading) with its points as bullets underneath,
@@ -202,6 +214,15 @@ matching against. Three ways in:
   updates every answer that references it.
 
 ## Desktop behaviour
+
+**Keys during a session.** When the panel is unsure between two or three
+answers, **1 / 2 / 3** pick one and **Esc** dismisses — the four-second
+countdown is not enough time to find the mouse, and your eyes belong on the
+interviewer. How long that countdown runs is a setting: 4s (default), 8s, or
+never (it waits for you). Everything clickable is a real button with a visible
+focus ring, so the whole app is operable from the keyboard; the setup screen
+also has a switch that raises the faintest text and the struck-through points
+for half-second glances.
 
 ⌘K (find), ⌘⇧H (collapse to strip), ⌘⇧R (recap) register as global
 shortcuts — they work while the meeting window has focus, and they are held

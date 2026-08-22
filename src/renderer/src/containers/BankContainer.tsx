@@ -298,7 +298,9 @@ export default function BankContainer(): JSX.Element | null {
         ? `Covered ${selected.lastUsed.covered}/${selected.lastUsed.total} that time`
         : null,
       onEdit: () => store.startEdit(selected.id),
-      onPractice: () => startSession({ dryRun: true }),
+      // was startSession({ dryRun: true }) — which replayed the scripted HR
+      // fixture, i.e. a demo of someone else's interview (REVIEW.md P10)
+      onPractice: () => startSession({ practiceEntryId: selected.id }),
       onAddPhrase: (p) => void store.addTrigger(selected.id, p),
       onRemovePhrase: (p) => void store.removeTrigger(selected.id, p)
     }

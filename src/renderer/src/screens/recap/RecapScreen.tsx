@@ -118,6 +118,8 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
     fixes,
     practiceCount,
     notice,
+    practice,
+    onDone,
     onDeleteSession,
     onSaveToLoop,
     onExport,
@@ -134,12 +136,22 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
           <div className="recap-header__sub pretty">{sub}</div>
         </div>
         <div className="recap-header__actions">
-          <button className="recap-header__delete" onClick={onDeleteSession}>
-            Delete session
-          </button>
-          <button className="cta" onClick={onSaveToLoop}>
-            Save to loop
-          </button>
+          {/* a rehearsal was never written anywhere, so "delete" and "save"
+              would both be lies — one way back instead (REVIEW.md P10) */}
+          {practice ? (
+            <button className="cta" onClick={onDone}>
+              Done
+            </button>
+          ) : (
+            <>
+              <button className="recap-header__delete" onClick={onDeleteSession}>
+                Delete session
+              </button>
+              <button className="cta" onClick={onSaveToLoop}>
+                Save to loop
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -193,7 +205,9 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
         </div>
 
         <div className="recap-privacy pretty">
-          Transcript is on this machine only. Deleting the session removes it.
+          {practice
+            ? 'Practice run — nothing was saved. Export it if you want to keep it.'
+            : 'Transcript is on this machine only. Deleting the session removes it.'}
         </div>
 
         <div className="recap-footer">
@@ -201,9 +215,11 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
             <button className="footer-hint" onClick={onExport}>
               ⌘E export as notes
             </button>
-            <button className="footer-hint" onClick={onDeleteSession}>
-              ⌘⌫ delete session
-            </button>
+            {!practice && (
+              <button className="footer-hint" onClick={onDeleteSession}>
+                ⌘⌫ delete session
+              </button>
+            )}
           </div>
           {practiceCount > 0 && (
             <button className="recap-footer__practice" onClick={onPractice}>

@@ -42,6 +42,10 @@ interface SessionState {
   /** session clock in seconds (fixture-driven in mock, wall-clock in real) */
   clockSec: number
   keepTranscript: boolean
+  /** rehearsing one answer against the real mic. Practice runs never reach
+   *  sessions.json: an evening of rehearsal must not dilute the interview
+   *  history, or shadow a real recap at boot (REVIEW.md P10). */
+  practiceEntryId: string | null
 
   transcript: TranscriptEntry[]
   match: MatchSlice
@@ -60,7 +64,7 @@ interface SessionState {
    *  record is on disk (REVIEW.md M5) */
   saveError: string | null
 
-  arm(loopId: string, keepTranscript: boolean): void
+  arm(loopId: string, keepTranscript: boolean, practiceEntryId?: string | null): void
   setStatus(s: SessionStatus): void
   setClock(sec: number): void
   setActiveMicSec(sec: number): void
@@ -87,6 +91,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   startedAt: null,
   clockSec: 0,
   keepTranscript: false,
+  practiceEntryId: null,
   activeMicSec: 0,
   transcript: [],
   match: EMPTY_MATCH,
@@ -96,12 +101,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   lastSession: null,
   saveError: null,
 
-  arm: (loopId, keepTranscript) =>
+  arm: (loopId, keepTranscript, practiceEntryId = null) =>
     set({
       saveError: null,
       status: 'armed',
       loopId,
       keepTranscript,
+      practiceEntryId,
       startedAt: Date.now(),
       clockSec: 0,
       activeMicSec: 0,
@@ -165,6 +171,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({
       status: 'idle',
       loopId: null,
+      practiceEntryId: null,
       startedAt: null,
       clockSec: 0,
       activeMicSec: 0,
