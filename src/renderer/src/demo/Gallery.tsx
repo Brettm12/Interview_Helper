@@ -485,6 +485,7 @@ function Setup({ permissions }: { permissions: boolean }): JSX.Element {
         canStart={permissions}
         onStart={noop}
         onEditBank={noop}
+        onCheckBank={noop}
         onFixNoStory={noop}
         onTestMic={noop}
         onDryRun={noop}
@@ -564,6 +565,7 @@ function SetupDevices(): JSX.Element {
         canStart
         onStart={noop}
         onEditBank={noop}
+        onCheckBank={noop}
         onFixNoStory={noop}
         onTestMic={noop}
         testLabel="Test again"

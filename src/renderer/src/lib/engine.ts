@@ -333,6 +333,12 @@ export class SessionEngine {
       this.armAutoPick()
     } else if (state === 'none' && questionLike && !isRescore) {
       this.clearPendingSwap()
+      // Nothing was good enough to show, but something may have been close.
+      // The shortlist bar is exactly "plausible but not enough", so the best
+      // thing on it is the answer the user probably HAS and the matcher did
+      // not reach — a different problem from having no answer at all, and the
+      // recap is where that distinction is worth something.
+      const nearMiss = this.matcher.shortlist(candidates)[0]?.entryId ?? null
       // They asked something this bank does not cover. Whatever is on screen
       // belongs to the PREVIOUS question, so stop it presenting itself as
       // current — silently. No instruction: at this moment the user is
@@ -340,7 +346,7 @@ export class SessionEngine {
       if (s.match.entryId) s.setMatch({ stale: true })
       // heard a question that hit nothing in the bank — log it for the recap
       // (a warm rescore that still lands on none must not double-record)
-      this.recordQuestion(null, seg.t, seg.text, false)
+      this.recordQuestion(null, seg.t, seg.text, false, false, false, nearMiss)
       this.window = [seg] // start a fresh window at this question
     }
   }
@@ -533,7 +539,8 @@ export class SessionEngine {
     heard: string | null,
     viaFind: boolean,
     fromPartial = false,
-    fromRescore = false
+    fromRescore = false,
+    nearMissEntryId: string | null = null
   ): 'merged' | 'created' {
     const s = this.session
     const entry = entryId ? this.entries().find((e) => e.id === entryId) : null
@@ -573,7 +580,8 @@ export class SessionEngine {
       coveredPointIds: entryId ? (s.coverage[entryId] ?? []) : [],
       totalPoints: entry?.points.length ?? 0,
       micSeconds: 0,
-      pinnedViaFind: viaFind
+      pinnedViaFind: viaFind,
+      nearMissEntryId
     }
     s.upsertQuestion(q)
     // a partial's text is half a sentence; remember the row so the confirmed

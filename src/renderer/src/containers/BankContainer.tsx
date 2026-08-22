@@ -1,10 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Answer } from '@shared/types'
 import BankScreen from '../screens/bank/BankScreen'
 import EditorPane from '../screens/bank/EditorPane'
 import StoriesPane from '../screens/bank/StoriesPane'
 import ImportPane from '../screens/bank/ImportPane'
-import type { BankDetailProps, BankGroupView, ImportPreviewView } from '../screens/contracts'
+import CheckPane from '../screens/bank/CheckPane'
+import type {
+  BankDetailProps,
+  BankGroupView,
+  CheckFindingView,
+  CheckPaneProps,
+  ImportPreviewView
+} from '../screens/contracts'
 import {
   useBankStore,
   answersForLoop,
@@ -14,9 +21,12 @@ import {
 } from '../state/bankStore'
 import { usePersistHealth } from '../state/persistHealth'
 import { entriesToAnswers, parseBankText, serializeBank } from '../lib/bankIO'
+import { checkQuestion, findCollisions, type Collision } from '../lib/bankCheck'
+import { HybridMatcher } from '../lib/matcher'
+import { useSessionStore } from '../state/sessionStore'
 import { normalize } from '../lib/text'
 import { api } from '../lib/api'
-import { startSession } from './runtime'
+import { embeddingsWarm, ensureEmbeddings, startSession } from './runtime'
 
 // Question bank + entry editor, bound to the bank store. Selecting a loop
 // filters the list; "Edit" swaps pane 3 to the editor; stories are shared
@@ -96,6 +106,13 @@ function EditorContainer(): JSX.Element | null {
       }
       onSwapStory={swapStory}
       dirty={dirty}
+      excerpt={draft.seedTranscript?.split('\n').filter((l) => l.trim() !== '') ?? null}
+      seedTriggerPhrase={draft.seedTriggerPhrase}
+      onUseExcerptLine={(text) =>
+        store.updateDraft({
+          points: [...draft.points, { id: `p-draft-${pointSeq++}`, text }]
+        })
+      }
       // nothing to delete while the answer is still a draft
       onDelete={draft.answerId ? () => void store.deleteAnswer(draft.answerId!) : null}
       onCancel={() => store.cancelEdit()}
@@ -245,6 +262,139 @@ function ImportContainer(): JSX.Element {
   )
 }
 
+/**
+ * Bank check — the prep-time rehearsal of the live decision.
+ *
+ * Everything here runs the REAL matcher over the REAL encoder, because a
+ * check that scores differently from the interview would be worse than no
+ * check: it would send someone into the room confident about a bank that
+ * behaves differently. So it warms the encoder on entry rather than answering
+ * from bigram overlap and calling it a match, and it steps aside entirely
+ * while a session is running — the interview gets the model.
+ */
+function CheckContainer(): JSX.Element | null {
+  const bank = useBankStore((s) => s.bank)
+  const blocked = useSessionStore((s) => s.status !== 'idle')
+  const [text, setText] = useState('')
+  const [result, setResult] = useState<ReturnType<typeof checkQuestion>>(null)
+  const [findings, setFindings] = useState<Collision[]>([])
+  const [warm, setWarm] = useState(() => embeddingsWarm())
+
+  const entries = useMemo(
+    () => (bank ? answersForLoop(bank, bank.activeLoopId) : []),
+    [bank]
+  )
+
+  // warm on entry: embeddings only, never a speech model
+  useEffect(() => {
+    if (blocked || entries.length === 0) return
+    const cache = ensureEmbeddings()
+    if (!cache) {
+      setWarm(true) // no worker in this build — the lexical path is all there is
+      return
+    }
+    let live = true
+    void cache.ensure([
+      ...entries.map((e) => e.question),
+      ...entries.flatMap((e) => e.triggerPhrases)
+    ])
+    const id = window.setInterval(() => {
+      if (!live) return
+      if (embeddingsWarm()) {
+        setWarm(true)
+        window.clearInterval(id)
+      }
+    }, 300)
+    if (embeddingsWarm()) setWarm(true)
+    return () => {
+      live = false
+      window.clearInterval(id)
+    }
+  }, [blocked, entries])
+
+  // the collision report re-runs whenever the bank changes under it — a merge
+  // or an edit made from these findings has to move the findings
+  useEffect(() => {
+    if (blocked || !warm || entries.length === 0) {
+      setFindings([])
+      return
+    }
+    setFindings(findCollisions(entries, new HybridMatcher(ensureEmbeddings())))
+  }, [blocked, warm, entries])
+
+  if (!bank) return null
+  const store = useBankStore.getState()
+
+  const openEntry = (entryId: string): void => {
+    store.selectAnswer(entryId)
+    store.startEdit(entryId)
+  }
+
+  const ask = (q: string): void => {
+    setText(q)
+    if (q.trim() === '') {
+      setResult(null)
+      return
+    }
+    const cache = ensureEmbeddings()
+    const run = (): void => setResult(checkQuestion(q, entries, new HybridMatcher(cache)))
+    if (cache) void cache.ensure([q]).then(run)
+    else run()
+  }
+
+  const verdict: CheckPaneProps['result'] =
+    result == null
+      ? null
+      : {
+          verdict:
+            result.state === 'confident'
+              ? 'This goes straight up, on its own.'
+              : result.state === 'ambiguous'
+                ? 'You would get the pick-one card, and have to choose:'
+                : 'Nothing would come up. Whatever is on screen stays there.',
+          tone: result.state === 'confident' ? 'good' : result.state === 'ambiguous' ? 'unsure' : 'none',
+          answers: result.rows.map((r) => ({
+            entryId: r.entryId,
+            question: r.question,
+            onOpen: () => openEntry(r.entryId)
+          })),
+          onAddToBank:
+            result.state === 'none'
+              ? () => store.startNew({ question: text })
+              : null
+        }
+
+  const findingViews: CheckFindingView[] = findings.map((f) => {
+    const mine = entries.find((e) => e.id === f.entryId)
+    return {
+      id: `${f.entryId}-${f.withId}-${f.kind}`,
+      question: mine?.question ?? f.entryId,
+      detail: f.detail,
+      // A shared phrase is fixed by taking it off one of them, which is an
+      // edit — merging two answers because they share a phrase would be the
+      // wrong repair. Nothing here ever writes a trigger phrase: both of the
+      // trigger defects in the review were phrases written on the user's
+      // behalf (REVIEW.md C7/H13).
+      onMerge: f.kind === 'shared-phrase' ? null : () => void store.mergeAnswers(f.entryId, f.withId),
+      mergeLabel: 'Merge them into one',
+      onOpen: () => openEntry(f.entryId)
+    }
+  })
+
+  return (
+    <CheckPane
+      text={text}
+      onTextChange={ask}
+      result={verdict}
+      findings={findingViews}
+      warming={!warm && !blocked}
+      blocked={blocked}
+      entryCount={entries.length}
+      onClose={() => store.closeCheck()}
+    />
+  )
+}
+
 export default function BankContainer(): JSX.Element | null {
   const bank = useBankStore((s) => s.bank)
   const loadSource = useBankStore((s) => s.loadSource)
@@ -256,6 +406,7 @@ export default function BankContainer(): JSX.Element | null {
   const filterIds = useBankStore((s) => s.filterIds)
   const storiesOpen = useBankStore((s) => s.storiesOpen)
   const importOpen = useBankStore((s) => s.importOpen)
+  const checkOpen = useBankStore((s) => s.checkOpen)
 
   const groups = useMemo<BankGroupView[]>(() => {
     if (!bank) return []
@@ -356,9 +507,17 @@ export default function BankContainer(): JSX.Element | null {
       groups={groups}
       selectedAnswerId={selectedAnswerId}
       detail={detail}
-      editing={draft != null || storiesOpen || importOpen}
+      editing={draft != null || storiesOpen || importOpen || checkOpen}
       editorSlot={
-        draft != null ? <EditorContainer /> : importOpen ? <ImportContainer /> : <StoriesContainer />
+        draft != null ? (
+          <EditorContainer />
+        ) : importOpen ? (
+          <ImportContainer />
+        ) : checkOpen ? (
+          <CheckContainer />
+        ) : (
+          <StoriesContainer />
+        )
       }
       searchQuery={searchQuery}
       onSearch={(q) => store.setSearch(q)}

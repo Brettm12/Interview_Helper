@@ -1,0 +1,153 @@
+/* Bank check (pane 3). No mock exists — the header, groups and hints borrow
+   the importer, so it reads as the same surface. */
+
+.checker {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.checker__header {
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--border-section);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.checker__close {
+  font: 500 11px/1 var(--font-ui);
+  color: var(--text-label);
+}
+
+.checker__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.checker__group {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.checker__hint,
+.checker__warming,
+.checker__blocked {
+  font: 400 12px/1.5 var(--font-ui);
+  color: var(--text-label);
+}
+
+.checker__input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  border: 1px solid var(--border-mid);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  padding: 12px 13px;
+  font: 400 12.5px/1.55 var(--font-ui);
+}
+
+.checker__input::placeholder {
+  color: var(--text-label);
+  opacity: 0.75;
+}
+
+.checker__input:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.checker__cta {
+  align-self: flex-start;
+  cursor: pointer;
+}
+
+.checker__verdict {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-left: 2px solid var(--border-strong);
+  padding-left: 12px;
+}
+
+/* the same three states the live panel has, in the same three colours */
+.checker__verdict--good {
+  border-left-color: var(--status-live);
+}
+
+.checker__verdict--unsure {
+  border-left-color: var(--status-attention);
+}
+
+.checker__verdict--none {
+  border-left-color: var(--text-dim);
+}
+
+.checker__verdict-line {
+  font: 500 13px/1.4 var(--font-ui);
+  color: var(--text-primary);
+}
+
+.checker__answer {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border-mid);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  padding: 10px 12px;
+  font: 400 12.5px/1.4 var(--font-ui);
+  color: var(--text-body);
+  transition: border-color 120ms ease-out;
+}
+
+.checker__answer:hover {
+  border-color: var(--border-strong);
+}
+
+.checker__add {
+  align-self: flex-start;
+}
+
+.checker__findings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.checker__finding {
+  border: 1px solid var(--border-mid);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  padding: 12px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.checker__finding-q {
+  font: 500 12.5px/1.4 var(--font-ui);
+  color: var(--text-primary);
+}
+
+.checker__finding-why {
+  font: 400 12px/1.5 var(--font-ui);
+  color: var(--text-muted);
+}
+
+.checker__finding-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+}

@@ -170,3 +170,67 @@ describe('getting out of the starter bank', () => {
     expect(await useBankStore.getState().removeStarterAnswers()).toBe(0)
   })
 })
+
+// Merging is the remedy the bank check offers for two entries the matcher
+// cannot separate. It has to be lossless in the direction that matters: the
+// surviving entry keeps its own wording, and gains everything the other one
+// had that it did not.
+describe('merging two answers the matcher confuses', () => {
+  beforeEach(async () => {
+    await api.bank.save(pristine())
+    useBankStore.setState({ selectedAnswerId: null, draft: null, filterIds: null, storyDraft: null })
+    await useBankStore.getState().load()
+  })
+
+  it('keeps the survivor’s question and takes the other’s points', async () => {
+    const before = useBankStore.getState().bank!
+    const into = before.answers.find((a) => a.id === 'a-invest-run')!
+    const from = before.answers.find((a) => a.id === 'a-informal')!
+
+    await useBankStore.getState().mergeAnswers('a-invest-run', 'a-informal')
+    const after = useBankStore.getState().bank!
+    const merged = after.answers.find((a) => a.id === 'a-invest-run')!
+
+    expect(after.answers.some((a) => a.id === 'a-informal')).toBe(false)
+    expect(merged.question).toBe(into.question)
+    expect(merged.points).toHaveLength(into.points.length + from.points.length)
+    for (const p of from.points) expect(merged.points.map((x) => x.text)).toContain(p.text)
+  })
+
+  it('does not duplicate a point or a phrase both of them already had', async () => {
+    const store = useBankStore.getState()
+    await store.addTrigger('a-invest-run', 'harassment complaint')
+    await store.addTrigger('a-informal', 'Harassment Complaint ')
+    await useBankStore.getState().mergeAnswers('a-invest-run', 'a-informal')
+    const merged = useBankStore.getState().bank!.answers.find((a) => a.id === 'a-invest-run')!
+    const hits = merged.triggerPhrases.filter((p) => p.trim().toLowerCase() === 'harassment complaint')
+    expect(hits).toHaveLength(1)
+  })
+
+  it('inherits a story only when the survivor had none', async () => {
+    const store = useBankStore.getState()
+    store.startEdit('a-invest-run')
+    store.updateDraft({ storyId: null })
+    await store.saveEdit()
+    const donorStory = useBankStore.getState().bank!.answers.find((a) => a.id === 'a-informal')!.storyId
+
+    await useBankStore.getState().mergeAnswers('a-invest-run', 'a-informal')
+    expect(useBankStore.getState().bank!.answers.find((a) => a.id === 'a-invest-run')!.storyId).toBe(
+      donorStory
+    )
+  })
+
+  it('lands the selection on the survivor and persists', async () => {
+    await useBankStore.getState().mergeAnswers('a-invest-run', 'a-informal')
+    expect(useBankStore.getState().selectedAnswerId).toBe('a-invest-run')
+    const reloaded = await api.bank.load()
+    expect(reloaded.bank.answers.some((a) => a.id === 'a-informal')).toBe(false)
+  })
+
+  it('refuses to merge an entry into itself, or anything that is not there', async () => {
+    const before = useBankStore.getState().bank!.answers.length
+    await useBankStore.getState().mergeAnswers('a-coach', 'a-coach')
+    await useBankStore.getState().mergeAnswers('a-coach', 'a-nope')
+    expect(useBankStore.getState().bank!.answers).toHaveLength(before)
+  })
+})

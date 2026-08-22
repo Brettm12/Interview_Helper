@@ -143,6 +143,29 @@ automated suite here can prove — a real microphone, a second monitor, a real
 screen share, a screen reader — with what "working" looks like for each. Worth
 one pass the evening before, not ten minutes prior.
 
+## Checking the bank itself
+
+**"Check bank"** on the setup screen opens a prep-time rehearsal of the live
+decision, in the bank's third pane:
+
+- **Paste a question you expect** and it tells you what the panel would do
+  with it — the answer that would come up on its own, the two or three you
+  would be asked to choose between, or nothing at all, with one click to start
+  writing the answer you turn out not to have. It scores exactly the way the
+  interview does, on the same encoder, so it warms the model on entry rather
+  than answering from word overlap and calling it a match.
+- **The three answers most likely to fight**, each with something to do about
+  it: merge them into one, or open the one that loses. Three findings with
+  remedies beat twenty without — and the report is capped there deliberately.
+
+It uses the embedding model only, never the speech model, and it steps aside
+while a session is running: the interview gets the model.
+
+Answers, stories and the fifteen examples the app ships with can all be
+deleted — two presses on the same button, no modal. "Remove the untouched
+examples" in the import pane keys on both the example ids and their content,
+so anything you have rewritten is yours and stays.
+
 ## Building the bank
 
 The bank is the product: matching can only ever be as good as what it is

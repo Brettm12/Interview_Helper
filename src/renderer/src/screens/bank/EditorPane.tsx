@@ -22,6 +22,9 @@ const EditorPane = (props: EditorPaneProps): JSX.Element => {
     onSwapStory,
     dirty,
     onDelete,
+    excerpt,
+    onUseExcerptLine,
+    seedTriggerPhrase,
     onCancel,
     onSave
   } = props
@@ -38,7 +41,10 @@ const EditorPane = (props: EditorPaneProps): JSX.Element => {
 
   // -- local (uncommitted) input state --
   const [newPoint, setNewPoint] = useState('')
-  const [newTrigger, setNewTrigger] = useState('')
+  // seeded from the recap's near-miss fix: the wording that failed to reach
+  // this answer, sitting in the box for the user to cut down. It is not a
+  // trigger phrase until they press Enter, and not saved until they save.
+  const [newTrigger, setNewTrigger] = useState(seedTriggerPhrase ?? '')
 
   // -- drag reorder: row is draggable only while the handle is pressed --
   const [armedIndex, setArmedIndex] = useState<number | null>(null)
@@ -220,6 +226,34 @@ const EditorPane = (props: EditorPaneProps): JSX.Element => {
             </div>
           </div>
         </div>
+
+        {/* -- what you said at the time --
+            The recap has always handed the editor this excerpt and the editor
+            has always thrown it away. It is the zero-model version of "help me
+            write this": your own words, next to the field, one click from
+            being a point you can edit. */}
+        {excerpt != null && excerpt.length > 0 && (
+          <div className="editor-field">
+            <Label>WHAT YOU SAID AT THE TIME</Label>
+            <div className="editor-excerpt">
+              {excerpt.map((line, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className="editor-excerpt__line pretty"
+                  onClick={() => onUseExcerptLine?.(line)}
+                  title="Use this as a point"
+                >
+                  {line}
+                </button>
+              ))}
+            </div>
+            <div className="editor-triggers-help pretty">
+              Your side of it, from the session. Click a line to make it a point, then cut it
+              down to something sayable.
+            </div>
+          </div>
+        )}
 
         {/* -- story -- */}
         <div className="editor-field">

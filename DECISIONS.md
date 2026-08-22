@@ -477,6 +477,35 @@ the review's finding IDs are the cross-reference.
   0.10–0.15 of score — enough on its own to push a question from the confident
   card onto the unsure one. That is a transcript problem, and no encoder swap
   fixes it.
+- **The bank check runs the real matcher, or it does not run.** A prep-time
+  check that scores differently from the interview is worse than no check: it
+  sends someone into the room confident about a bank that behaves differently.
+  So it warms the encoder on entry instead of answering from bigram overlap,
+  it constructs embeddings *only* — a prep tool must not put a speech model in
+  memory, let alone one that could start listening — and it refuses outright
+  while a session is running.
+- **A finding without a remedy is homework.** The collision report is capped
+  at the worst three, each carrying a merge or an open-it. The full N² list of
+  confusable pairs is a ranked pile of work the night before an interview,
+  which is exactly when nobody does it. The bar for reporting a rival is one
+  confidence margin below the confident bar, not the ambiguous bar: in a bank
+  of "tell me about a time you…" questions most entries have *some* rival
+  above ambiguous, and three findings drawn from nine are noise.
+- **No score reaches a user-facing surface.** Not in the check, not in the
+  recap. A number invites tuning a bank against a threshold, and it means
+  nothing without the distribution behind it — which is why the distribution
+  lives in the calibration suites instead.
+- **Nothing writes a trigger phrase on the user's behalf.** Both trigger
+  defects in the review (C7, H13) were the app deciding a phrase for someone.
+  The recap's near-miss fix opens the editor with the wording that missed
+  sitting in the trigger *input* — uncommitted, one keystroke from being
+  discarded, and not on disk until the answer is saved.
+- **The excerpt the editor gets is your side only.** The recap has always
+  handed the editor the transcript of an unmatched question and the editor has
+  always thrown it away; it now renders those lines beside the points field,
+  one click from becoming a point. Only `speaker === 'you'` lines travel:
+  the interviewer's words are not the user's to keep, quote, or carry into
+  anything downstream.
 - **The 45s merge only trusts explicit context (H3).** Merging a new question
   into the current row is limited to ⌘K pins and same-window rescores. The old
   time-window heuristic swallowed genuine not-in-bank questions whenever any

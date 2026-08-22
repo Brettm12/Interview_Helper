@@ -227,3 +227,28 @@
 .editor-cancel--armed {
   color: var(--status-attention);
 }
+
+/* the recap excerpt: your own words, one click from being a point */
+.editor-excerpt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.editor-excerpt__line {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px dashed var(--border-mid);
+  border-radius: 7px;
+  background: var(--bg-row);
+  padding: 9px 11px;
+  font: 400 12.5px/1.45 var(--font-ui);
+  color: var(--text-muted);
+  transition: color 120ms ease-out, border-color 120ms ease-out;
+}
+
+.editor-excerpt__line:hover {
+  color: var(--text-body);
+  border-color: var(--border-strong);
+}

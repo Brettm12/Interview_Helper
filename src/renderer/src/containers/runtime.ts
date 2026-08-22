@@ -111,6 +111,38 @@ let models: {
   modelId: string
 } | null = null
 
+/**
+ * Embeddings on their own, with no speech model anywhere near them.
+ *
+ * The prep surfaces (the bank check) need to score questions exactly as the
+ * interview will, which means the real encoder. It must NOT mean a
+ * transcription worker: opening a prep tool should not put a speech model in
+ * memory, and it must never be able to start listening to a room.
+ *
+ * Reuses the session models' cache when they are already up, so the bank is
+ * warmed once; the session, in turn, adopts this worker when it starts.
+ */
+let embedOnly: { embeddings: WorkerEmbeddings; cache: EmbeddingCache } | null = null
+
+export function ensureEmbeddings(): EmbeddingCache | null {
+  if (models) return models.cache
+  if (embedOnly) return embedOnly.cache
+  // the browser/mock build has no worker to talk to; the caller falls back to
+  // the lexical path, which is what a mock session matches on anyway
+  if (MOCK) return null
+  const modelPath = IN_ELECTRON ? MODELS_URL_PREFIX : 'models'
+  const embeddings = new WorkerEmbeddings(modelPath)
+  embedOnly = { embeddings, cache: new EmbeddingCache(embeddings) }
+  return embedOnly.cache
+}
+
+/** true once the encoder can actually answer — before that the check would be
+ *  scoring on bigram overlap and quietly calling it a match */
+export function embeddingsWarm(): boolean {
+  if (models) return models.embeddings.ready
+  return embedOnly?.embeddings.ready ?? false
+}
+
 export function getEngine(): SessionEngine | null {
   return engine
 }
@@ -306,8 +338,11 @@ export function ensureModels(): void {
   // never reaches this branch
   const modelPath = IN_ELECTRON ? MODELS_URL_PREFIX : 'models'
   const transcription = new TranscriptionService(modelPath, modelId)
-  const embeddings = new WorkerEmbeddings(modelPath)
-  const cache = new EmbeddingCache(embeddings)
+  // adopt the check's worker rather than standing a second MiniLM beside it —
+  // and inherit whatever it has already embedded
+  const embeddings = embedOnly?.embeddings ?? new WorkerEmbeddings(modelPath)
+  const cache = embedOnly?.cache ?? new EmbeddingCache(embeddings)
+  embedOnly = null
   transcription.onStateChange((state) => {
     useAudioStore.getState().publish('mic', {})
     const audio = useAudioStore.getState()

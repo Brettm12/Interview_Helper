@@ -310,6 +310,10 @@ export default function SetupContainer(): JSX.Element | null {
       canStart={startable}
       onStart={() => startSession()}
       onEditBank={() => panel.setView('bank')}
+      onCheckBank={() => {
+        useBankStore.getState().openCheck()
+        panel.setView('bank')
+      }}
       onFixNoStory={() => {
         useBankStore.getState().setFilter(noStoryIds)
         if (noStoryIds[0]) useBankStore.getState().selectAnswer(noStoryIds[0])

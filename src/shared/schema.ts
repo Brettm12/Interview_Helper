@@ -70,27 +70,36 @@ export const TranscriptLineSchema = z.object({
   highlight: z.string().optional()
 })
 
-export const SessionQuestionSchema = z.object({
-  id: z.string(),
-  askedAtSec: z.number(),
-  question: z.string(),
-  entryId: z.string().nullable(),
-  coveredPointIds: z.array(z.string()),
-  totalPoints: z.number(),
-  micSeconds: z.number(),
-  pinnedViaFind: z.boolean(),
-  transcript: z.array(TranscriptLineSchema).optional()
-})
+// .passthrough() here for the same reason as the bank (REVIEW.md L18): a
+// session written by a newer build, read by an older one and saved again —
+// which happens on every recap visit — must not come back with its new fields
+// quietly removed.
+export const SessionQuestionSchema = z
+  .object({
+    id: z.string(),
+    askedAtSec: z.number(),
+    question: z.string(),
+    entryId: z.string().nullable(),
+    coveredPointIds: z.array(z.string()),
+    totalPoints: z.number(),
+    micSeconds: z.number(),
+    pinnedViaFind: z.boolean(),
+    nearMissEntryId: z.string().nullable().optional(),
+    transcript: z.array(TranscriptLineSchema).optional()
+  })
+  .passthrough()
 
-export const SessionRecordSchema = z.object({
-  id: z.string(),
-  loopId: z.string(),
-  startedAt: z.number(),
-  endedAt: z.number(),
-  transcriptKept: z.boolean(),
-  questions: z.array(SessionQuestionSchema),
-  incomplete: z.boolean().optional()
-})
+export const SessionRecordSchema = z
+  .object({
+    id: z.string(),
+    loopId: z.string(),
+    startedAt: z.number(),
+    endedAt: z.number(),
+    transcriptKept: z.boolean(),
+    questions: z.array(SessionQuestionSchema),
+    incomplete: z.boolean().optional()
+  })
+  .passthrough()
 
 export const SessionsFileSchema = z.array(SessionRecordSchema)
 

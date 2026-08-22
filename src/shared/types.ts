@@ -86,6 +86,12 @@ export interface SessionQuestion {
   micSeconds: number
   /** the entry was pulled up by hand via ⌘K */
   pinnedViaFind: boolean
+  /** nothing matched, but this entry was the closest plausible one. The
+   *  difference between "you have no answer for this" and "you have one and
+   *  the matcher did not reach it" is the difference between writing an
+   *  answer and teaching the one you already wrote. Only ever set alongside
+   *  a null entryId. */
+  nearMissEntryId?: string | null
   /** kept only when the transcript toggle was on */
   transcript?: TranscriptLine[]
 }

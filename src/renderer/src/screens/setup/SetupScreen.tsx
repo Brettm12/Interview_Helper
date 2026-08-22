@@ -100,6 +100,7 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
     canStart,
     onStart,
     onEditBank,
+    onCheckBank,
     onFixNoStory,
     onTestMic,
     testLabel,
@@ -127,9 +128,16 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
         <div className="setup-group">
           <div className="setup-group__label-row">
             <Label>BANK LOADED</Label>
-            <button type="button" className="action setup-action" onClick={onEditBank}>
-              Edit bank
-            </button>
+            <div className="setup-group__actions">
+              {onCheckBank && (
+                <button type="button" className="action setup-action" onClick={onCheckBank}>
+                  Check bank
+                </button>
+              )}
+              <button type="button" className="action setup-action" onClick={onEditBank}>
+                Edit bank
+              </button>
+            </div>
           </div>
           <div className="setup-stats">
             <StatCard number={stats.answers} caption="answers ready" />

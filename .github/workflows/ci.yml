@@ -69,6 +69,9 @@ jobs:
       # while you are still talking. A false strike hides something you never
       # said, so the fixtures assert exactly which points a delivery may cover
       - run: LIH_REAL_MODELS=1 LIH_MODELS_DIR="$HOME/lih-models" npx vitest run tests/coverage.real.test.ts
+      # the bank check, pointed at the bank we ship: editing the seed must not
+      # quietly introduce a pair the matcher cannot separate
+      - run: LIH_REAL_MODELS=1 LIH_MODELS_DIR="$HOME/lih-models" npx vitest run tests/seedcheck.real.test.ts
       # the onnx wasm binaries must be IN the build, and both workers must
       # point at them rather than the CDN default (REVIEW.md C2)
       - run: npm run build

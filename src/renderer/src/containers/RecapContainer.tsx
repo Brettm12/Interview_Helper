@@ -100,7 +100,13 @@ export default function RecapContainer(): JSX.Element | null {
         : () => {
             bankStore.startNew({
               question: r.question,
-              seedTranscript: q?.transcript?.map((l) => `${l.speaker}: ${l.text}`).join('\n')
+              // your own lines only — the same shape the "draft it" fix uses.
+              // The interviewer's words are not yours to keep, quote, or feed
+              // to anything downstream
+              seedTranscript: q?.transcript
+                ?.filter((l) => l.speaker === 'you')
+                .map((l) => l.text)
+                .join('\n')
             })
             panel.setView('bank')
           }
@@ -115,6 +121,13 @@ export default function RecapContainer(): JSX.Element | null {
     onAction: () => {
       if (f.kind === 'draft') {
         bankStore.startNew({ question: f.question, seedTranscript: f.excerpt })
+        panel.setView('bank')
+      } else if (f.kind === 'near-miss' && f.entryId) {
+        // opens the editor on the answer that nearly came up, with the wording
+        // that missed it sitting in the trigger box — uncommitted. Nothing
+        // writes a phrase on the user's behalf (REVIEW.md C7/H13).
+        bankStore.selectAnswer(f.entryId)
+        bankStore.startEdit(f.entryId, { seedTriggerPhrase: f.question })
         panel.setView('bank')
       } else if (f.kind === 'long') {
         openBankAt(f.entryId, true)

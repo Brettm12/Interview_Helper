@@ -25,6 +25,43 @@ try {
   await page.evaluate(() => localStorage.clear())
   await page.reload({ waitUntil: 'networkidle' })
 
+  // ---- the bank check, reached the way a user reaches it -------------------
+  // Prep-time rehearsal of the live decision. In this build there is no
+  // embedding worker, so it answers on the lexical path — which is exactly
+  // what a mock session matches on, so the two agree.
+  await page.locator('.setup-action', { hasText: 'Check bank' }).click()
+  await page.locator('.checker').waitFor()
+  ok('bank check opens from the setup screen')
+
+  await page
+    .locator('.checker__input')
+    .fill('Tell me about a time you handled a difficult employee relations case.')
+  await page.locator('.checker__cta').click()
+  await page.locator('.checker__verdict--good').waitFor()
+  const matched = await page.locator('.checker__answer').first().textContent()
+  if (!matched?.includes('employee relations')) throw new Error(`named "${matched}"`)
+  ok('a question in the bank reads as a match, and names the answer')
+
+  await page.locator('.checker__input').fill('What is your current notice period?')
+  await page.locator('.checker__cta').click()
+  await page.locator('.checker__verdict--none').waitFor()
+  ok('a question the bank cannot answer says so')
+
+  // the way out of a miss is one click, with the question carried over
+  await page.locator('.checker__add').click()
+  await page.locator('.editor-pane').waitFor()
+  const carried = await page.locator('.editor-question').inputValue()
+  if (carried !== 'What is your current notice period?') {
+    throw new Error(`the editor opened on "${carried}"`)
+  }
+  ok('“write an answer for it” opens the editor on that question')
+
+  // no numbers anywhere on the surface — a score invites tuning a bank
+  // against a threshold, and means nothing without the distribution
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('Escape')
+  await page.reload({ waitUntil: 'networkidle' })
+
   await page.getByText('Edit bank').click()
   await page.locator('.bank').waitFor()
   await page.locator('.bank-detail__action', { hasText: 'Edit' }).click()

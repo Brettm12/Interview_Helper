@@ -135,3 +135,61 @@ describe('exportNotes', () => {
     expect(md).toContain('them: tell me about a difficult case')
   })
 })
+
+// "You have no answer for this" and "you have one and the matcher did not
+// reach it" are different problems. Until now the recap said the first about
+// both, and the second is much the cheaper fix.
+describe('a question that nearly matched', () => {
+  const near = (nearMissEntryId: string | null): SessionRecord => ({
+    id: 's-near',
+    loopId: 'loop-meridian',
+    startedAt: Date.now(),
+    endedAt: Date.now() + 60_000,
+    transcriptKept: false,
+    questions: [
+      {
+        id: 'q-1',
+        askedAtSec: 30,
+        question: 'What is your approach when a manager is running their team into the ground?',
+        entryId: null,
+        coveredPointIds: [],
+        totalPoints: 0,
+        micSeconds: 40,
+        pinnedViaFind: false,
+        nearMissEntryId
+      }
+    ]
+  })
+
+  it('names the answer that nearly came up instead of "not in your bank"', () => {
+    const data = deriveRecap(near('a-coach'), bank)
+    expect(data.rows[0].subLine).toMatch(/closest was/i)
+    expect(data.rows[0].subLine).toMatch(/coach a manager/i)
+    expect(data.rows[0].subLine).not.toMatch(/not in your bank/i)
+  })
+
+  it('still says "not in your bank" when nothing was close', () => {
+    expect(deriveRecap(near(null), bank).rows[0].subLine).toBe('Not in your bank')
+  })
+
+  it('offers teaching the existing answer before writing a new one', () => {
+    const fixes = deriveRecap(near('a-coach'), bank).fixes
+    expect(fixes[0].kind).toBe('near-miss')
+    expect(fixes[0].entryId).toBe('a-coach')
+    // the heard wording travels as a suggestion for the trigger field; the
+    // fix itself never writes a phrase
+    expect(fixes[0].question).toMatch(/running their team into the ground/)
+    expect(fixes.filter((f) => f.kind === 'draft')).toHaveLength(0)
+  })
+
+  it('shows no score anywhere — "missed by 0.02" is not a thing to publish', () => {
+    const data = deriveRecap(near('a-coach'), bank)
+    expect(JSON.stringify(data)).not.toMatch(/0\.\d\d/)
+  })
+
+  it('falls back to drafting when the near-miss entry has since been deleted', () => {
+    const fixes = deriveRecap(near('a-deleted-entry'), bank).fixes
+    expect(fixes[0].kind).toBe('draft')
+    expect(deriveRecap(near('a-deleted-entry'), bank).rows[0].subLine).toBe('Not in your bank')
+  })
+})

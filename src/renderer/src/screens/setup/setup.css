@@ -364,3 +364,10 @@
   font-size: 12px;
   color: var(--status-error);
 }
+
+/* two actions can sit on the group label row (Check + Edit) */
+.setup-group__actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}

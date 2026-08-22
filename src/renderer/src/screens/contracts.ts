@@ -264,6 +264,52 @@ export interface StoriesPaneProps {
   onClose: () => void
 }
 
+// ---- bank check (pane 3) ----------------------------------------------------
+
+export interface CheckAnswerView {
+  entryId: string
+  question: string
+  onOpen: () => void
+}
+
+export interface CheckFindingView {
+  id: string
+  /** the entry that loses the collision, in its own words */
+  question: string
+  /** one sentence about what happens live — never a score */
+  detail: string
+  onMerge: (() => void) | null
+  onOpen: () => void
+  /** "Merge them" reads wrong for a shared phrase: the fix is to take the
+   *  phrase off one of them, which is an edit */
+  mergeLabel: string
+}
+
+export interface CheckPaneProps {
+  /** the pasted question */
+  text: string
+  onTextChange: (t: string) => void
+  /** null until something has been asked */
+  result: {
+    /** "This one goes straight up", "You would get the pick-one card",
+     *  "Nothing would come up" */
+    verdict: string
+    tone: 'good' | 'unsure' | 'none'
+    answers: CheckAnswerView[]
+    /** offered when nothing matched — drafts it with the question filled in */
+    onAddToBank: (() => void) | null
+  } | null
+  /** the worst three, each with something to do about it */
+  findings: CheckFindingView[]
+  /** the encoder is still loading: results would be lexical guesses, so the
+   *  pane waits rather than showing a worse answer than the interview will */
+  warming: boolean
+  /** a session is running — this wants the same model the interview is using */
+  blocked: boolean
+  entryCount: number
+  onClose: () => void
+}
+
 // ---- entry editor -----------------------------------------------------------
 
 export interface EditorPaneProps {
@@ -286,6 +332,14 @@ export interface EditorPaneProps {
   /** delete this entry for good — absent while drafting a new one, since
    *  there is nothing yet to delete. Two presses, no modal. */
   onDelete?: (() => void) | null
+  /** what you actually said when this question came up, one line per breath,
+   *  carried in from the recap. Yours only — the interviewer's words never
+   *  travel with it. Clicking a line drops it into the points as a draft. */
+  excerpt?: string[] | null
+  onUseExcerptLine?: (text: string) => void
+  /** a phrase sitting in the trigger input, uncommitted. The user edits it
+   *  down and presses Enter, or ignores it — nothing is written for them. */
+  seedTriggerPhrase?: string
   onCancel: () => void
   onSave: () => void
 }
@@ -361,6 +415,10 @@ export interface SetupScreenProps {
   canStart: boolean
   onStart: () => void
   onEditBank: () => void
+  /** open the bank check — what a question would match, and which entries the
+   *  matcher will confuse. Belongs here because this is the "am I ready"
+   *  surface, and it is the last screen before a session arms. */
+  onCheckBank?: () => void
   onFixNoStory: () => void
   onTestMic: () => void
   /** "Test" | "Listening…" | "Thinking…" | "Test again" */

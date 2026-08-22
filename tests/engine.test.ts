@@ -910,3 +910,66 @@ describe('resuming an answer from EARLIER', () => {
     expect(useSessionStore.getState().match).toMatchObject({ entryId: 'a-er-case', stale: false })
   })
 })
+
+// The recap can only tell "you have no answer for this" from "you have one
+// and it was not reached" if the engine writes down which entry was closest.
+describe('recording what nearly matched', () => {
+  const UNMATCHED =
+    "What's your approach to pay transparency conversations, when someone finds out a peer earns more?"
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  async function armed(): Promise<MockTranscriber> {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', false)
+    return them
+  }
+
+  it('leaves it null when nothing was even plausible', async () => {
+    const them = await armed()
+    them.emit({ speaker: 'them', text: 'How was your weekend?', confirmed: true, t: 5 })
+    them.emit({ speaker: 'them', text: UNMATCHED, confirmed: true, t: 10 })
+    const q = useSessionStore.getState().questions.find((x) => x.question === UNMATCHED)
+    expect(q?.entryId).toBeNull()
+    // nothing in this HR bank is close to pay transparency
+    expect(q?.nearMissEntryId ?? null).toBeNull()
+  })
+
+  it('records the closest plausible answer when there was one', async () => {
+    const them = await armed()
+    // vague wording that reaches the shortlist bar but not the card: the
+    // matcher had a best guess, it just was not good enough to show
+    them.emit({
+      speaker: 'them',
+      text: 'How do you think about coaching, as an idea?',
+      confirmed: true,
+      t: 20
+    })
+    const q = useSessionStore.getState().questions.at(-1)!
+    expect(q.entryId).toBeNull()
+    expect(q.nearMissEntryId).toBe('a-multi')
+    expect(useBankStore.getState().bank!.answers.some((a) => a.id === q.nearMissEntryId)).toBe(true)
+  })
+
+  it('never sets it on a question that DID match', async () => {
+    const them = await armed()
+    them.emit({
+      speaker: 'them',
+      text: 'Tell me about a time you handled a really difficult employee relations case.',
+      confirmed: true,
+      t: 10
+    })
+    const q = useSessionStore.getState().questions.at(-1)!
+    expect(q.entryId).toBe('a-er-case')
+    expect(q.nearMissEntryId ?? null).toBeNull()
+  })
+})
