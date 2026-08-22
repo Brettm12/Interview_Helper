@@ -16,6 +16,21 @@
 //     the same machine. Treat every tokens/sec here as an optimistic ceiling.
 //  2. Nothing here touches the app. No interviewer speech exists in this
 //     process; the fixture is a person talking about their own work.
+//
+// THE GATE. A generated line ships only if it passes all four, checked
+// mechanically rather than by reading it and feeling reassured:
+//
+//   - every content word in it appears in the source (stems compared, so
+//     "interviewed" counts as "interview");
+//   - every number in it was said;
+//   - it does not flip a negation the source made, or make one it did not;
+//   - it is close to something actually said, not a recombination of the
+//     whole answer (cosine ≥ 0.6 to its nearest source clause, on the
+//     encoder the app already ships).
+//
+// The bar for the model as a whole: ≥90% of its lines pass. The first round
+// of candidates produced a fabricated "sex scandal", an inverted fact, and a
+// plausible-sounding line nobody said — all of which this catches.
 
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -32,11 +47,16 @@ if (!MODELS_DIR) {
 }
 
 const CANDIDATES = arg('model')
-  ? [{ id: arg('model'), task: arg('task', 'text2text-generation') }]
+  ? [{ id: arg('model'), task: arg('task', 'text-generation'), dtype: arg('dtype', 'q8') }]
   : [
-      { id: 'Xenova/flan-t5-small', task: 'text2text-generation' },
-      { id: 'Xenova/LaMini-Flan-T5-248M', task: 'text2text-generation' },
-      { id: 'Xenova/Qwen1.5-0.5B-Chat', task: 'text-generation' }
+      // the 2023-era set, kept because their failures are the reason the gate
+      // below exists: a fabricated "sex scandal", an inverted fact, a
+      // plausible line nobody said
+      { id: 'Xenova/flan-t5-small', task: 'text2text-generation', dtype: 'q8' },
+      { id: 'Xenova/LaMini-Flan-T5-248M', task: 'text2text-generation', dtype: 'q8' },
+      { id: 'Xenova/Qwen1.5-0.5B-Chat', task: 'text-generation', dtype: 'q8' },
+      // what the library upgrade unlocked
+      { id: 'onnx-community/Qwen2.5-1.5B-Instruct', task: 'text-generation', dtype: 'q4f16' }
     ]
 
 // A real answer, as people actually give them: circling, self-correcting,
@@ -69,7 +89,21 @@ const PROMPTS = {
   ],
   'text-generation': [
     { name: 'chatml', text: chatml(`${ASK}\n\n${RAMBLE}`) },
-    { name: 'chatml strict', text: chatml(`${STRICT}\n\n${RAMBLE}`) }
+    { name: 'chatml strict', text: chatml(`${STRICT}\n\n${RAMBLE}`) },
+    // the fairest shot: show it the operation instead of describing it
+    {
+      name: 'chatml few-shot',
+      text: chatml(
+        'Shorten what someone said into three notes, by COPYING their own phrases. ' +
+          'Never introduce a word they did not use.\n\n' +
+          'Example.\nThey said: "so we had, um, a launch that went badly wrong and I ' +
+          'think the thing was we shipped on a Friday which nobody should ever do, ' +
+          'and then it took us until Monday to roll it back."\n' +
+          'Notes:\n- We shipped on a Friday, which nobody should ever do\n' +
+          '- It took us until Monday to roll it back\n\n' +
+          `Now do the same.\nThey said: "${RAMBLE}"\nNotes:`
+      )
+    }
   ]
 }
 
@@ -85,6 +119,56 @@ function dirBytes(dir) {
 
 const mb = (bytes) => `${(bytes / 1024 / 1024).toFixed(0)}MB`
 const rssMb = () => process.memoryUsage().rss / 1024 / 1024
+
+// ---- the gate --------------------------------------------------------------
+
+/** crude but symmetric stemmer: enough to let "interviewed" match "interview"
+ *  without letting "scandal" match anything at all */
+const stem = (w) => w.replace(/(ing|ed|es|s|ly)$/, '')
+const contentOf = (text) =>
+  new Set(
+    (text.toLowerCase().match(/[a-z0-9']+/g) ?? [])
+      .filter((w) => w.length > 2 && !STOP.has(w) && !WEAK.has(w))
+      .map(stem)
+  )
+
+const NEGATION = /\b(not|never|no|none|nobody|nothing|without|rather than|instead of|n't)\b/g
+const negationCount = (text) => (text.toLowerCase().match(NEGATION) ?? []).length
+const numbersOf = (text) => new Set(text.match(/\b\d+\b/g) ?? [])
+
+/**
+ * Does this line say something the person actually said?
+ * Returns the reasons it does not, so a failure is legible.
+ */
+function fidelity(line, source, clauses, sim) {
+  const reasons = []
+  const src = contentOf(source)
+  const invented = [...contentOf(line)].filter((w) => !src.has(w))
+  if (invented.length) reasons.push(`words nobody said: ${invented.join(', ')}`)
+
+  const srcNums = numbersOf(source)
+  const madeUp = [...numbersOf(line)].filter((n) => !srcNums.has(n))
+  if (madeUp.length) reasons.push(`numbers nobody said: ${madeUp.join(', ')}`)
+
+  // nearest clause, and whether the line agrees with it about negation
+  let best = { clause: '', score: -1 }
+  for (const c of clauses) {
+    const score = sim(line, c)
+    if (score > best.score) best = { clause: c, score }
+  }
+  if (best.score < 0.6) reasons.push(`not close to anything said (${best.score.toFixed(2)})`)
+  else if (negationCount(line) !== negationCount(best.clause)) {
+    reasons.push(`flips a negation: "${best.clause.slice(0, 60)}"`)
+  }
+  return { pass: reasons.length === 0, reasons, nearest: best }
+}
+
+/** the lines a model produced, one per bullet, stripped of numbering */
+const linesOf = (text) =>
+  text
+    .split('\n')
+    .map((l) => l.replace(/^\s*[-*\d.)\\]+\s*/, '').replace(/^["“]|["”]$/g, '').trim())
+    .filter((l) => l.split(' ').length >= 4)
 
 // ---- the baseline the candidates have to beat ------------------------------
 // Extractive: cut the person's own sentences down and pick the three that
@@ -199,20 +283,44 @@ env.allowRemoteModels = false
 console.log(`\nmodels from ${MODELS_DIR}`)
 console.log('onnxruntime-node (native) — the app runs wasm, which is slower\n')
 
+// The encoder the app already ships, used for two things here: the extractive
+// baseline, and the gate's "is this line close to anything they actually
+// said" check. One instance, memoized.
+const extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { dtype: 'q8' })
+const vecs = new Map()
+const embed = async (texts) => {
+  const out = []
+  for (const t of texts) {
+    if (!vecs.has(t)) {
+      const r = await extractor(t, { pooling: 'mean', normalize: true })
+      vecs.set(t, Float32Array.from(r.data))
+    }
+    out.push(vecs.get(t))
+  }
+  return out
+}
+const sim = (a, b) => {
+  const va = vecs.get(a)
+  const vb = vecs.get(b)
+  return va && vb ? cosine(va, vb) : -1
+}
+
+const SOURCE_CLAUSES = clauses(RAMBLE)
+await embed(SOURCE_CLAUSES)
+
+/** score a model's output against the gate, and say why each line failed */
+async function gate(text) {
+  const lines = linesOf(text)
+  if (lines.length === 0) return { lines: [], passed: 0, rate: 0 }
+  await embed(lines)
+  const judged = lines.map((line) => ({ line, ...fidelity(line, RAMBLE, SOURCE_CLAUSES, sim) }))
+  const passed = judged.filter((j) => j.pass).length
+  return { lines: judged, passed, rate: passed / judged.length }
+}
+
 // the baseline first, so every candidate below is read against it
 {
-  const t0 = performance.now()
   const rssBefore = rssMb()
-  const extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2')
-  const loadSec = (performance.now() - t0) / 1000
-  const embed = async (texts) => {
-    const out = []
-    for (const t of texts) {
-      const r = await extractor(t, { pooling: 'mean', normalize: true })
-      out.push(Float32Array.from(r.data))
-    }
-    return out
-  }
   const runs = []
   let lines = []
   for (let i = 0; i < 3; i++) {
@@ -222,9 +330,12 @@ console.log('onnxruntime-node (native) — the app runs wasm, which is slower\n'
   }
   runs.sort((a, b) => a - b)
   console.log('── baseline: extractive, on the encoder already installed')
-  console.log(`   on disk        0MB extra   load ${loadSec.toFixed(1)}s (already warm in the app)`)
+  console.log('   on disk        0MB extra   (already warm in the app)')
   console.log(`   [own words]    ${runs[1].toFixed(2)}s median · invents nothing by construction`)
   for (const l of lines) console.log(`     ${l}`)
+  const g = await gate(lines.join('\n'))
+  console.log(`   gate           ${g.passed}/${g.lines.length} lines pass`)
+  for (const j of g.lines) if (!j.pass) console.log(`     ✗ ${j.reasons.join('; ')}`)
   console.log(`   rss            ${rssBefore.toFixed(0)}MB → ${rssMb().toFixed(0)}MB peak\n`)
 }
 
@@ -242,7 +353,7 @@ for (const candidate of CANDIDATES) {
   const loadStart = performance.now()
   let generate
   try {
-    generate = await pipeline(candidate.task, candidate.id, { dtype: 'q8' })
+    generate = await pipeline(candidate.task, candidate.id, { dtype: candidate.dtype ?? 'q8' })
   } catch (err) {
     console.log(`${candidate.id}: failed to load — ${err.message}\n`)
     continue
@@ -250,7 +361,7 @@ for (const candidate of CANDIDATES) {
   const loadSec = (performance.now() - loadStart) / 1000
   const rssLoaded = rssMb()
 
-  console.log(`── ${candidate.id}`)
+  console.log(`── ${candidate.id}  (${candidate.dtype ?? 'q8'})`)
   console.log(`   on disk        ${mb(onDisk)}   load ${loadSec.toFixed(1)}s`)
 
   for (const prompt of PROMPTS[candidate.task]) {
@@ -288,6 +399,13 @@ for (const candidate of CANDIDATES) {
         ? '     (nothing)'
         : said.split('\n').map((l) => `     ${l}`).join('\n')
     )
+    const g = await gate(said)
+    console.log(
+      `   gate           ${g.passed}/${g.lines.length} lines pass${g.lines.length ? ` (${(g.rate * 100).toFixed(0)}%, bar 90%)` : ''}`
+    )
+    for (const j of g.lines) {
+      if (!j.pass) console.log(`     ✗ "${j.line.slice(0, 54)}" — ${j.reasons.join('; ')}`)
+    }
   }
   const rssPeak = rssMb()
   console.log(

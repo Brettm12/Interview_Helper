@@ -557,6 +557,38 @@ the review's finding IDs are the cross-reference.
 
   The spike is committed. If a better candidate appears, the comparison is one
   command; the bar it has to clear is on this table.
+- **The writing model was asked for, built a gate for, and still did not
+  ship.** With the library upgraded, the best candidate inside the agreed
+  budget — Qwen2.5-1.5B-Instruct at 4-bit with fp16 activations, 1.18 GB —
+  was measured against a gate written before the run: a generated line passes
+  only if every content word in it was said (stems compared), every number in
+  it was said, it does not flip a negation, and it sits within 0.6 cosine of
+  something actually said. The bar for shipping was 90% of lines passing.
+
+  | prompt | lines passing | cost |
+  |---|---|---|
+  | plain ask | 0/3 | 23.8s, 5.3 GB peak |
+  | "use only facts and words below" | 0/3 | 10.9s |
+  | few-shot, *showing* it the copy operation | 1/5 | 21.1s |
+  | **the extractive helper that ships** | **3/3** | **0.04s, 0 MB extra** |
+
+  The failures are not pedantry. It wrote "each interview was documented
+  immediately to avoid hindsight bias" (nobody said hindsight bias), "wrote
+  down **decisions** as they happened" (they wrote up *interviews*), "I focused
+  on avoiding any appearance of guilt" (the speaker said *suspension* reads as
+  guilt — the model moved the guilt onto them), and "the site's history made
+  things challenging", which is editorial invention. Forgiving the two pure
+  synonym swaps still leaves 60% against a 90% bar.
+
+  It also cost 21 seconds per request under native ONNX Runtime, where the app
+  runs wasm and would be several times slower, and 5.4 GB of peak memory on a
+  machine that will be running a video call. It fails on fidelity, on memory
+  and on speed at once — and it is competing with something that takes 40
+  milliseconds, downloads nothing and cannot invent anything by construction.
+
+  The gate stays in `tools/spike/llm-spike.mjs`. It is the artifact that makes
+  the answer re-checkable rather than an opinion: when a model can pass it, the
+  question can be re-opened in one command.
 - **The prep-time helper cannot receive interviewer speech, structurally.**
   Not by policy — by plumbing. The only text that reaches it is the excerpt
   the recap builds, and that is filtered to `speaker === 'you'` at the source.

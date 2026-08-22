@@ -175,11 +175,19 @@ the clauses that carry the most, drops the ones that say nothing, and keeps
 them in the order you said them.
 
 It is extractive, not generative: every word it gives back is a word you said.
-Three small instruction models were measured against this exact job first
-(`node tools/spike/llm-spike.mjs --models-dir <dir>`) and all three invented
-details about the speaker's own experience — one of them a scandal that never
-happened. A fabricated detail in prep material is the worst kind, because you
-rehearse it and then say it in the room. The table is in DECISIONS.md.
+That is a measured decision, not a limitation nobody revisited. Four
+instruction models have now been run against this exact job
+(`node tools/spike/llm-spike.mjs --models-dir <dir>`), including the best one
+that fits in a gigabyte of download on the current library, and each invented
+details about the speaker's own experience — a scandal that never happened, a
+fact turned into its opposite, "hindsight bias" from nowhere. The spike scores
+every generated line mechanically: a line passes only if every content word and
+every number in it was actually said, it flips no negation, and it stays close
+to something the speaker really uttered. The bar to ship was 90% of lines
+passing; the best model managed 20%, at 21 seconds and 5.4GB of memory per
+request. The extractive pass gets 3/3 in 40 milliseconds. The table is in
+DECISIONS.md, and the gate is committed, so the day a model can pass it the
+question is one command away.
 
 Nothing the interviewer said reaches this. The excerpt is filtered to your own
 lines where it is built, and both the unit tests and the end-to-end run fail
