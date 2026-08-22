@@ -712,7 +712,16 @@ export function startSession(opts: StartOptions = {}): void {
     }
   }
 
-  session.arm(bank.activeLoopId, settings.keepTranscript, practiceEntryId)
+  // A dry run replays the scripted fixture against the user's REAL bank. It
+  // used to persist a session record and stamp lastUsed with the fixture's
+  // coverage numbers — a demo writing into interview history. Mock builds are
+  // their own sandbox and still persist (the e2e asserts it).
+  session.arm(
+    bank.activeLoopId,
+    settings.keepTranscript,
+    practiceEntryId,
+    practiceEntryId != null || opts.dryRun === true
+  )
   zeroClock(true)
   startViewSync()
   // a latent ⌘K pressed on the setup screen must not pop the overlay the

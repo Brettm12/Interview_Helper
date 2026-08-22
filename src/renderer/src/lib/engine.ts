@@ -83,7 +83,7 @@ export class SessionEngine {
       const s = this.session
       if (this.stopped || (s.status !== 'listening' && s.status !== 'paused')) return
       if (s.questions.length === 0) return
-      if (s.practiceEntryId != null) return // rehearsals are never persisted
+      if (s.ephemeral) return // rehearsals and dry runs are never persisted
       void api.sessions
         .save(this.buildRecord(true))
         .then(() => usePersistHealth.getState().noteSuccess('sessions'))
@@ -730,7 +730,9 @@ export class SessionEngine {
     const record = this.buildRecord(false)
     s.setLastSession(record)
     s.setStatus('idle')
-    const practice = s.practiceEntryId != null
+    // practice AND the scripted dry run: neither may touch sessions.json or
+    // stamp lastUsed on real bank entries
+    const practice = s.ephemeral
     try {
       // a disk error here used to strand the app on the live view with the
       // mic still hot: no recap, no capture teardown (REVIEW.md M5). The recap

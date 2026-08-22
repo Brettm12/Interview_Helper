@@ -617,7 +617,36 @@ describe('a practice run persists nothing', () => {
     }
   })
 
-  it('a real session still saves — the firewall is the practice flag alone', async () => {
+  it('a dry run persists nothing either — it replays a fixture over the real bank', async () => {
+    await useBankStore.getState().load()
+    const saves: string[] = []
+    const realSave = api.sessions.save
+    api.sessions.save = async (s) => void saves.push(s.id)
+    try {
+      const them = new MockTranscriber('them')
+      const you = new MockTranscriber('you')
+      const engine = new SessionEngine(them, you)
+      const lastUsedBefore = JSON.stringify(
+        useBankStore.getState().bank!.answers.find((a) => a.id === 'a-er-case')!.lastUsed
+      )
+      // the dry-run shape: ephemeral, but no practice entry — this used to
+      // write an incomplete record and stamp the fixture's coverage numbers
+      // onto the user's real bank entries
+      useSessionStore.getState().arm('loop-meridian', true, null, true)
+      them.emit({ speaker: 'them', text: ER, confirmed: true, t: 3 })
+      await vi.advanceTimersByTimeAsync(TUNING.snapshotIntervalSec * 3000)
+      expect(saves).toEqual([])
+
+      await engine.end()
+      expect(saves).toEqual([])
+      const entry = useBankStore.getState().bank!.answers.find((a) => a.id === 'a-er-case')!
+      expect(JSON.stringify(entry.lastUsed)).toBe(lastUsedBefore)
+    } finally {
+      api.sessions.save = realSave
+    }
+  })
+
+  it('a real session still saves — the firewall is the ephemeral flag alone', async () => {
     await useBankStore.getState().load()
     const saves: string[] = []
     const realSave = api.sessions.save

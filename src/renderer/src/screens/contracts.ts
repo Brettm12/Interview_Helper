@@ -438,9 +438,10 @@ export interface RecapScreenProps {
   practiceCount: number
   /** the final save failed — this recap exists only in memory (REVIEW.md M5) */
   notice?: string | null
-  /** a rehearsal, not an interview: nothing was written to disk, so the
-   *  storage actions are replaced by a way back (REVIEW.md P10) */
-  practice?: boolean
+  /** nothing about this session was written to disk — a rehearsal or a dry
+   *  run — so the storage actions are replaced by a way back. "Save to loop"
+   *  here would write a fixture into real interview history. */
+  ephemeral?: boolean
   onDone?: () => void
   onDeleteSession: () => void
   onSaveToLoop: () => void

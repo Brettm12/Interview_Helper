@@ -118,7 +118,7 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
     fixes,
     practiceCount,
     notice,
-    practice,
+    ephemeral,
     onDone,
     onDeleteSession,
     onSaveToLoop,
@@ -138,7 +138,7 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
         <div className="recap-header__actions">
           {/* a rehearsal was never written anywhere, so "delete" and "save"
               would both be lies — one way back instead (REVIEW.md P10) */}
-          {practice ? (
+          {ephemeral ? (
             <button className="cta" onClick={onDone}>
               Done
             </button>
@@ -205,8 +205,8 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
         </div>
 
         <div className="recap-privacy pretty">
-          {practice
-            ? 'Practice run — nothing was saved. Export it if you want to keep it.'
+          {ephemeral
+            ? 'Nothing was saved — this run stays out of your interview history. Export it if you want to keep it.'
             : 'Transcript is on this machine only. Deleting the session removes it.'}
         </div>
 
@@ -215,7 +215,7 @@ export default function RecapScreen(props: RecapScreenProps): JSX.Element {
             <button className="footer-hint" onClick={onExport}>
               ⌘E export as notes
             </button>
-            {!practice && (
+            {!ephemeral && (
               <button className="footer-hint" onClick={onDeleteSession}>
                 ⌘⌫ delete session
               </button>

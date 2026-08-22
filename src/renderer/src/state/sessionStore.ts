@@ -46,6 +46,10 @@ interface SessionState {
    *  sessions.json: an evening of rehearsal must not dilute the interview
    *  history, or shadow a real recap at boot (REVIEW.md P10). */
   practiceEntryId: string | null
+  /** this session must never be written to disk. True for practice AND for
+   *  the scripted dry run, which used to save a fake record and stamp
+   *  lastUsed on real bank entries with the fixture's coverage numbers. */
+  ephemeral: boolean
 
   transcript: TranscriptEntry[]
   match: MatchSlice
@@ -64,7 +68,12 @@ interface SessionState {
    *  record is on disk (REVIEW.md M5) */
   saveError: string | null
 
-  arm(loopId: string, keepTranscript: boolean, practiceEntryId?: string | null): void
+  arm(
+    loopId: string,
+    keepTranscript: boolean,
+    practiceEntryId?: string | null,
+    ephemeral?: boolean
+  ): void
   setStatus(s: SessionStatus): void
   setClock(sec: number): void
   setActiveMicSec(sec: number): void
@@ -92,6 +101,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   clockSec: 0,
   keepTranscript: false,
   practiceEntryId: null,
+  ephemeral: false,
   activeMicSec: 0,
   transcript: [],
   match: EMPTY_MATCH,
@@ -101,13 +111,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   lastSession: null,
   saveError: null,
 
-  arm: (loopId, keepTranscript, practiceEntryId = null) =>
+  arm: (loopId, keepTranscript, practiceEntryId = null, ephemeral = practiceEntryId != null) =>
     set({
       saveError: null,
       status: 'armed',
       loopId,
       keepTranscript,
       practiceEntryId,
+      ephemeral,
       startedAt: Date.now(),
       clockSec: 0,
       activeMicSec: 0,
@@ -172,6 +183,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       status: 'idle',
       loopId: null,
       practiceEntryId: null,
+      ephemeral: false,
       startedAt: null,
       clockSec: 0,
       activeMicSec: 0,

@@ -14,6 +14,9 @@ export default function RecapContainer(): JSX.Element | null {
   const record = useSessionStore((s) => s.lastSession)
   const saveError = useSessionStore((s) => s.saveError)
   const practice = useSessionStore((s) => s.practiceEntryId != null)
+  // a dry run is ephemeral too: its record was never written, so offering
+  // "Save to loop" would put the scripted fixture into real history
+  const ephemeral = useSessionStore((s) => s.ephemeral)
   const bank = useBankStore((s) => s.bank)
 
   // a recovered (crashed-session) record has been surfaced now — clear the
@@ -21,11 +24,11 @@ export default function RecapContainer(): JSX.Element | null {
   // (REVIEW.md L9). The in-memory copy keeps it, so THIS view still says
   // RECOVERED.
   useEffect(() => {
-    if (record?.incomplete && !practice) {
+    if (record?.incomplete && !ephemeral) {
       const { incomplete: _surfaced, ...cleared } = record
       void api.sessions.save(cleared).catch(() => {})
     }
-  }, [record, practice])
+  }, [record, ephemeral])
 
   const data = useMemo(
     () => (record && bank ? deriveRecap(record, bank) : null),
@@ -56,7 +59,7 @@ export default function RecapContainer(): JSX.Element | null {
       if (e.key.toLowerCase() === 'e') {
         e.preventDefault()
         doExport()
-      } else if (e.key === 'Backspace' && !practice) {
+      } else if (e.key === 'Backspace' && !ephemeral) {
         // nothing was written for a rehearsal, so there is nothing to delete
         // — and the write itself would touch sessions.json (REVIEW.md P10)
         e.preventDefault()
@@ -128,18 +131,20 @@ export default function RecapContainer(): JSX.Element | null {
       eyebrow={
         practice
           ? `PRACTICE · ${data.eyebrow}`
-          : record.incomplete
-            ? `RECOVERED · ${data.eyebrow}`
-            : data.eyebrow
+          : ephemeral
+            ? `DRY RUN · ${data.eyebrow}`
+            : record.incomplete
+              ? `RECOVERED · ${data.eyebrow}`
+              : data.eyebrow
       }
       title={loop?.name ?? 'Interview session'}
       sub={data.sub}
       stats={data.stats}
       rows={rows}
       fixes={fixes}
-      practiceCount={practice ? 0 : data.practiceEntryIds.length}
+      practiceCount={ephemeral ? 0 : data.practiceEntryIds.length}
       notice={saveError}
-      practice={practice}
+      ephemeral={ephemeral}
       onDone={() => {
         useSessionStore.getState().reset()
         usePanelStore.getState().setView('bank')
