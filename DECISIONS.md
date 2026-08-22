@@ -477,6 +477,38 @@ the review's finding IDs are the cross-reference.
   0.10–0.15 of score — enough on its own to push a question from the confident
   card onto the unsure one. That is a transcript problem, and no encoder swap
   fixes it.
+- **A bigger encoder was measured and declined.** bge-small-en-v1.5 and
+  gte-small (both ~+11MB over MiniLM, quantized ONNX) were scored against the
+  same fixtures by `tests/encoder.real.test.ts`, which reports only
+  threshold-free numbers — d′, pair-ordering, and the best bar each encoder
+  could possibly have — because a comparison made at MiniLM's thresholds
+  would just be measuring MiniLM's thresholds.
+
+  | | MiniLM | bge-small | gte-small |
+  |---|---|---|---|
+  | matching d′ | **2.58** | 2.38 | 1.92 |
+  | right entry top-1 | **23/26** | 21/26 | 21/26 |
+  | right entry top-3 | 26/26 | 26/26 | 26/26 |
+  | coverage d′ | **7.26** | 6.29 | 7.01 |
+  | coverage headroom | **0.112** | 0.107 | 0.034 |
+
+  Every population is perfectly orderable under all three (pair-ordering
+  100%), so the difference is entirely in the margins — and MiniLM has the
+  widest ones. The candidates also compress everything upward: gte's
+  "never said it" median sits at 0.781 against MiniLM's 0.160, which is the
+  failure the review's critique predicted — not "quality regresses" but
+  "everything becomes ambiguous", silently, on a green build. Swapping would
+  cost +11MB, a re-derivation of all ten constants and a fallback path, for no
+  measured gain on this bank. The suite stays, so the question can be re-asked
+  against a different bank or a different candidate in one command.
+- **What actually costs matches is the transcript, not the encoder.** A
+  run-on or a left-in disfluency costs 0.10–0.15 of score — larger than the
+  entire spread between these three encoders. Effort belongs there.
+- **An encoder that fails to load says so.** Transcription dying is obvious:
+  the transcript stops. The matcher losing its embeddings is not — cards keep
+  appearing, matched on bigram overlap, wrong more often, and nothing about
+  the screen changes. It reached a `console.warn` and stopped there; it now
+  raises the same notice strip the live panel and setup screen already read.
 - **The bank check runs the real matcher, or it does not run.** A prep-time
   check that scores differently from the interview is worse than no check: it
   sends someone into the room confident about a bank that behaves differently.

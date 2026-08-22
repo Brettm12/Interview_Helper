@@ -72,6 +72,10 @@ jobs:
       # the bank check, pointed at the bank we ship: editing the seed must not
       # quietly introduce a pair the matcher cannot separate
       - run: LIH_REAL_MODELS=1 LIH_MODELS_DIR="$HOME/lih-models" npx vitest run tests/seedcheck.real.test.ts
+      # threshold-free encoder report: d′, pair-ordering and the best bar the
+      # encoder could possibly have. Prints the table used to judge a swap,
+      # and fails if the installed encoder stops separating the populations
+      - run: LIH_REAL_MODELS=1 LIH_MODELS_DIR="$HOME/lih-models" npx vitest run tests/encoder.real.test.ts
       # the onnx wasm binaries must be IN the build, and both workers must
       # point at them rather than the CDN default (REVIEW.md C2)
       - run: npm run build

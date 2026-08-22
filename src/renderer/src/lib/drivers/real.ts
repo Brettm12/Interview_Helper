@@ -239,6 +239,9 @@ export class WorkerEmbeddings implements EmbeddingProvider {
     { resolve: (v: Float32Array[]) => void; reject: (e: Error) => void }
   >()
   ready = false
+  /** the model never loaded — matching is running on word overlap */
+  failed: string | null = null
+  private onFail: ((message: string) => void) | null = null
 
   constructor(modelPath: string) {
     this.worker = new Worker(new URL('../../workers/embeddings.worker.ts', import.meta.url), {
@@ -260,15 +263,33 @@ export class WorkerEmbeddings implements EmbeddingProvider {
           this.pending.get(msg.id)?.reject(new Error(msg.message))
           this.pending.delete(msg.id)
         } else {
+          // the model itself failed. Semantic matching is gone for the whole
+          // session and everything still runs — on bigram overlap. That is
+          // the quietest bad outcome this app has, so it gets said out loud
+          this.fail(msg.message)
           this.rejectAll(new Error(msg.message))
         }
       }
     }
     this.worker.onerror = (e) => {
       console.warn('[embeddings] worker crashed:', e.message)
+      this.fail(`embeddings worker crashed: ${e.message}`)
       this.rejectAll(new Error(`embeddings worker crashed: ${e.message}`))
     }
     this.worker.postMessage({ type: 'init', modelPath })
+  }
+
+  /** called once when the encoder is gone for good */
+  onFailure(cb: (message: string) => void): void {
+    this.onFail = cb
+    if (this.failed) cb(this.failed)
+  }
+
+  private fail(message: string): void {
+    if (this.failed) return
+    this.failed = message
+    this.ready = false
+    this.onFail?.(message)
   }
 
   private rejectAll(err: Error): void {

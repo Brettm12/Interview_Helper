@@ -124,6 +124,24 @@ let models: {
  */
 let embedOnly: { embeddings: WorkerEmbeddings; cache: EmbeddingCache } | null = null
 
+/**
+ * The encoder failing is the quietest bad outcome this app has.
+ *
+ * Transcription dying is obvious — the transcript stops. The matcher losing
+ * its embeddings is not: everything keeps running, and every question for the
+ * rest of the interview is matched on bigram word overlap. Cards still appear.
+ * They are just wrong more often, in a way nobody can see from the outside.
+ * It used to reach a console.warn and nothing else, so it goes to the same
+ * notice strip the live panel and the setup screen already read (H2/C4).
+ */
+function noteEmbeddingsFailure(message: string): void {
+  useAudioStore
+    .getState()
+    .setPipelineNotice(
+      `Matching is running on word overlap — the matching model did not load (${message}). Re-download it from the setup screen.`
+    )
+}
+
 export function ensureEmbeddings(): EmbeddingCache | null {
   if (models) return models.cache
   if (embedOnly) return embedOnly.cache
@@ -132,6 +150,7 @@ export function ensureEmbeddings(): EmbeddingCache | null {
   if (MOCK) return null
   const modelPath = IN_ELECTRON ? MODELS_URL_PREFIX : 'models'
   const embeddings = new WorkerEmbeddings(modelPath)
+  embeddings.onFailure(noteEmbeddingsFailure)
   embedOnly = { embeddings, cache: new EmbeddingCache(embeddings) }
   return embedOnly.cache
 }
@@ -342,6 +361,7 @@ export function ensureModels(): void {
   // and inherit whatever it has already embedded
   const embeddings = embedOnly?.embeddings ?? new WorkerEmbeddings(modelPath)
   const cache = embedOnly?.cache ?? new EmbeddingCache(embeddings)
+  embeddings.onFailure(noteEmbeddingsFailure)
   embedOnly = null
   transcription.onStateChange((state) => {
     useAudioStore.getState().publish('mic', {})
