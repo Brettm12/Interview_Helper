@@ -229,6 +229,13 @@ function registerAppShortcuts(actions: AppActions): void {
 }
 
 app.whenReady().then(async () => {
+  // this app needs exactly microphone + display capture. Everything else a
+  // web page can ask for (geolocation, notifications, …) used to default-
+  // grant with no handler installed (REVIEW.md L2).
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === 'media' || permission === 'display-capture')
+  })
+
   // system-audio loopback: route the renderer's getDisplayMedia through the
   // primary screen with loopback audio. Loopback is Windows-only in this
   // Electron; elsewhere the stream arrives without an audio track and the

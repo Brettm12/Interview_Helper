@@ -40,6 +40,7 @@ function StripLocalFeed({ overlay }: { overlay: boolean }): JSX.Element | null {
       counter={state.counter}
       overlay={overlay}
       protectionOn={state.protectionOn}
+      protectionUnsupported={api.env.platform === 'linux'}
       onExpand={() => setCollapsed(false)}
     />
   )
@@ -76,6 +77,7 @@ function StripIpcFeed({ overlay }: { overlay: boolean }): JSX.Element {
       counter={s.counter}
       overlay={overlay}
       protectionOn={s.protectionOn}
+      protectionUnsupported={api.env.platform === 'linux'}
       onExpand={() => void api.strip.expand()}
     />
   )

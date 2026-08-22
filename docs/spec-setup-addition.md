@@ -4,7 +4,7 @@ The setup copy promises "Nothing is recorded unless you turn on the recap", but 
 
 Also required on setup (from the handoff, restated):
 
-- The two status dots are a live signal: green only when that source's permission is granted **and** it reports a level. If permission is missing, the dot goes **amber** (`oklch(0.78 0.15 75)`) and the why-line becomes the fix instruction (comes in via props — the screen just renders `ok` + `why`).
-- "Start listening" stays disabled until both sources report a level (`canStart` prop) — render the CTA at `opacity:.45` and no pointer cursor when disabled.
+- The two status dots are a live signal with **three states**, because the failures need different reactions: green = granted and hearing sound, amber = connected but silent, red = no audio track at all (a source that cannot work must never look like one that is merely quiet). If permission is missing, the dot goes **amber** (`oklch(0.78 0.15 75)`) and the why-line becomes the fix instruction (comes in via props — the screen just renders the state + `why`).
+- "Start listening" stays disabled until both sources report a level (`canStart` prop) — render the CTA at `opacity:.45` and no pointer cursor when disabled. Deliberate loosening vs the original text: `canStart` follows the *hysteretic liveness gate with a hold*, not the instantaneous level, so a click landing in the pause between words is never silently dropped.
 - The warning stat card ("2 / no story yet — fix now") is clickable → `onFixNoStory` (links into a filtered bank view).
 - Placement cards are a single-select of three (`placement` + `onPlacement`). `placementError` (when not null) renders as one quiet line under the placement cards: 400 12px/1.5 `#8d8880`.

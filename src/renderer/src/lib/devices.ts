@@ -9,18 +9,37 @@
 // *input* device fed by a virtual cable (BlackHole, Loopback, Soundflower).
 // Finding those in the list is what makes the meeting side work at all there.
 
+import { api } from './api'
+
 export interface AudioDevice {
   deviceId: string
   label: string
 }
 
-/** virtual audio cables, which is what "system audio" has to be routed
- *  through on macOS. Matching is by name because there is no other signal —
- *  the Web Audio API cannot tell a loopback device from a real microphone. */
-const LOOPBACK_NAMES = /blackhole|loopback|soundflower|vb-?(audio|cable)|virtual|aggregate|multi-output/i
+/** virtual audio cables (macOS) and monitor sources (Linux — PulseAudio and
+ *  PipeWire expose each output as an input named "Monitor of …"), which is
+ *  what "system audio" has to be routed through off Windows. Matching is by
+ *  name because there is no other signal — the Web Audio API cannot tell a
+ *  loopback device from a real microphone. */
+const LOOPBACK_NAMES = /blackhole|loopback|soundflower|vb-?(audio|cable)|virtual|aggregate|multi-output|monitor of/i
 
 export function looksLikeLoopback(label: string): boolean {
   return LOOPBACK_NAMES.test(label)
+}
+
+/** the fix for "no system audio" is different on every OS — naming the wrong
+ *  one sends the user hunting for BlackHole on Windows (REVIEW.md M21) */
+export function loopbackGuidance(platform = api.env.platform): string {
+  switch (platform) {
+    case 'darwin':
+      return 'macOS cannot capture system audio directly. Install a loopback device (BlackHole), route the meeting output through it, and pick it as the meeting input below.'
+    case 'linux':
+      return 'pick your system’s monitor source as the meeting input below — PulseAudio/PipeWire expose one per output, named "Monitor of …".'
+    case 'win32':
+      return 'Windows normally captures system audio directly — check that the meeting is audible and try again, or route it through a virtual cable (VB-Audio) and pick it below.'
+    default:
+      return 'route the meeting through a loopback device and pick it as the meeting input below.'
+  }
 }
 
 /**

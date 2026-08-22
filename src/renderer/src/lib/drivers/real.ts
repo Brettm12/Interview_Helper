@@ -3,6 +3,7 @@ import type { EmbeddingProvider } from '../embeddings'
 import captureWorkletUrl from './capture.worklet.ts?worker&url'
 import { Biquad, Resampler } from '../dsp/resample'
 import { TUNING } from '@shared/tuning'
+import { loopbackGuidance } from '../devices'
 
 // Real capture path. Speaker attribution comes from stream identity:
 // system/meeting audio is `them`, the microphone is `you`. Transcription
@@ -223,9 +224,7 @@ export class MeetingAudioSource extends MediaStreamSource {
     stream.getVideoTracks().forEach((t) => t.stop())
     if (stream.getAudioTracks().length === 0) {
       stream.getTracks().forEach((t) => t.stop())
-      throw new Error(
-        'no system-audio track — this platform cannot capture system audio directly. Route the meeting through a loopback device (BlackHole) and pick it below.'
-      )
+      throw new Error(`no system-audio track — ${loopbackGuidance()}`)
     }
     return stream
   }

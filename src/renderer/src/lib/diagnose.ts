@@ -1,6 +1,7 @@
 import type { SourceStatus } from '../state/audioStore'
 import { TUNING } from '@shared/tuning'
 import { dbfs } from './dsp/level'
+import { loopbackGuidance } from './devices'
 
 // Turns capture state into one plain sentence naming the most likely problem.
 // Pure so the reasoning is unit-testable — this is the code that has to be
@@ -29,7 +30,8 @@ export function diagnose(input: DiagnoseInput): string {
     return `Your microphone failed to open${mic.error ? ` — ${mic.error}` : ''}. Pick a different input device and try again.`
   }
   if (meeting.state === 'no-track') {
-    return `Meeting audio has no track${meeting.error ? ` — ${meeting.error}` : ''}. On macOS, Electron cannot capture system audio directly: route the meeting through a loopback device (BlackHole) and select it as the meeting input.`
+    // the source's own error already carries the per-platform fix (M21)
+    return `Meeting audio has no track${meeting.error ? ` — ${meeting.error}` : ''}. ${loopbackGuidance()}`
   }
   if (!screenPermission) {
     return 'Screen Recording permission is not granted, so the meeting side cannot be captured. Grant it in System Settings → Privacy & Security → Screen Recording, then relaunch.'

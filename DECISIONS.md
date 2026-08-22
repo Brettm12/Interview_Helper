@@ -436,6 +436,51 @@ first build and were invisible because nothing measured them.
   someone's prepared material the night before an interview is not a mistake
   they can undo.
 
+## Post-review round
+
+Calls made while fixing the findings of the full-codebase review (REVIEW.md);
+the review's finding IDs are the cross-reference.
+
+- **⌘K steals focus, deliberately (C1).** The find overlay needs real keyboard
+  focus or everything typed lands in the meeting app — which is worse than the
+  interviewer seeing a brief window flash. Closing the overlay (Esc, pin,
+  click-away) blurs the panel so keys drift back toward the meeting. The
+  no-focus-steal rule everywhere else stands; find is the one exception.
+- **The trigger boost is a disambiguator, not a conjurer (C7).** A trigger
+  phrase can lift a plausible semantic match over the confidence bar, but can
+  no longer put a card up on its own: boosted scores cap at the ambiguous band
+  unless the utterance also reads as a question. Triggers exist to break ties
+  between entries the interviewer is plausibly asking about — hearing "your
+  manager" in a war story should never claim a match.
+- **Thresholds come from measurement, not intuition (H1).** The confident/
+  ambiguous bars are now pinned by `tests/calibration.real.test.ts`, which runs
+  honest paraphrases, off-bank questions and trigger-abuse utterances against
+  the real MiniLM. Any future retune has to keep that suite green; symbolic
+  unit tests alone cannot catch thresholds that are consistently wrong.
+- **The 45s merge only trusts explicit context (H3).** Merging a new question
+  into the current row is limited to ⌘K pins and same-window rescores. The old
+  time-window heuristic swallowed genuine not-in-bank questions whenever any
+  confident match had landed within 45 seconds.
+- **Session chords are held only while a session runs (M19/H15).** Global
+  shortcuts are system-wide; holding ⌘K all day steals it from every other
+  app. Registration results are checked and failures surface on the setup
+  screen — a silently dead panic chord is the worst failure this app has.
+- **⌘⇧R ends a session only on a double press (H17).** It collides with the
+  browsers' hard-reload chord; one reflexive press in a flaky CoderPad tab
+  must not end the interview. Idle behaviour (reopen last recap) is unchanged.
+- **An unreadable bank quarantines; it never silently seeds (H8).** The demo
+  bank appearing where someone's prep should be — and the first save then
+  destroying the original — is the single worst data outcome this app can
+  produce. The corrupt file is renamed aside, the fallback is labelled in the
+  UI, and restoring a JSON export is a first-class import path (M9).
+- **Re-asking a question starts its coverage over (L19).** A recap row records
+  "covered THIS time", not "covered at some point today" — inheriting the
+  morning's strikethroughs made a skipped repeat answer look delivered.
+- **Fresh-run seeding is still silent, by design.** The H8 rule above applies
+  to *failed reads*; on a genuine first run (no bank.json, no backup) the seed
+  is the product and a warning banner would be noise. `loadBank` distinguishes
+  the two ('new' vs 'seed').
+
 ## Known limitations
 
 - The real capture path is wired end to end and its model delivery is now

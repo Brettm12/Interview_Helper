@@ -115,6 +115,9 @@ export interface StripProps {
   overlay: boolean
   /** content-protection state, surfaced in the tooltip */
   protectionOn: boolean
+  /** the OS cannot exclude windows from capture at all (Linux) — the tooltip
+   *  must say so instead of claiming share-safety (REVIEW.md M21) */
+  protectionUnsupported?: boolean
   onExpand: () => void
 }
 

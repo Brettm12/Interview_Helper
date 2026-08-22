@@ -244,6 +244,9 @@ export function prepareAudio(): void {
     driver.micSource.onChunk((c) => micMeter(c.samples))
     driver.meetingSource.start()
     driver.micSource.start()
+    // once per DRIVER, not per session — control handlers accumulate, and a
+    // second dry run used to apply every scripted pin/end twice (REVIEW.md L14)
+    wireControlEvents(driver)
     audio.setLabels({ meeting: 'Meeting audio · Google Meet tab', mic: 'Your mic · MacBook Pro' })
     return
   }
@@ -710,6 +713,9 @@ export function startSession(opts: StartOptions = {}): void {
       driver.micSource.onChunk((c) => micMeter(c.samples))
       driver.meetingSource.start()
       driver.micSource.start()
+      // once per DRIVER, not per session — a second dry run used to apply
+      // every scripted pin/end twice (REVIEW.md L14)
+      wireControlEvents(driver)
     }
     const d = driver
     const them = tee(d.meetingTranscriber)
@@ -739,7 +745,6 @@ export function startSession(opts: StartOptions = {}): void {
       // the recap excerpt reads from the engine's own keep, not the UI ring
       engine?.noteHighlight(seg.text, hl)
     })
-    wireControlEvents(d)
     stopPlayback = d.play()
   } else {
     const m = models

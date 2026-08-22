@@ -544,7 +544,6 @@ export class SessionEngine {
       entryId,
       coveredPointIds: entryId ? (s.coverage[entryId] ?? []) : [],
       totalPoints: entry?.points.length ?? 0,
-      missedLabels: [],
       micSeconds: 0,
       pinnedViaFind: viaFind
     }

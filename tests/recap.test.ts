@@ -12,7 +12,6 @@ function q(partial: Partial<SessionQuestion> & { id: string }): SessionQuestion 
     entryId: null,
     coveredPointIds: [],
     totalPoints: 0,
-    missedLabels: [],
     micSeconds: 60,
     pinnedViaFind: false,
     ...partial

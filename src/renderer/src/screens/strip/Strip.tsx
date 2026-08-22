@@ -7,7 +7,7 @@ import './strip.css'
  *  while screen-sharing. Whole strip expands; ▾ / "open" are the explicit
  *  no-drag affordances so clicks land on the frameless window. */
 const Strip = (props: StripProps): JSX.Element => {
-  const { variant, text, counter, overlay, protectionOn, onExpand } = props
+  const { variant, text, counter, overlay, protectionOn, protectionUnsupported, onExpand } = props
 
   const expandFromAffordance = (e: MouseEvent<HTMLDivElement>): void => {
     e.stopPropagation()
@@ -26,9 +26,13 @@ const Strip = (props: StripProps): JSX.Element => {
     <div
       className={className}
       title={
-        protectionOn
-          ? 'Excluded from screen capture'
-          : 'Content protection off — this window is visible in shares'
+        // "share-safe" must not be claimed where the OS cannot deliver it
+        // (REVIEW.md M21: setContentProtection is a no-op on Linux)
+        protectionUnsupported
+          ? 'Content protection is not supported on this OS — this window IS visible in shares'
+          : protectionOn
+            ? 'Excluded from screen capture'
+            : 'Content protection off — this window is visible in shares'
       }
       onClick={onExpand}
     >

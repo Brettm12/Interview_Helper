@@ -82,8 +82,6 @@ export interface SessionQuestion {
   entryId: string | null
   coveredPointIds: PointId[]
   totalPoints: number
-  /** labels of the points that were missed (for the recap sub-line) */
-  missedLabels: string[]
   /** seconds of the candidate's own mic time spent on this answer */
   micSeconds: number
   /** the entry was pulled up by hand via ⌘K */

@@ -9,6 +9,8 @@ pre-interview setup screen, and a post-interview recap.
 
 Everything runs on this machine. The bank, matching, transcription, and the
 session transcript never touch the network; a dead connection changes nothing.
+(That includes the inference runtime itself: onnxruntime's WASM binaries are
+bundled into the build and served internally, not fetched from a CDN.)
 
 ## Building the app
 
@@ -25,11 +27,15 @@ specific platform, though each has to be built on that platform (a `.dmg`
 can only be produced on a Mac).
 
 **First launch on macOS.** The build is unsigned — I have no Developer ID —
-so Gatekeeper will refuse it on a double-click. Right-click the app →
-**Open** → **Open**, once; after that it launches normally. (If you'd rather
-sign it, set `mac.identity` in `electron-builder.yml` and flip
-`hardenedRuntime` back on; `build/entitlements.mac.plist` is already written
-for the microphone and the WASM models.)
+so Gatekeeper will refuse it on a double-click. On macOS 14 and earlier:
+right-click the app → **Open** → **Open**, once. On macOS 15 (Sequoia) the
+right-click path is gone: double-click it once to get the refusal, then open
+**System Settings → Privacy & Security**, scroll to the message about the
+blocked app, and click **Open Anyway**. Either way it's a one-time step;
+after that it launches normally. (If you'd rather sign it, set `mac.identity`
+in `electron-builder.yml` and flip `hardenedRuntime` back on;
+`build/entitlements.mac.plist` is already written for the microphone and the
+WASM models.)
 
 The app stores everything under `~/Library/Application Support/Live Interview
 Helper/` on macOS (`%APPDATA%` on Windows, `~/.config` on Linux): the bank,
@@ -93,12 +99,16 @@ listening" is never disabled by a live signal — a click landing in a pause
 used to hit an undefined handler and be silently dropped.
 
 **Meeting audio by platform.** Electron's loopback audio capture is
-Windows-only. On macOS the meeting has to reach the app as an ordinary *input
-device*: install a virtual cable (BlackHole is the usual choice), route the
-meeting's output through it — typically as part of a Multi-Output Device so
-you can still hear the call — and then pick it in the **meeting row's device
-picker** on the setup screen. If the app can already see something that looks
-like a virtual cable, the row names it.
+Windows-only — there it works out of the box. On macOS the meeting has to
+reach the app as an ordinary *input device*: install a virtual cable
+(BlackHole is the usual choice), route the meeting's output through it —
+typically as part of a Multi-Output Device so you can still hear the call —
+and then pick it in the **meeting row's device picker** on the setup screen.
+On Linux no install is needed: PulseAudio and PipeWire already expose every
+output as a capturable input named **"Monitor of …"** — pick the monitor of
+whatever output the meeting plays through. If the app can already see
+something that looks like a virtual cable or a monitor source, the row names
+it.
 
 Both rows are pickers: the microphone one exists because a default input that
 silently switches to a narrowband Bluetooth headset is otherwise invisible.
@@ -132,9 +142,10 @@ matching against. Three ways in:
   found — how many questions, how many points, which look like duplicates of
   entries you already have — **before** anything is added.
 - **Re-import an export** — the same pane exports the bank as markdown (for
-  reading and editing anywhere) or as JSON (a lossless backup that imports
-  back). Worth doing: your prepared material otherwise lives in a single
-  `bank.json` whose only backup is written on a successful read.
+  reading and editing anywhere) or as JSON (a lossless backup). Pasting a
+  JSON backup back in offers an exact **Restore** — sections, loops, stories,
+  ids and usage history all intact — alongside the ordinary merge. Worth
+  doing: your prepared material otherwise lives in a single `bank.json`.
 
 ## Where things live
 
@@ -154,10 +165,12 @@ matching against. Three ways in:
   without audio hardware.
 - **Data** — three JSON files in Electron's `userData` directory (`bank.json`,
   `sessions.json`, `settings.json`), zod-validated on read, written atomically
-  (temp file + rename), with a `.bak` of the last good read per file. Deleting
-  `bank.json` loses the bank and nothing else. First run seeds from
-  `src/shared/seed.json`. The browser build keeps the same repository contract
-  on localStorage.
+  (temp file + fsync + rename), with a `.bak` refreshed on every good read
+  *and* write. An unreadable `bank.json` is quarantined under a timestamped
+  name — never silently replaced — and the app says which bank you're looking
+  at. Deleting `bank.json` loses the bank and nothing else. First run seeds
+  from `src/shared/seed.json`. The browser build keeps the same repository
+  contract on localStorage.
 - **Architecture** — the UI never touches audio directly. Four interfaces in
   `src/shared/types.ts` (`AudioSource`, `Transcriber`, `Matcher`,
   `CoverageModel`) with two capture implementations: the real path
@@ -176,9 +189,14 @@ matching against. Three ways in:
   `docs/reference/` (per-screen fragments), `docs/CONVENTIONS.md` (build
   rules), `DECISIONS.md` (every call the spec didn't make).
 - **Verification** — `tools/verify/` holds the pixel-diff harness
-  (`verify:pixels`, gating six screens at ≤0.1% against the reference) and
-  the scripted end-to-end drive (`e2e`); `.github/workflows/ci.yml` runs
-  typecheck → unit tests → both on every push.
+  (`verify:pixels`, gating six screens at ≤0.1% against the reference), the
+  scripted end-to-end drive (`e2e`), the Electron multi-window check
+  (`e2e:electron`), the window-lifecycle probe (`probe:windows`: strip
+  placement, off-screen clamp, close interception, single instance) and the
+  offline-inference probe (`probe:wasm`: real models on the bundled WASM with
+  the network dead). `.github/workflows/ci.yml` runs the Linux suite on every
+  push, plus a real-model job (calibration against the actual MiniLM) and
+  macOS/Windows packaging jobs.
 - **Stories library** — the bank sidebar's "Stories library" opens a pane
   for the shared stories themselves (title, body, metric chips); saving one
   updates every answer that references it.
@@ -186,10 +204,14 @@ matching against. Three ways in:
 ## Desktop behaviour
 
 ⌘K (find), ⌘⇧H (collapse to strip), ⌘⇧R (recap) register as global
-shortcuts — they work while the meeting window has focus. Helper windows are
-always-on-top at floating level, visible across spaces, shown without stealing
-focus, and content-protected by default (`setContentProtection`) so they are
-excluded from screen capture; the strip's tooltip states the protection state.
+shortcuts — they work while the meeting window has focus, and they are held
+only while a session is armed or live, so ⌘K goes back to other apps the
+moment the session ends. Helper windows are always-on-top at floating level,
+visible across spaces, shown without stealing focus, and content-protected by
+default (`setContentProtection`) so they are excluded from screen capture on
+macOS and Windows — **Linux cannot do this at all** (the OS offers no way to
+exclude a window from capture), and the strip's tooltip says so there instead
+of claiming share-safety.
 The strip is frameless, draggable by its background, and remembers its
 position. Panel placement (docked right / floating strip / second screen) is
 chosen on the setup screen; second screen errors gracefully with one line if
@@ -202,9 +224,12 @@ Transcription uses Whisper and matching uses MiniLM
 `userData/models` directory only (`env.allowRemoteModels = false`). Get them
 once before interview day — the only moment this app ever touches the network
 — either from the **setup screen** ("Download now" on the models notice,
-which shows per-file progress) or with `npm run fetch-models` from a
-checkout. Both write into `userData/models`, and the app then serves them to
-its workers over an internal `lih-models://` protocol.
+which shows per-file and per-byte progress with a Cancel that keeps partial
+files for resume) or with `npm run fetch-models` from a checkout. Every file
+is verified against a pinned sha256 + size before it counts as installed, and
+interrupted downloads resume where they stopped. Both paths write into
+`userData/models`, and the app then serves the files to its workers over an
+internal `lih-models://` protocol.
 
 There are two Whisper tiers, picked on the setup screen and persisted:
 
@@ -213,10 +238,11 @@ There are two Whisper tiers, picked on the setup screen and persisted:
 | `Xenova/whisper-base.en` (default) | ~145MB | noticeably more accurate, still real-time on a modern machine |
 | `Xenova/whisper-tiny.en` | ~40MB | lower latency on an older machine, misses more words |
 
-Only the selected tier is downloaded. `npm run fetch-models` follows the same
-rule; pass `--model <id>` for a specific tier or `--all` for both. If the
-selected model can't be loaded, the transcriber falls back to `tiny.en` and
-says so rather than going silent.
+The selected tier is downloaded **plus `tiny.en` always** — if the selected
+model can't be loaded, the transcriber falls back to `tiny.en` and says so
+rather than going silent, and that safety net only works if the fallback is
+actually on disk. `npm run fetch-models` follows the same rule; pass
+`--model <id>` for a specific tier or `--all` for everything.
 
 Until the models are present (or while they're still warming up), matching
 and coverage run on the lexical fallback paths — bigram Dice plus your

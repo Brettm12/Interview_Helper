@@ -76,7 +76,6 @@ export const SessionQuestionSchema = z.object({
   entryId: z.string().nullable(),
   coveredPointIds: z.array(z.string()),
   totalPoints: z.number(),
-  missedLabels: z.array(z.string()),
   micSeconds: z.number(),
   pinnedViaFind: z.boolean(),
   transcript: z.array(TranscriptLineSchema).optional()

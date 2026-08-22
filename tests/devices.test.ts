@@ -52,3 +52,8 @@ describe('suggestLoopback', () => {
     expect(suggestLoopback([])).toBeNull()
   })
 })
+
+it('recognises PulseAudio/PipeWire monitor sources as loopback (REVIEW.md M21)', () => {
+  expect(looksLikeLoopback('Monitor of Built-in Audio Analog Stereo')).toBe(true)
+  expect(looksLikeLoopback('Built-in Audio Analog Stereo')).toBe(false)
+})

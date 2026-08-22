@@ -52,6 +52,9 @@ function guardRenderer(win: BrowserWindow): void {
       win.webContents.reload()
     }
   })
+  // nothing in this app opens child windows — window.open from any renderer
+  // would otherwise create a live, unmanaged BrowserWindow (REVIEW.md L2)
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 }
 
 function rendererUrl(query: Record<string, string>): { url?: string; file?: string; query: Record<string, string> } {
@@ -72,6 +75,10 @@ function baseWindowOptions(): Electron.BrowserWindowConstructorOptions {
     webPreferences: {
       // electron-vite emits an ESM preload (package "type": "module")
       preload: join(__dirname, '../preload/index.mjs'),
+      // sandbox: false is deliberate and ACCEPTED (REVIEW.md L3): the ESM
+      // preload requires it. contextIsolation still holds and no remote
+      // content is ever loaded; the accepted trade-off is that a renderer
+      // compromise is not OS-contained. Revisit if the preload moves to CJS.
       sandbox: false
     }
   }
