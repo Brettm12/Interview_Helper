@@ -9,7 +9,6 @@ import ImportPane from '../screens/bank/ImportPane'
 import SetupScreen from '../screens/setup/SetupScreen'
 import ArmedCard from '../screens/setup/ArmedCard'
 import RecapScreen from '../screens/recap/RecapScreen'
-import { WHISPER_TIERS } from '@shared/models'
 import './gallery.css'
 
 // Static state gallery (?screen=…): every screen at its reference frame with
@@ -538,12 +537,6 @@ function SetupDevices(): JSX.Element {
             value: 'a',
             onChange: noop
           }
-        }}
-        model={{
-          options: WHISPER_TIERS.map((t) => ({ value: t.id, label: `Speech model · ${t.label}` })),
-          value: WHISPER_TIERS[0].id,
-          onChange: noop,
-          detail: WHISPER_TIERS[0].detail
         }}
         autoPick={{
           options: [

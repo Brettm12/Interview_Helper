@@ -384,14 +384,11 @@ export interface SetupScreenProps {
   stats: { answers: number; stories: number; noStory: number }
   meeting: AudioRowView & { levels: number[] | null; picker?: DevicePickerView }
   mic: AudioRowView & { hasSignal: boolean; levels?: number[] | null; picker?: DevicePickerView }
-  /** which Whisper build transcribes, and the cost of switching */
-  model?: {
-    options: DeviceOption[]
-    value: string
-    onChange: (value: string) => void
-    /** "~145 MB · noticeably better, still real-time" */
-    detail: string
-  }
+  // There is no speech-model picker. tiny.en used to sit here as a "Fast"
+  // option that misses more words — an invitation to make your own interview
+  // worse to save 34 MB. It is still the automatic fallback; it is not a
+  // choice. If a second model ever earns its place (measured, not assumed),
+  // the picker comes back with two options that are both good.
   /** how long the unsure card waits before committing its leader
    *  (REVIEW.md P5) */
   autoPick?: {

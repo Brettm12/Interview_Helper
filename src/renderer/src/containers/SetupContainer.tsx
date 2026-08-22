@@ -6,7 +6,7 @@ import { useBankStore, answersForLoop } from '../state/bankStore'
 import { usePersistHealth } from '../state/persistHealth'
 import { usePanelStore } from '../state/panelStore'
 import { useSettingsStore } from '../state/settingsStore'
-import { WHISPER_TIERS, whisperTier } from '@shared/models'
+import { whisperTier } from '@shared/models'
 import { api } from '../lib/api'
 import { onDeviceChange, suggestLoopback } from '../lib/devices'
 import { prepareAudio, restartAudio, runMicTest, startSession } from './runtime'
@@ -254,18 +254,6 @@ export default function SetupContainer(): JSX.Element | null {
               onChange: (v) => pickDevice({ micDeviceId: v || null })
             }
       }}
-      model={
-        api.env.mock
-          ? undefined
-          : {
-              options: WHISPER_TIERS.map((t) => ({ value: t.id, label: `Speech model · ${t.label}` })),
-              value: settings.whisperModel,
-              onChange: (v) => {
-                void settings.update({ whisperModel: v }).then(() => refreshModels(v))
-              },
-              detail: whisperTier(settings.whisperModel).detail
-            }
-      }
       keepTranscript={settings.keepTranscript}
       onToggleTranscript={() => void settings.update({ keepTranscript: !settings.keepTranscript })}
       placement={settings.placement}

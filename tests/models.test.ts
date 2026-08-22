@@ -8,6 +8,7 @@ import {
   DEFAULT_WHISPER_MODEL,
   FALLBACK_WHISPER_MODEL,
   WHISPER_TIERS,
+  isOfferedTier,
   whisperTier
 } from '@shared/models'
 import manifest from '@shared/models.json'
@@ -26,10 +27,24 @@ describe('whisper tiers', () => {
     for (const tier of WHISPER_TIERS) expect(transcription).toContain(tier.id)
   })
 
-  it('the default and the fallback are both offered tiers', () => {
-    const ids = WHISPER_TIERS.map((t) => t.id)
-    expect(ids).toContain(DEFAULT_WHISPER_MODEL)
-    expect(ids).toContain(FALLBACK_WHISPER_MODEL)
+  it('offers the default, and only the default', () => {
+    expect(WHISPER_TIERS.map((t) => t.id)).toEqual([DEFAULT_WHISPER_MODEL])
+  })
+
+  // The fallback is not a choice. Offering "misses more words" as a saving of
+  // 34MB is offering to make someone's interview worse, and the round that
+  // measured it found a mangled transcript costs more match score than any
+  // model swap tested.
+  it('keeps the fallback downloadable and runnable, but never offers it', () => {
+    expect(isOfferedTier(FALLBACK_WHISPER_MODEL)).toBe(false)
+    expect(transcription).toContain(FALLBACK_WHISPER_MODEL)
+  })
+
+  it('still names the fallback honestly when it is what is running', () => {
+    // diagnostics reads this: reporting the tier we wish were up would be a
+    // lie told to someone trying to work out why words are missing
+    expect(whisperTier(FALLBACK_WHISPER_MODEL).label).toMatch(/tiny\.en/)
+    expect(whisperTier(FALLBACK_WHISPER_MODEL).id).toBe(FALLBACK_WHISPER_MODEL)
   })
 
   it('takes its default from the manifest, so the CLI and the app agree', () => {
@@ -49,6 +64,17 @@ describe('whisper tiers', () => {
     for (const tier of WHISPER_TIERS) {
       expect(tier.detail).toMatch(/MB/)
       expect(tier.label.length).toBeGreaterThan(0)
+    }
+  })
+
+  // The picker used to say "~145 MB" for a model the manifest lists at 75 MB,
+  // which made the choice it offered look twice as expensive as it was.
+  it('quotes a size that matches the manifest', () => {
+    for (const tier of WHISPER_TIERS) {
+      const entry = manifest.models.find((m) => m.id === tier.id)!
+      const actualMb = entry.files.reduce((n, f) => n + f.bytes, 0) / 1024 / 1024
+      const quoted = Number(tier.detail.match(/(\d+)\s*MB/)![1])
+      expect(Math.abs(quoted - actualMb)).toBeLessThan(10)
     }
   })
 })

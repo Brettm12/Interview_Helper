@@ -299,18 +299,21 @@ interrupted downloads resume where they stopped. Both paths write into
 `userData/models`, and the app then serves the files to its workers over an
 internal `lih-models://` protocol.
 
-There are two Whisper tiers, picked on the setup screen and persisted:
+There is **one** speech model: `Xenova/whisper-base.en`, 75MB. There used to be
+a picker offering `tiny.en` beside it as "lower latency on an older machine,
+misses more words" — an invitation to make your own interview worse. The saving
+was never what the screen said either: it read "~145MB", which is the size of
+the *entire* install (base.en + tiny.en + the matching model), so the real
+choice was 34MB against dropped words. A word Whisper drops is a question the
+matcher scores wrong, and this round measured a mangled transcript costing more
+match score than the difference between three different embedding models. That
+is not a trade to put in front of someone six minutes before an interview.
 
-| tier | size | when |
-| --- | --- | --- |
-| `Xenova/whisper-base.en` (default) | ~145MB | noticeably more accurate, still real-time on a modern machine |
-| `Xenova/whisper-tiny.en` | ~40MB | lower latency on an older machine, misses more words |
-
-The selected tier is downloaded **plus `tiny.en` always** — if the selected
-model can't be loaded, the transcriber falls back to `tiny.en` and says so
-rather than going silent, and that safety net only works if the fallback is
-actually on disk. `npm run fetch-models` follows the same rule; pass
-`--model <id>` for a specific tier or `--all` for everything.
+`tiny.en` is still downloaded and still loads automatically if base.en can't be
+loaded — the transcriber says so rather than going silent, and that safety net
+only works if the fallback is actually on disk. `npm run fetch-models` follows
+the same rule; pass `--model <id>` for a specific model or `--all` for
+everything. ⌘⇧D always names the model actually running, fallback included.
 
 Until the models are present (or while they're still warming up), matching
 and coverage run on the lexical fallback paths — bigram Dice plus your

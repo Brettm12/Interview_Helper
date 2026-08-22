@@ -115,3 +115,24 @@ describe('TranscriptionService', () => {
     expect(states).toContain('failed')
   })
 })
+
+// Why runtime.ensureModels() refuses to swap the speech model while a session
+// is running: the engine holds this service's transcribers, and disposing it
+// does not make them throw — it makes them do nothing at all. Every later
+// segment would vanish, for the rest of the interview, with a green dot up.
+describe('a disposed service is silent, not loud', () => {
+  it('swallows audio instead of failing when the engine keeps pushing', async () => {
+    const svc = await makeService()
+    const w = FakeWorker.instances[0]
+    svc.setEnabled(true, ['them'])
+    svc.push('them', chunk())
+    const before = audioMsgs(w).length
+    expect(before).toBeGreaterThan(0)
+
+    svc.dispose()
+    svc.push('them', chunk())
+    svc.push('them', chunk())
+    expect(audioMsgs(w)).toHaveLength(before) // nothing arrived, nothing threw
+    expect(w.terminated).toBe(true)
+  })
+})

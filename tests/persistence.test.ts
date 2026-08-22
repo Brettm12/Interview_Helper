@@ -7,6 +7,7 @@ import { repository } from '../src/main/persistence'
 import { setUserDataDir } from './helpers/electronStub'
 import seed from '../src/shared/seed.json'
 import type { Bank, SessionRecord } from '../src/shared/types'
+import { DEFAULT_WHISPER_MODEL, FALLBACK_WHISPER_MODEL } from '../src/shared/models'
 
 // The repository holds the user's prep. These tests pin the failure semantics
 // from the review: corruption quarantines instead of silently seeding (H8),
@@ -149,5 +150,39 @@ describe('settings patch semantics (REVIEW.md L10)', () => {
     expect(s.placement).toBe('strip')
     expect(s.stripPosition).toEqual({ x: 40, y: 14 })
     expect(s.version).toBe(1)
+  })
+})
+
+// A speech model the setup screen no longer offers must not be left running.
+// tiny.en is still valid — it is the fallback — but a stored *choice* of it
+// is a choice made against a picker that said "misses more words", and that
+// picker is gone.
+describe('settings written by an older build', () => {
+  const settingsFile = (): string => join(dir, 'settings.json')
+
+  const writeSettings = async (patch: Record<string, unknown>): Promise<void> => {
+    const base = await repository.loadSettings()
+    await writeFile(settingsFile(), JSON.stringify({ ...base, ...patch }), 'utf8')
+  }
+
+  it('moves a stored tiny.en choice back to the default on load', async () => {
+    await writeSettings({ whisperModel: FALLBACK_WHISPER_MODEL })
+    expect((await repository.loadSettings()).whisperModel).toBe(DEFAULT_WHISPER_MODEL)
+  })
+
+  it('does not let the next unrelated write put it back', async () => {
+    // the strip-drag path writes through updateSettings, which read-merges the
+    // file it finds — migrating only on load would restore the stale tier
+    await writeSettings({ whisperModel: FALLBACK_WHISPER_MODEL })
+    const after = await repository.updateSettings({ stripPosition: { x: 10, y: 10 } })
+    expect(after.whisperModel).toBe(DEFAULT_WHISPER_MODEL)
+    expect(JSON.parse(await readFile(settingsFile(), 'utf8')).whisperModel).toBe(
+      DEFAULT_WHISPER_MODEL
+    )
+  })
+
+  it('leaves a model that is still offered alone', async () => {
+    await writeSettings({ whisperModel: DEFAULT_WHISPER_MODEL })
+    expect((await repository.loadSettings()).whisperModel).toBe(DEFAULT_WHISPER_MODEL)
   })
 })

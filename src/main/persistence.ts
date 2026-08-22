@@ -2,7 +2,7 @@ import { app } from 'electron'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import type { ZodType } from 'zod'
-import { DEFAULT_WHISPER_MODEL } from '../shared/models'
+import { DEFAULT_WHISPER_MODEL, isOfferedTier } from '../shared/models'
 import { TUNING } from '../shared/tuning'
 import { BankSchema, SessionRecordSchema, SettingsSchema } from '../shared/schema'
 import type { BankLoadResult } from '../shared/ipc'
@@ -81,6 +81,20 @@ async function quarantine(name: string, label = 'corrupt'): Promise<string | und
   } catch {
     return undefined
   }
+}
+
+/**
+ * Settings written by an older build that are no longer offered.
+ *
+ * Today that is one case: a speech model the setup screen used to let you
+ * choose. tiny.en is still valid to RUN — it is the fallback — but it is not
+ * something to leave someone sitting on, so a stored choice of it becomes the
+ * default. Applied at BOTH read sites: doing it only on load would let the
+ * next strip-drag write the stale value straight back.
+ */
+function migrate(s: Settings): Settings {
+  if (!isOfferedTier(s.whisperModel)) return { ...s, whisperModel: DEFAULT_WHISPER_MODEL }
+  return s
 }
 
 async function readValidated<T>(name: string, schema: ZodType<T>, fallback: T): Promise<T> {
@@ -203,7 +217,9 @@ export const repository = {
   },
 
   async loadSettings(): Promise<Settings> {
-    return readValidated('settings.json', SettingsSchema as ZodType<Settings>, DEFAULT_SETTINGS)
+    return migrate(
+      await readValidated('settings.json', SettingsSchema as ZodType<Settings>, DEFAULT_SETTINGS)
+    )
   },
   /** read-merge-write under the file queue: the single write path for every
    *  settings author — renderer stores and main's strip-drag persistence
@@ -215,7 +231,7 @@ export const repository = {
         SettingsSchema as ZodType<Settings>,
         DEFAULT_SETTINGS
       )
-      const merged = SettingsSchema.parse({ ...current, ...patch }) as Settings
+      const merged = migrate(SettingsSchema.parse({ ...current, ...patch }) as Settings)
       await writeAtomic('settings.json', merged)
       return merged
     })

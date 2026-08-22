@@ -348,6 +348,15 @@ export function ensureModels(): void {
   if (MOCK) return
   const modelId = useSettingsStore.getState().whisperModel
   if (models && models.modelId !== modelId) {
+    // Never mid-session. The engine closes over THIS service's transcribers,
+    // and a disposed service swallows every push in silence — so swapping the
+    // tier during an interview would not change models, it would end
+    // transcription for the rest of the session with nothing on screen saying
+    // so. There is no picker to trigger it from any more, but a settings
+    // migration can rewrite the tier under a running session, and the next
+    // model that earns a place on that screen would make it reachable again.
+    // The change takes effect at the next arm.
+    if (engine) return
     models.transcription.dispose()
     models.embeddings.dispose()
     models = null

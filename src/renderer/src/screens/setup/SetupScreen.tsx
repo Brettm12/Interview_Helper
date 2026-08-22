@@ -84,7 +84,6 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
     stats,
     meeting,
     mic,
-    model,
     keepTranscript,
     onToggleTranscript,
     highLegibility,
@@ -179,25 +178,6 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
                 {testLabel ?? 'Test'}
               </button>
             </div>
-            {model != null && (
-              <div className="setup-hear">
-                <div className="setup-hear__main">
-                  <select
-                    className="setup-hear__title setup-device"
-                    value={model.value}
-                    onChange={(e) => model.onChange(e.target.value)}
-                    aria-label="Speech model"
-                  >
-                    {model.options.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="setup-hear__why">{model.detail}</div>
-                </div>
-              </div>
-            )}
             {autoPick != null && (
               <div className="setup-hear">
                 <div className="setup-hear__main">

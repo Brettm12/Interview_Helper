@@ -358,11 +358,29 @@ window lifecycle.
   the threshold speech has to clear, segments transcribed, model state and
   the last few lines heard — with one plain-language verdict on top. The mic
   bug was invisible precisely because nothing reported any of this.
-- **base.en is the default speech model**, with the tier a persisted setting
-  and only the selected one downloaded. A word Whisper drops is a question the
-  matcher scores wrong, and a panel on the wrong answer costs more than
-  100MB. If the selected tier fails to load the worker falls back to tiny.en
-  and says so, because silence is the failure this whole round is about.
+- **base.en is the speech model, and there is no picker.** tiny.en used to sit
+  beside it on the setup screen, described honestly as "misses more words" —
+  which makes it an offer to trade away the thing the product is for. It is
+  still downloaded, still the automatic fallback when base.en cannot be loaded,
+  and still named honestly in ⌘⇧D when it is what is running; it is simply not
+  a choice on a screen. A word Whisper drops is a question the matcher scores
+  wrong, and the measurement that closed this question is in the round below: a
+  mangled transcript costs more match score than the entire spread between
+  three encoders.
+- **The size the picker quoted was the whole install.** "~145 MB" for base.en
+  was base.en *plus* tiny.en *plus* MiniLM, attributed to one tier — so the
+  choice looked like it saved 105MB when it saved 34. Sizes now come with a
+  test that reads the manifest and fails if a quoted number drifts from the
+  bytes actually downloaded.
+- **A stored tier that is no longer offered is migrated on read.** Both read
+  sites, not just load: `updateSettings` read-merge-writes, so migrating only
+  on load would let the next strip drag write the stale model straight back.
+- **The speech model is never swapped while a session runs.** The engine closes
+  over the transcription service's transcribers, and a disposed service
+  swallows pushes in silence rather than throwing — so a mid-interview swap
+  would not change models, it would end transcription for the rest of the
+  session under a live-green dot. `ensureModels()` refuses; the change lands at
+  the next arm.
 - **Quitting exists.** Every window is frameless, so there was no close
   button anywhere, no menu, no tray, and no quit shortcut — and `showStrip`
   hid the main window rather than closing it, so destroying the strip left a
