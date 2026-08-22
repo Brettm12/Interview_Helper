@@ -15,9 +15,42 @@ import { getEngine } from './runtime'
 
 const MAX_RESULTS = 8
 
-export function searchBank(bank: Bank, entries: Answer[], query: string): Answer[] {
+/** what the session already knows when the overlay opens with nothing typed */
+export interface FindContext {
+  /** entries the matcher is currently torn between, in rank order */
+  candidateIds: string[]
+  /** entries already asked this session */
+  askedIds: string[]
+}
+
+/**
+ * The empty-query list is not a neutral moment: ⌘K under stress almost always
+ * means the matcher was close but wrong, and the entry you want is usually
+ * one it just shortlisted — or one that has not come up yet. Bank order put
+ * both off the bottom of the list and made you type (REVIEW.md P3).
+ * Deterministic, and only ever applied to the blank query.
+ */
+function contextOrder(entries: Answer[], ctx: FindContext): Answer[] {
+  const rank = (a: Answer): number => {
+    const candidateAt = ctx.candidateIds.indexOf(a.id)
+    if (candidateAt >= 0) return candidateAt // 0..n — the shortlist, in order
+    return ctx.askedIds.includes(a.id) ? 2000 : 1000 // fresh before already-asked
+  }
+  // a stable sort keeps bank order inside each band
+  return entries
+    .map((a, i) => ({ a, i, r: rank(a) }))
+    .sort((x, y) => x.r - y.r || x.i - y.i)
+    .map((x) => x.a)
+}
+
+export function searchBank(
+  bank: Bank,
+  entries: Answer[],
+  query: string,
+  ctx?: FindContext
+): Answer[] {
   const q = normalize(query)
-  if (!q) return entries.slice(0, MAX_RESULTS)
+  if (!q) return (ctx ? contextOrder(entries, ctx) : entries).slice(0, MAX_RESULTS)
   const scored = entries.map((a) => {
     const story = storyById(bank, a.storyId)
     const haystacks = [a.question, ...a.points.map((p) => p.text), story?.title ?? '']
@@ -56,9 +89,21 @@ export default function FindContainer(): JSX.Element | null {
     return answersForLoop(bank, loopId ?? bank.activeLoopId)
   }, [bank, loopId])
 
+  // the shortlist the panel is showing right now, and what has already been
+  // asked — the two things worth knowing when nothing is typed (REVIEW.md P3)
+  const candidates = useSessionStore((s) => s.match.candidates)
+  const questions = useSessionStore((s) => s.questions)
+  const findContext = useMemo(
+    () => ({
+      candidateIds: candidates.map((c) => c.entryId),
+      askedIds: questions.map((q) => q.entryId).filter((id): id is string => id != null)
+    }),
+    [candidates, questions]
+  )
+
   const results = useMemo(
-    () => (bank ? searchBank(bank, entries, find.query) : []),
-    [bank, entries, find.query]
+    () => (bank ? searchBank(bank, entries, find.query, findContext) : []),
+    [bank, entries, find.query, findContext]
   )
 
   if (!bank || !find.open) return null

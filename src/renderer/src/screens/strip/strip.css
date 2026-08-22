@@ -54,3 +54,18 @@
 .strip__open {
   color: var(--text-action);
 }
+
+/* Content protection off, or unavailable on this OS: the strip is visible to
+   everyone in the call and has to say so on its face (REVIEW.md P4).
+   Deliberately not the attention amber — that colour means "new question",
+   and a share warning must not read as one. */
+.strip__share {
+  font: 500 9px/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  color: var(--status-error);
+  border: 1px solid var(--status-error);
+  border-radius: 3px;
+  padding: 3px 4px;
+  opacity: 0.9;
+  flex: none;
+}

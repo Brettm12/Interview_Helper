@@ -49,6 +49,12 @@ const Strip = (props: StripProps): JSX.Element => {
         }
       />
       <div className="strip__text">{text}</div>
+      {/* the strip is IN the capture: either protection is switched off, or
+          this OS cannot exclude a window from a share at all. A tooltip
+          nobody hovers mid-share is not a signal (REVIEW.md P4). */}
+      {(protectionUnsupported === true || !protectionOn) && (
+        <div className="strip__share">IN SHARE</div>
+      )}
       {variant !== 'new-question' && counter != null && (
         <div className="strip__counter">{counter}</div>
       )}
