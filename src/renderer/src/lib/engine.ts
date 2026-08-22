@@ -6,6 +6,7 @@ import type { EmbeddingCache } from './embeddings'
 import { useSessionStore } from '../state/sessionStore'
 import { useBankStore, answersForLoop } from '../state/bankStore'
 import { usePanelStore } from '../state/panelStore'
+import { useSettingsStore } from '../state/settingsStore'
 import { usePersistHealth } from '../state/persistHealth'
 import { api } from './api'
 
@@ -52,6 +53,9 @@ export class SessionEngine {
   private activations = new Map<string, number>()
   /** the question row a partial opened, waiting for the confirmed text */
   private partialQuestionId: string | null = null
+  /** session clock at which the entry now on screen was activated — the live
+   *  pacing cue measures your mic time from here (REVIEW.md P9) */
+  private activeAskedAt: number | null = null
 
   private snapshotTimer: ReturnType<typeof setInterval> | null = null
   /** a confident swap deferred by the debounce window */
@@ -309,11 +313,20 @@ export class SessionEngine {
       this.clearPendingSwap()
       const shortlist = this.matcher.shortlist(candidates)
       const wallNow = this.now()
+      // "never" (autoPickSec null) leaves autoPickAt null: the card waits for
+      // a decision rather than committing a leader you were still reading
+      // (REVIEW.md P5)
+      const autoPickSec = useSettingsStore.getState().autoPickSec
+      const keepDeadline = s.match.state === 'ambiguous' && s.match.autoPickAt != null
       s.setMatch({
         state: 'ambiguous',
         candidates: shortlist,
         heard: seg.text,
-        autoPickAt: s.match.state === 'ambiguous' && s.match.autoPickAt ? s.match.autoPickAt : wallNow + TUNING.autoPickSec * 1000
+        autoPickAt: keepDeadline
+          ? s.match.autoPickAt
+          : autoPickSec == null
+            ? null
+            : wallNow + autoPickSec * 1000
       })
       this.armAutoPick()
     } else if (state === 'none' && questionLike && !isRescore) {
@@ -397,6 +410,7 @@ export class SessionEngine {
     if (!seg.confirmed) return
     this.keepLine('you', seg)
     this.youSegments.push(seg)
+    this.updateActiveMicSec()
     this.window = [] // speaking is a turn boundary for the interviewer window
 
     const entryId = s.match.entryId
@@ -482,6 +496,9 @@ export class SessionEngine {
       autoPickAt: null,
       heard: null
     })
+    // the pacing cue is about THIS asking, so the meter restarts here
+    this.activeAskedAt = opts.askedAt
+    s.setActiveMicSec(0)
     const outcome = this.recordQuestion(
       entryId,
       opts.askedAt,
@@ -574,6 +591,18 @@ export class SessionEngine {
       h.entryId === entryId ? { ...h, coveredCount: covered.length } : h
     )
     useSessionStore.setState({ history })
+  }
+
+  /** mic time spent on the entry currently on screen — the same arithmetic
+   *  buildRecord uses for the recap's "ran long" flag, live (REVIEW.md P9) */
+  private updateActiveMicSec(): void {
+    const from = this.activeAskedAt
+    if (from == null) return
+    const mine = this.youSegments.filter((y) => y.t >= from)
+    if (mine.length === 0) return
+    const last = mine[mine.length - 1]
+    const sec = last.t - mine[0].t + estimateSpokenSeconds(last.text)
+    this.session.setActiveMicSec(Math.max(0, Math.round(sec)))
   }
 
   private armAutoPick(): void {

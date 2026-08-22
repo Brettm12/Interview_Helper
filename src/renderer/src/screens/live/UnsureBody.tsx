@@ -28,10 +28,12 @@ export default function UnsureBody(props: UnsureBodyProps): JSX.Element {
 
       <div className="live-unsure__bottom">
         <div className="live-unsure__auto">
-          <div className="live-unsure__auto-text">Keeps listening — picks on its own</div>
-          <div className="live-unsure__count">{countdownSec}s</div>
+          <div className="live-unsure__auto-text">
+            {countdownSec == null ? 'Keeps listening — waits for you' : 'Keeps listening — picks on its own'}
+          </div>
+          {countdownSec != null && <div className="live-unsure__count">{countdownSec}s</div>}
         </div>
-        <AutoPickBar pct={countdownPct} />
+        {countdownSec != null && <AutoPickBar pct={countdownPct} />}
         <div className="live-unsure__btns">
           <button className="live-unsure__btn" onClick={onNone}>
             None of these

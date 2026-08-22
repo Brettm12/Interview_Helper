@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Settings } from '@shared/types'
 import { DEFAULT_WHISPER_MODEL } from '@shared/models'
+import { TUNING } from '@shared/tuning'
 import { api } from '../lib/api'
 import { usePersistHealth } from './persistHealth'
 
@@ -18,6 +19,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   micDeviceId: null,
   meetingDeviceId: null,
   whisperModel: DEFAULT_WHISPER_MODEL,
+  autoPickSec: TUNING.autoPickSec,
   loaded: false,
 
   load: async () => {

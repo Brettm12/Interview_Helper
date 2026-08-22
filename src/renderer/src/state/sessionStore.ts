@@ -45,6 +45,10 @@ interface SessionState {
 
   transcript: TranscriptEntry[]
   match: MatchSlice
+  /** seconds of your own mic time on the entry currently on screen. The
+   *  recap already flags an answer that ran long — but only once it can no
+   *  longer help (REVIEW.md P9). */
+  activeMicSec: number
   /** entryId → covered point ids (never shrinks automatically) */
   coverage: Record<string, string[]>
   history: HistoryRow[]
@@ -59,6 +63,7 @@ interface SessionState {
   arm(loopId: string, keepTranscript: boolean): void
   setStatus(s: SessionStatus): void
   setClock(sec: number): void
+  setActiveMicSec(sec: number): void
   appendTranscript(e: TranscriptEntry): void
   setMatch(m: Partial<MatchSlice>): void
   coverPoints(entryId: string, pointIds: string[]): void
@@ -82,6 +87,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   startedAt: null,
   clockSec: 0,
   keepTranscript: false,
+  activeMicSec: 0,
   transcript: [],
   match: EMPTY_MATCH,
   coverage: {},
@@ -98,6 +104,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       keepTranscript,
       startedAt: Date.now(),
       clockSec: 0,
+      activeMicSec: 0,
       transcript: [],
       match: EMPTY_MATCH,
       coverage: {},
@@ -107,6 +114,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   setStatus: (status) => set({ status }),
   setClock: (clockSec) => set({ clockSec }),
+  setActiveMicSec: (activeMicSec) => set({ activeMicSec }),
 
   appendTranscript: (e) =>
     set((s) => {
@@ -159,6 +167,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       loopId: null,
       startedAt: null,
       clockSec: 0,
+      activeMicSec: 0,
       transcript: [],
       match: EMPTY_MATCH,
       coverage: {},

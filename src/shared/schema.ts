@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { DEFAULT_WHISPER_MODEL } from './models'
+import { TUNING } from './tuning'
 
 // zod schemas used to validate persisted data on read (the repository never
 // trusts the file on disk). Shapes mirror shared/types.ts.
@@ -105,5 +106,6 @@ export const SettingsSchema = z.object({
   stripPosition: z.object({ x: z.number(), y: z.number() }).nullable(),
   micDeviceId: z.string().nullable().default(null),
   meetingDeviceId: z.string().nullable().default(null),
-  whisperModel: z.string().default(DEFAULT_WHISPER_MODEL)
+  whisperModel: z.string().default(DEFAULT_WHISPER_MODEL),
+  autoPickSec: z.number().nullable().default(TUNING.autoPickSec)
 })

@@ -91,6 +91,7 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
     onPlacement,
     placementError,
     alert,
+    autoPick,
     modelsNotice,
     onDownloadModels,
     onCancelDownload,
@@ -186,6 +187,25 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
                 </div>
               </div>
             )}
+            {autoPick != null && (
+              <div className="setup-hear">
+                <div className="setup-hear__main">
+                  <select
+                    className="setup-hear__title setup-device"
+                    value={autoPick.value}
+                    onChange={(e) => autoPick.onChange(e.target.value)}
+                    aria-label="When it is unsure"
+                  >
+                    {autoPick.options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="setup-hear__why">{autoPick.detail}</div>
+                </div>
+              </div>
+            )}
             <div className="setup-hear">
               <div className="setup-hear__main">
                 <div className="setup-hear__title">Keep a transcript for the recap</div>
@@ -203,6 +223,12 @@ export default function SetupScreen(props: SetupScreenProps): JSX.Element {
           </div>
           <div className="setup-privacy pretty">
             Audio stays on this machine. Nothing is recorded unless you turn on the recap.
+          </div>
+          {/* the unsure card is deliberately hint-less on screen — this is
+              where the keys are documented (REVIEW.md P1) */}
+          <div className="setup-privacy pretty">
+            While it is listening: ⌘K finds an answer, ⌘⇧H collapses to the strip. When it is
+            unsure, 1 / 2 / 3 pick a candidate and Esc dismisses.
           </div>
           {alert != null && <div className="setup-alert pretty">{alert}</div>}
           {modelsNotice != null && (

@@ -280,6 +280,19 @@ export default function SetupContainer(): JSX.Element | null {
         }
         void settings.update({ placement: p })
       }}
+      autoPick={{
+        options: [
+          { value: '4', label: 'Unsure: picks for me after 4s' },
+          { value: '8', label: 'Unsure: picks for me after 8s' },
+          { value: 'never', label: 'Unsure: waits for me' }
+        ],
+        value: settings.autoPickSec == null ? 'never' : String(settings.autoPickSec),
+        onChange: (v) => void settings.update({ autoPickSec: v === 'never' ? null : Number(v) }),
+        detail:
+          settings.autoPickSec == null
+            ? 'the card stays up until you choose — nothing commits on its own'
+            : 'it commits the leader when the countdown runs out'
+      }}
       placementError={placementError}
       alert={
         saveProblem ??

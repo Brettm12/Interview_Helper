@@ -47,7 +47,7 @@ export function formatClock(sec: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-function formatRan(sec: number): string {
+export function formatRan(sec: number): string {
   const m = Math.floor(sec / 60)
   const s = Math.round(sec % 60)
   return `${m}:${String(s).padStart(2, '0')}`

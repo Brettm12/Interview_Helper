@@ -19,6 +19,7 @@ function StripLocalFeed({ overlay }: { overlay: boolean }): JSX.Element | null {
   const coverage = useSessionStore((s) => s.coverage)
   const loopId = useSessionStore((s) => s.loopId)
   const bank = useBankStore((s) => s.bank)
+  const paused = useSessionStore((s) => s.status === 'paused')
   const protectionOn = useSettingsStore((s) => s.contentProtection)
 
   // the entry that was showing when the strip collapsed (= when this mounted)
@@ -30,7 +31,8 @@ function StripLocalFeed({ overlay }: { overlay: boolean }): JSX.Element | null {
     match,
     coverage,
     entryAtCollapse: entryAtCollapse.current,
-    protectionOn
+    protectionOn,
+    paused
   })
 
   return (
@@ -41,6 +43,7 @@ function StripLocalFeed({ overlay }: { overlay: boolean }): JSX.Element | null {
       overlay={overlay}
       protectionOn={state.protectionOn}
       protectionUnsupported={api.env.platform === 'linux'}
+      paused={state.paused}
       onExpand={() => setCollapsed(false)}
     />
   )
@@ -50,7 +53,8 @@ const FALLBACK: StripState = {
   variant: 'current',
   text: 'Listening — nothing matched yet',
   counter: null,
-  protectionOn: true
+  protectionOn: true,
+  paused: false
 }
 
 function StripIpcFeed({ overlay }: { overlay: boolean }): JSX.Element {
@@ -78,6 +82,7 @@ function StripIpcFeed({ overlay }: { overlay: boolean }): JSX.Element {
       overlay={overlay}
       protectionOn={s.protectionOn}
       protectionUnsupported={api.env.platform === 'linux'}
+      paused={s.paused}
       onExpand={() => void api.strip.expand()}
     />
   )

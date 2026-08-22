@@ -6,7 +6,7 @@ import './live.css'
 /** Matched-state body: progress + question (crossfade/height swap), key points,
  *  story card, and the EARLIER history pushed to the bottom. */
 export default function MatchedBody(props: MatchedBodyProps): JSX.Element {
-  const { question, covered, total, points, onTogglePoint, story, earlier } = props
+  const { question, covered, total, pacing, points, onTogglePoint, story, earlier } = props
 
   // Question swap: pin the box height, crossfade old/new, animate to the new
   // height (~200ms ease-out), then release back to auto. No layout jump.
@@ -49,7 +49,7 @@ export default function MatchedBody(props: MatchedBodyProps): JSX.Element {
         <div className="live-progress">
           <ProgressBar pct={total > 0 ? (covered / total) * 100 : 0} />
           <Label>
-            {covered} OF {total} COVERED
+            {covered} OF {total} COVERED{pacing ? ` · ${pacing}` : ''}
           </Label>
         </div>
         <div ref={boxRef} className="live-qbox">

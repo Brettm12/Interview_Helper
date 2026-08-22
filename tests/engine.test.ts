@@ -4,6 +4,8 @@ import { MockTranscriber } from '@/lib/drivers/mock'
 import { deriveRecap } from '@/lib/recap'
 import { useSessionStore } from '@/state/sessionStore'
 import { useBankStore } from '@/state/bankStore'
+import { useSettingsStore } from '@/state/settingsStore'
+import { TUNING } from '@shared/tuning'
 import { usePanelStore } from '@/state/panelStore'
 import { api } from '@/lib/api'
 import script from '@/fixtures/demo-session.json'
@@ -459,5 +461,102 @@ describe('session record durability', () => {
     } finally {
       api.sessions.save = originalSave
     }
+  })
+})
+
+// ---- auto-pick delay setting (REVIEW.md P5) ---------------------------------
+
+describe('the unsure card honours the auto-pick setting', () => {
+  const AMBIG = 'Say a harassment complaint lands on your desk — how do you run the investigation?'
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+    useSettingsStore.setState({ autoPickSec: TUNING.autoPickSec })
+  })
+
+  async function ambiguous(): Promise<{ them: MockTranscriber; engine: SessionEngine }> {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', false)
+    them.emit({ speaker: 'them', text: AMBIG, confirmed: true, t: 3 })
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+    return { them, engine }
+  }
+
+  it('"never" leaves no deadline at all — the card waits for you', async () => {
+    useSettingsStore.setState({ autoPickSec: null })
+    await ambiguous()
+    expect(useSessionStore.getState().match.autoPickAt).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    // still asking, nothing committed on its own, and no phantom question row
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+    expect(useSessionStore.getState().questions).toHaveLength(0)
+  })
+
+  it('8s waits twice as long as the default before committing the leader', async () => {
+    useSettingsStore.setState({ autoPickSec: 8 })
+    await ambiguous()
+
+    await vi.advanceTimersByTimeAsync(5000) // past the old 4s default
+    expect(useSessionStore.getState().match.state).toBe('ambiguous')
+
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(useSessionStore.getState().match.state).toBe('confident')
+    expect(useSessionStore.getState().match.entryId).toBeTruthy()
+  })
+
+  it('a manual pick still resolves it while set to never', async () => {
+    useSettingsStore.setState({ autoPickSec: null })
+    const { engine } = await ambiguous()
+    const leader = useSessionStore.getState().match.candidates[0].entryId
+    engine.pickCandidate(leader)
+    expect(useSessionStore.getState().match.state).toBe('confident')
+    expect(useSessionStore.getState().match.entryId).toBe(leader)
+  })
+})
+
+// ---- live pacing cue (REVIEW.md P9) ----------------------------------------
+
+describe('mic time on the entry currently on screen', () => {
+  const ER = 'Tell me about a time you handled a really difficult employee relations case.'
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useSessionStore.getState().reset()
+  })
+
+  it('accrues while you answer and resets when a new question takes the panel', async () => {
+    await useBankStore.getState().load()
+    const them = new MockTranscriber('them')
+    const you = new MockTranscriber('you')
+    const engine = new SessionEngine(them, you)
+    useSessionStore.getState().arm('loop-meridian', false)
+
+    them.emit({ speaker: 'them', text: ER, confirmed: true, t: 10 })
+    expect(useSessionStore.getState().activeMicSec).toBe(0)
+
+    you.emit({ speaker: 'you', text: 'Two complainants, one supervisor.', confirmed: true, t: 15 })
+    you.emit({ speaker: 'you', text: 'I opened it the same afternoon.', confirmed: true, t: 100 })
+    // ~85s of answering: real, but not yet worth interrupting anyone about
+    expect(useSessionStore.getState().activeMicSec).toBeGreaterThan(80)
+    expect(useSessionStore.getState().activeMicSec).toBeLessThan(TUNING.longAnswerSec)
+
+    you.emit({ speaker: 'you', text: 'And that is roughly where it landed.', confirmed: true, t: 200 })
+    expect(useSessionStore.getState().activeMicSec).toBeGreaterThan(TUNING.longAnswerSec)
+
+    // the cue is about THIS answer — whatever takes the panel next starts
+    // from zero, however it got there
+    engine.pinEntry('a-coach')
+    expect(useSessionStore.getState().activeMicSec).toBe(0)
   })
 })

@@ -23,6 +23,10 @@ export interface MatchedBodyProps {
   question: string
   covered: number
   total: number
+  /** "2:40 on this one" once this answer has run long — null below the
+   *  threshold, which is every state the design reference renders
+   *  (REVIEW.md P9) */
+  pacing?: string | null
   points: PointView[]
   onTogglePoint: (id: string) => void
   story: { label: string; body: string; metrics: string[] } | null
@@ -43,8 +47,9 @@ export interface UnsureBodyProps {
   heard: string
   /** ranked, first = leader */
   candidates: UnsureCandidateView[]
-  /** whole seconds remaining, e.g. 4 */
-  countdownSec: number
+  /** whole seconds remaining, e.g. 4 — null when auto-pick is set to "never",
+   *  in which case the card waits for a decision (REVIEW.md P5) */
+  countdownSec: number | null
   /** 0–100 fill of the auto-pick bar */
   countdownPct: number
   onPick: (entryId: string) => void
@@ -58,6 +63,9 @@ export interface LivePanelProps {
   unsure: UnsureBodyProps | null
   transcript: TranscriptLineView | null
   transcriptVisible: boolean
+  /** the session is paused: pause closes the microphone, so the header must
+   *  stop claiming it is listening (REVIEW.md P2) */
+  paused?: boolean
   /** pipeline problem (model failed, audio stalled) — renders a one-line
    *  warning strip; null in every design-reference state */
   notice?: string | null
@@ -118,6 +126,8 @@ export interface StripProps {
   /** the OS cannot exclude windows from capture at all (Linux) — the tooltip
    *  must say so instead of claiming share-safety (REVIEW.md M21) */
   protectionUnsupported?: boolean
+  /** session paused, microphone closed — the dot goes grey (REVIEW.md P2) */
+  paused?: boolean
   onExpand: () => void
 }
 
@@ -298,6 +308,14 @@ export interface SetupScreenProps {
     value: string
     onChange: (value: string) => void
     /** "~145 MB · noticeably better, still real-time" */
+    detail: string
+  }
+  /** how long the unsure card waits before committing its leader
+   *  (REVIEW.md P5) */
+  autoPick?: {
+    options: DeviceOption[]
+    value: string
+    onChange: (value: string) => void
     detail: string
   }
   keepTranscript: boolean

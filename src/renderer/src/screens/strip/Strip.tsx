@@ -7,7 +7,8 @@ import './strip.css'
  *  while screen-sharing. Whole strip expands; ▾ / "open" are the explicit
  *  no-drag affordances so clicks land on the frameless window. */
 const Strip = (props: StripProps): JSX.Element => {
-  const { variant, text, counter, overlay, protectionOn, protectionUnsupported, onExpand } = props
+  const { variant, text, counter, overlay, protectionOn, protectionUnsupported, paused, onExpand } =
+    props
 
   const expandFromAffordance = (e: MouseEvent<HTMLDivElement>): void => {
     e.stopPropagation()
@@ -38,7 +39,14 @@ const Strip = (props: StripProps): JSX.Element => {
     >
       <StatusDot
         size={6}
-        color={variant === 'new-question' ? 'var(--status-attention)' : 'var(--status-live)'}
+        color={
+          // a live-green dot with the microphone closed is a lie (REVIEW.md P2)
+          paused
+            ? 'var(--dot-inactive)'
+            : variant === 'new-question'
+              ? 'var(--status-attention)'
+              : 'var(--status-live)'
+        }
       />
       <div className="strip__text">{text}</div>
       {variant !== 'new-question' && counter != null && (

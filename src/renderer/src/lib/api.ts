@@ -1,5 +1,6 @@
 import type { AppCommand, HelperApi } from '@shared/ipc'
 import { DEFAULT_WHISPER_MODEL } from '@shared/models'
+import { TUNING } from '@shared/tuning'
 import type { Bank, SessionRecord, Settings } from '@shared/types'
 import seed from '@shared/seed.json'
 
@@ -20,7 +21,8 @@ const DEFAULT_SETTINGS: Settings = {
   stripPosition: null,
   micDeviceId: null,
   meetingDeviceId: null,
-  whisperModel: DEFAULT_WHISPER_MODEL
+  whisperModel: DEFAULT_WHISPER_MODEL,
+  autoPickSec: TUNING.autoPickSec
 }
 
 function browserShim(): HelperApi {

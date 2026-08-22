@@ -24,6 +24,10 @@ export interface StripState {
   /** "3/4" */
   counter: string | null
   protectionOn: boolean
+  /** the session is paused and the microphone is closed. A live-green dot
+   *  over a dead mic is the one dishonest signal left in the app
+   *  (REVIEW.md P2) */
+  paused: boolean
 }
 
 /** What loadBank actually did — the renderer must be able to tell "your own

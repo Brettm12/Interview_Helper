@@ -624,7 +624,8 @@ function startStripPublisher(): void {
         match: session.match,
         coverage: session.coverage,
         entryAtCollapse,
-        protectionOn: useSettingsStore.getState().contentProtection
+        protectionOn: useSettingsStore.getState().contentProtection,
+        paused: session.status === 'paused'
       })
     )
   }

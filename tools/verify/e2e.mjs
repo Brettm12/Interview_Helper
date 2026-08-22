@@ -74,12 +74,14 @@ try {
   await page.locator('.autopick-track').waitFor()
   stage(`unsure state with ${candidates} candidates + auto-pick bar`)
 
-  // auto-pick commits the leader into the matched panel (question in the
-  // live-question node, not just a candidate card)
+  // REVIEW.md P1: pressing 1 commits the leader without waiting out the
+  // countdown or reaching for the mouse. (The 4s auto-pick itself is covered
+  // over this same fixture in tests/engine.test.ts.)
+  await page.keyboard.press('1')
   await page
     .locator('.live-question', { hasText: 'Walk me through how you run a harassment investigation.' })
     .waitFor({ timeout: 15000 })
-  stage('auto-pick committed the leader')
+  stage('keyboard pick (1) committed the leader')
 
   await page.locator('.find-overlay').waitFor({ timeout: 90000 })
   stage('fixture opened find')

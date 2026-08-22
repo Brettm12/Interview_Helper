@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import type { ZodType } from 'zod'
 import { DEFAULT_WHISPER_MODEL } from '../shared/models'
+import { TUNING } from '../shared/tuning'
 import { BankSchema, SessionRecordSchema, SettingsSchema } from '../shared/schema'
 import type { BankLoadResult } from '../shared/ipc'
 import type { Bank, SessionRecord, Settings } from '../shared/types'
@@ -27,7 +28,8 @@ const DEFAULT_SETTINGS: Settings = {
   stripPosition: null,
   micDeviceId: null,
   meetingDeviceId: null,
-  whisperModel: DEFAULT_WHISPER_MODEL
+  whisperModel: DEFAULT_WHISPER_MODEL,
+  autoPickSec: TUNING.autoPickSec
 }
 
 function dataPath(name: string): string {

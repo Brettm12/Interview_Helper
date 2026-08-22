@@ -69,6 +69,7 @@ export default function LivePanel(props: LivePanelProps): JSX.Element {
     unsure,
     transcript,
     transcriptVisible,
+    paused,
     notice,
     onToggleTranscript,
     onFind,
@@ -83,9 +84,20 @@ export default function LivePanel(props: LivePanelProps): JSX.Element {
       {notice && <div className="live-notice pretty">{notice}</div>}
       <div className="live-panel__header">
         <div className="live-panel__status">
-          <StatusDot size={7} color={isUnsure ? 'var(--status-attention)' : 'var(--status-live)'} />
+          <StatusDot
+            size={7}
+            color={
+              // pause actually closes the tracks, so a green "Listening" here
+              // is the last dishonest dot in the app (REVIEW.md P2)
+              paused
+                ? 'var(--dot-inactive)'
+                : isUnsure
+                  ? 'var(--status-attention)'
+                  : 'var(--status-live)'
+            }
+          />
           <div className="live-panel__status-text">
-            {isUnsure ? 'Not sure which one' : 'Listening'}
+            {paused ? 'Paused — mic is off' : isUnsure ? 'Not sure which one' : 'Listening'}
           </div>
         </div>
         {isUnsure ? (

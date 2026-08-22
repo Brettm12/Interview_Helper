@@ -169,4 +169,9 @@ export interface Settings {
   meetingDeviceId: string | null
   /** Whisper build to transcribe with; ids come from models.json */
   whisperModel: string
+  /** seconds the unsure card waits before committing its leader, or null for
+   *  "never — wait for me". Four seconds is right for a fast reader watching
+   *  the screen; it is not enough for someone watching the interviewer
+   *  (REVIEW.md P5). */
+  autoPickSec: number | null
 }
