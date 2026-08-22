@@ -309,6 +309,13 @@ matcher scores wrong, and this round measured a mangled transcript costing more
 match score than the difference between three different embedding models. That
 is not a trade to put in front of someone six minutes before an interview.
 
+Two bigger models were measured against that one — `whisper-small.en` and
+`distil-whisper/distil-small.en` — and neither ships: both cost about **2.2× the
+decode time** at the 8-second window where the early card has its deadline, plus
+about a gigabyte of memory, and neither could be shown to transcribe better
+(`distil-small.en` was measurably worse — it dropped half a sentence). The
+harness is `tools/spike/whisper-spike.mjs` and the table is in DECISIONS.md.
+
 `tiny.en` is still downloaded and still loads automatically if base.en can't be
 loaded — the transcriber says so rather than going silent, and that safety net
 only works if the fallback is actually on disk. `npm run fetch-models` follows

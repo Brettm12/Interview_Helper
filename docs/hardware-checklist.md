@@ -87,6 +87,25 @@ Privacy & Security → "Open Anyway". *Working:* it launches on the second
 attempt. The README documents this path from platform knowledge, not from a
 verified install.
 
+**12. Whether a bigger speech model would actually help** (Stream 6).
+Record yourself reading eight or ten of your own bank questions aloud, at
+interview pace, disfluencies left in. Then:
+
+```
+node tools/spike/whisper-spike.mjs --models-dir <models> --audio <your.wav> \
+     --wer-audio <your.wav> --wer-reference "<what you actually said>"
+```
+
+*Why it needs you:* the measurement that declined `whisper-small.en` scored 0%
+word errors for both it and the incumbent on a clean archive clip — a ceiling,
+not a verdict. base.en has no errors left to fix on clean speech. The place a
+bigger model could earn its 2.2× compute and its extra gigabyte is exactly the
+speech this app hears: run-ons, half-swallowed words, someone thinking out loud.
+Only a real recording can settle it, and a voice recording is not something to
+commit to a repository. *Working:* if base.en's word errors on your own clip are
+already near zero, the question is closed; if they are not, the numbers say
+whether the bigger model fixes them.
+
 ---
 
 If something here fails, the diagnostics panel (⌘⇧D) names the most likely cause

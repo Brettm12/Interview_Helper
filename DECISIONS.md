@@ -549,6 +549,37 @@ the review's finding IDs are the cross-reference.
   cost +11MB, a re-derivation of all ten constants and a fallback path, for no
   measured gain on this bank. The suite stays, so the question can be re-asked
   against a different bank or a different candidate in one command.
+- **A bigger speech model was measured and declined too.** The transcript is
+  the bottleneck, so the transcriber is where an upgrade would pay — if it
+  could be afforded. `tools/spike/whisper-spike.mjs` measured the two
+  candidates that exist in this stack's file layout, each in its own process
+  (the first attempt loaded all three into one and reported memory figures that
+  meant nothing):
+
+  | | on disk | 8s partial window | peak RSS | word errors |
+  |---|---|---|---|---|
+  | `whisper-base.en` (incumbent) | 75 MB | **2.82s** | 1388 MB | **0.0%** |
+  | `distil-whisper/distil-small.en` | 167 MB | 6.24s (2.21×) | 2374 MB | 31.8% |
+  | `Xenova/whisper-small.en` | 240 MB | 6.35s (2.25×) | 2730 MB | 0.0% |
+
+  The bar came from `tuning.ts` before any number was taken: a partial covers
+  8 seconds and is produced every 1.6, so an 8-second clip has to decode in
+  under 1.6 or the early card stops being early. Both candidates cost about
+  **2.2× the incumbent** at exactly that window — a floor, since the app runs
+  wasm and this ran native — and about **+1 GB of RSS**, on a machine that will
+  also be running a video call.
+
+  The accuracy case never arrived to argue against the cost. distil-small.en
+  was measurably *worse*: it dropped half a sentence ("ask not what your
+  country can do **for your country**"). small.en matched the incumbent
+  exactly — which is what a ceiling looks like, not what an improvement looks
+  like: base.en has no errors left to fix on a clean clip. Where a gain would
+  show is disfluent interview speech, and that needs a real recording, so it is
+  on the hardware checklist rather than guessed at here.
+- **Distillation is not free.** Two decoder layers instead of twelve did not
+  make distil-small.en faster than small.en in any measured length — they share
+  an encoder byte-for-byte, and Whisper pads every clip to a fixed 30-second
+  window, so the fixed cost dominates a 6-second question.
 - **What actually costs matches is the transcript, not the encoder.** A
   run-on or a left-in disfluency costs 0.10–0.15 of score — larger than the
   entire spread between these three encoders. Effort belongs there.
