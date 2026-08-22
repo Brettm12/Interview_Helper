@@ -27,7 +27,7 @@ import type { Settings } from '../shared/types'
 import type { StripState, ViewName } from '../shared/ipc'
 
 // userData/models is served to the renderer (and its workers) over a
-// privileged custom scheme — @xenova/transformers fetches model files, and a
+// privileged custom scheme — transformers.js fetches model files, and a
 // bare filesystem path is not fetchable from the renderer.
 protocol.registerSchemesAsPrivileged([
   { scheme: 'lih-models', privileges: { supportFetchAPI: true, bypassCSP: true } }

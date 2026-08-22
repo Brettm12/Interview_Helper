@@ -191,8 +191,9 @@ async function extractive(embed, text, want = 3) {
   return picked.sort((a, b) => a.i - b.i).map((x) => x.p)
 }
 
-const { pipeline, env } = await import('@xenova/transformers')
+const { pipeline, env } = await import('@huggingface/transformers')
 env.localModelPath = MODELS_DIR
+env.allowLocalModels = true
 env.allowRemoteModels = false
 
 console.log(`\nmodels from ${MODELS_DIR}`)
@@ -241,7 +242,7 @@ for (const candidate of CANDIDATES) {
   const loadStart = performance.now()
   let generate
   try {
-    generate = await pipeline(candidate.task, candidate.id, { quantized: true })
+    generate = await pipeline(candidate.task, candidate.id, { dtype: 'q8' })
   } catch (err) {
     console.log(`${candidate.id}: failed to load — ${err.message}\n`)
     continue

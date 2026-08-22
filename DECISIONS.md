@@ -263,7 +263,7 @@ README prose and the reference HTML differ, the HTML won, per the brief.
   `package.json` rather than hard-coding a path, so the CLI and the app agree
   on where models live — verified end to end (the app reported the exact
   directory the script wrote to).
-- **`@xenova/transformers` is a devDependency, not a runtime one.** Vite
+- **transformers.js is a devDependency, not a runtime one.** Vite
   bundles it into the renderer chunk at build time (1.4MB), so nothing
   imports it at runtime. Keeping it in `dependencies` dragged ~200MB of
   unused native ONNX builds and `sharp` into the package and triggered a
@@ -495,6 +495,45 @@ the review's finding IDs are the cross-reference.
   0.10–0.15 of score — enough on its own to push a question from the confident
   card onto the unsure one. That is a transcript problem, and no encoder swap
   fixes it.
+- **The inference library moved from `@xenova/transformers` 2.17 to
+  `@huggingface/transformers` 3.8.1**, so that a modern instruct model is even
+  loadable: the old one could take a single self-contained int8 `.onnx` under
+  2 GB, on an ONNX Runtime from February 2023, with no WebGPU, no 4-bit
+  weights, no external-data files, and no support for any architecture newer
+  than 2023. It runs the interview, so it landed as its own change with every
+  existing gate green and nothing else in it.
+
+  What it cost, in order of how long each took to find:
+  - The new library defaults `allowLocalModels` to **false** in a browser
+    context. Setting only `allowRemoteModels = false`, as before, leaves both
+    disabled and it refuses to load anything: "both local and remote models are
+    disabled". The offline probe caught it; nothing else would have.
+  - Quantization is no longer the default. The old library loaded
+    `model_quantized.onnx` unless told otherwise; the new one wants an explicit
+    `dtype`, and an omitted one asks for an fp32 file that was never
+    downloaded. Every pipeline call now names `dtype: 'q8'`.
+  - The runtime's WebAssembly moved from four feature-detected binaries to one
+    that degrades internally, under new names and a new `wasmPaths` shape.
+  - `onnxruntime-web` 1.22 does not export its `.wasm` as a package subpath, so
+    the build reaches it through a path alias, and it is a direct devDependency
+    pinned to the exact version transformers.js loads. A binary from a
+    different runtime than the JS expects is not a build error — it is a
+    session that fails to create, offline, on the user's machine, with the
+    interview about to start. `tests/inferenceStack.test.ts` fails if the two
+    drift.
+
+  **4.2.0 was tried first and rejected on evidence.** Its ONNX Runtime
+  (1.26-dev) cannot create a session from the quantized Whisper decoders — not
+  the ones we ship and not the current re-exports either: "Missing required
+  scale ... for node model.decoder.embed_tokens.weight_transposed_
+  DequantizeLinear". MiniLM was fine; transcription was dead. 3.8.1 runs the
+  existing model files unchanged, and still brings 4-bit weights, WebGPU,
+  external data and the current architectures.
+
+  The proof that matching did not move is the strongest available: the encoder
+  and coverage reports are **byte-identical** to the ones taken on the old
+  library — same distributions, same d′, same headroom, same word errors — so
+  not one threshold needed a second look.
 - **The prep-time model was measured, and the job shipped without it.** The
   ask was "compress my own rambling into points I could say". Three candidates
   small enough to install were run against a real spoken answer

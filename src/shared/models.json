@@ -1,5 +1,5 @@
 {
-  "comment": "On-device model manifest \u2014 the single source of truth for both `npm run fetch-models` and the in-app download on the setup screen. Quantized ONNX builds only; these are the exact files @xenova/transformers requests for these two pipelines. Every file carries a sha256 + byte size so a truncated or captive-portal download can never be installed as a model (REVIEW.md H12).",
+  "comment": "On-device model manifest \u2014 the single source of truth for both `npm run fetch-models` and the in-app download on the setup screen. Quantized ONNX builds only; these are the exact files @huggingface/transformers requests for these two pipelines. Every file carries a sha256 + byte size so a truncated or captive-portal download can never be installed as a model (REVIEW.md H12).",
   "host": "https://huggingface.co",
   "defaultTranscription": "Xenova/whisper-base.en",
   "models": [

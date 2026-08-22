@@ -288,7 +288,7 @@ only one display is connected.
 ## Offline models (real capture path)
 
 Transcription uses Whisper and matching uses MiniLM
-(`Xenova/all-MiniLM-L6-v2`) via `@xenova/transformers`, loaded from the app's
+(`Xenova/all-MiniLM-L6-v2`) via `@huggingface/transformers` (transformers.js), loaded from the app's
 `userData/models` directory only (`env.allowRemoteModels = false`). Get them
 once before interview day — the only moment this app ever touches the network
 — either from the **setup screen** ("Download now" on the models notice,

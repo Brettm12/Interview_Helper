@@ -13,10 +13,11 @@ export const EMBED_MODEL = process.env.LIH_EMBED_MODEL ?? 'Xenova/all-MiniLM-L6-
 
 export async function realEmbeddingProvider(): Promise<EmbeddingProvider> {
   if (!MODELS_DIR) throw new Error('LIH_MODELS_DIR is required with LIH_REAL_MODELS=1')
-  const { pipeline, env } = await import('@xenova/transformers')
+  const { pipeline, env } = await import('@huggingface/transformers')
   env.localModelPath = MODELS_DIR
+  env.allowLocalModels = true
   env.allowRemoteModels = false
-  const extractor = await pipeline('feature-extraction', EMBED_MODEL)
+  const extractor = await pipeline('feature-extraction', EMBED_MODEL, { dtype: 'q8' })
   return {
     ready: true,
     async embed(texts: string[]): Promise<Float32Array[]> {

@@ -29,13 +29,28 @@ let initState: InitState = 'idle'
 const buffered: { id: number; texts: string[] }[] = []
 
 async function init(modelPath: string): Promise<void> {
-  const { pipeline, env } = await import('@xenova/transformers')
+  const { pipeline, env } = await import('@huggingface/transformers')
+  // Both flags, explicitly. The new library defaults allowLocalModels to
+  // FALSE in a browser context, so setting only allowRemoteModels leaves both
+  // disabled and it refuses to load anything at all — "Invalid configuration
+  // detected: both local and remote models are disabled", which is what the
+  // offline probe caught. Remote stays off: nothing here may reach a network.
+  env.allowLocalModels = true
   env.allowRemoteModels = false
   env.localModelPath = modelPath
   // the onnx runtime's default wasmPaths is a CDN — point it at the bundled
   // binaries before the first pipeline() constructs a session (REVIEW.md C2)
-  env.backends.onnx.wasm.wasmPaths = localWasmPaths()
-  extractor = (await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2')) as never
+  // the typings allow this to be absent (a build with no wasm backend); the
+  // app only ever runs the wasm one, and a missing backend here would mean the
+  // CDN default is not even reachable to be overridden
+  if (env.backends.onnx.wasm) env.backends.onnx.wasm.wasmPaths = localWasmPaths()
+  // dtype is explicit, not defaulted: the old library quantized by default and
+  // the new one does not, so an omitted dtype asks for an fp32 file that was
+  // never downloaded — the model would fail to load on every machine, offline
+  // or not. 'q8' is the file the manifest actually carries.
+  extractor = (await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+    dtype: 'q8'
+  })) as never
   post({ type: 'ready' })
 }
 

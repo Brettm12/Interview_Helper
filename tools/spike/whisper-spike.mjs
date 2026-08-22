@@ -199,9 +199,10 @@ async function measure(id) {
   const { samples, rate } = readWav(AUDIO)
   const audio = to16k(samples, rate)
 
-  const { pipeline, env } = await import('@xenova/transformers')
+  const { pipeline, env } = await import('@huggingface/transformers')
   env.localModelPath = MODELS_DIR
-  env.allowRemoteModels = false
+  env.allowLocalModels = true
+env.allowRemoteModels = false
 
   const dir = join(MODELS_DIR, ...id.split('/'))
   let onDisk
@@ -216,7 +217,7 @@ async function measure(id) {
   const loadStart = performance.now()
   let transcribe
   try {
-    transcribe = await pipeline('automatic-speech-recognition', id, { quantized: true })
+    transcribe = await pipeline('automatic-speech-recognition', id, { dtype: 'q8' })
   } catch (err) {
     console.log(`── ${id}: failed to load — ${err.message}`)
     return null

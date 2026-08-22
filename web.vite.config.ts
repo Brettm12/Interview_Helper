@@ -10,7 +10,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve('src/renderer/src'),
-      '@shared': resolve('src/shared')
+      '@shared': resolve('src/shared'),
+      // see electron.vite.config.ts — the wasm runtime is aliased by path
+      '@ort-wasm': resolve('node_modules/onnxruntime-web/dist')
     }
   },
   build: {

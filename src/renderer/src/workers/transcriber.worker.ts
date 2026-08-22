@@ -56,24 +56,42 @@ function post(msg: OutMsg): void {
 }
 
 async function init(modelPath: string, modelId: string): Promise<void> {
-  const { pipeline, env } = await import('@xenova/transformers')
+  const { pipeline, env } = await import('@huggingface/transformers')
+  // Both flags, explicitly. The new library defaults allowLocalModels to
+  // FALSE in a browser context, so setting only allowRemoteModels leaves both
+  // disabled and it refuses to load anything at all — "Invalid configuration
+  // detected: both local and remote models are disabled", which is what the
+  // offline probe caught. Remote stays off: nothing here may reach a network.
+  env.allowLocalModels = true
   env.allowRemoteModels = false
   env.localModelPath = modelPath
   // the onnx runtime's default wasmPaths is a CDN — point it at the bundled
   // binaries before the first pipeline() constructs a session (REVIEW.md C2)
-  env.backends.onnx.wasm.wasmPaths = localWasmPaths()
-  let asr: Awaited<ReturnType<typeof pipeline>>
+  // the typings allow this to be absent (a build with no wasm backend); the
+  // app only ever runs the wasm one, and a missing backend here would mean the
+  // CDN default is not even reachable to be overridden
+  if (env.backends.onnx.wasm) env.backends.onnx.wasm.wasmPaths = localWasmPaths()
+  // Narrow, hand-written: the library's own return type for pipeline() is a
+  // union over every task it supports, and asking the compiler to resolve it
+  // is "union type that is too complex to represent". The worker only ever
+  // calls the thing, and the call shape is pinned right below.
+  type Asr = (audio: Float32Array, opts: object) => Promise<{ text: string }>
+  let asr: Asr
   try {
-    asr = await pipeline('automatic-speech-recognition', modelId)
+    asr = (await pipeline('automatic-speech-recognition', modelId, {
+      dtype: 'q8'
+    })) as unknown as Asr
   } catch (err) {
     // the chosen tier isn't on disk, or its download was interrupted.
     // Transcribing with the smaller model beats transcribing nothing —
     // silence is exactly the failure this whole round is about.
     if (modelId === FALLBACK_WHISPER_MODEL) throw err
     post({ type: 'error', message: `${modelId} failed to load — falling back to the smaller model` })
-    asr = await pipeline('automatic-speech-recognition', FALLBACK_WHISPER_MODEL)
+    asr = (await pipeline('automatic-speech-recognition', FALLBACK_WHISPER_MODEL, {
+      dtype: 'q8'
+    })) as unknown as Asr
   }
-  transcribe = (audio: Float32Array, opts: object) => asr(audio, opts) as Promise<{ text: string }>
+  transcribe = (audio: Float32Array, opts: object) => asr(audio, opts)
   // compile the graph on silence now rather than partway through the first
   // answer, where the delay is indistinguishable from "it isn't working"
   try {

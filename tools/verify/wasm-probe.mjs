@@ -76,6 +76,12 @@ try {
   stage('offline: dead proxy + CDN requests cancelled and counted')
 
   const page = await app.firstWindow()
+  // LIH_PROBE_LOG=1 surfaces what the workers say. Without it a wasm loading
+  // failure reads as "still false after 90s", which says nothing about why.
+  if (process.env.LIH_PROBE_LOG) {
+    page.on('console', (m) => console.log(`    [page:${m.type()}] ${m.text().slice(0, 300)}`))
+    page.on('pageerror', (e) => console.log(`    [page:error] ${String(e).slice(0, 300)}`))
+  }
   await page.locator('.setup-cta').waitFor({ timeout: 30000 })
   stage('setup rendered with real drivers')
 
