@@ -10,7 +10,7 @@ const Strip = (props: StripProps): JSX.Element => {
   const { variant, text, counter, overlay, protectionOn, protectionUnsupported, paused, onExpand } =
     props
 
-  const expandFromAffordance = (e: MouseEvent<HTMLDivElement>): void => {
+  const expandFromAffordance = (e: MouseEvent<HTMLButtonElement>): void => {
     e.stopPropagation()
     onExpand()
   }
@@ -24,6 +24,11 @@ const Strip = (props: StripProps): JSX.Element => {
     .join(' ')
 
   return (
+    // Not a <button>: this element is the frameless window's drag region, and
+    // the affordances below are real buttons that opt out of it — a button
+    // may not contain buttons. The strip window is shown inactive and never
+    // takes keyboard focus, so the affordances carry the semantics
+    // (REVIEW.md P8).
     <div
       className={className}
       title={
@@ -59,14 +64,14 @@ const Strip = (props: StripProps): JSX.Element => {
         <div className="strip__counter">{counter}</div>
       )}
       {variant === 'current' && (
-        <div className="strip__affordance strip__caret" onClick={expandFromAffordance}>
+        <button type="button" className="strip__affordance strip__caret" onClick={expandFromAffordance}>
           ▾
-        </div>
+        </button>
       )}
       {variant === 'new-question' && (
-        <div className="strip__affordance strip__open" onClick={expandFromAffordance}>
+        <button type="button" className="strip__affordance strip__open" onClick={expandFromAffordance}>
           open
-        </div>
+        </button>
       )}
     </div>
   )

@@ -22,7 +22,8 @@ const DEFAULT_SETTINGS: Settings = {
   micDeviceId: null,
   meetingDeviceId: null,
   whisperModel: DEFAULT_WHISPER_MODEL,
-  autoPickSec: TUNING.autoPickSec
+  autoPickSec: TUNING.autoPickSec,
+  highLegibility: false
 }
 
 function browserShim(): HelperApi {

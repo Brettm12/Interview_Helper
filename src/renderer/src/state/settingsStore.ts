@@ -20,6 +20,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   meetingDeviceId: null,
   whisperModel: DEFAULT_WHISPER_MODEL,
   autoPickSec: TUNING.autoPickSec,
+  highLegibility: false,
   loaded: false,
 
   load: async () => {

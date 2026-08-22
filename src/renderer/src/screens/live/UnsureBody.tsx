@@ -13,7 +13,8 @@ export default function UnsureBody(props: UnsureBodyProps): JSX.Element {
       <Label style={{ color: 'var(--text-dim)' }}>TAP THE ONE THEY MEANT</Label>
 
       {candidates.map((c, i) => (
-        <div
+        <button
+          type="button"
           key={c.entryId}
           className={i === 0 ? 'live-cand live-cand--top' : 'live-cand'}
           onClick={() => onPick(c.entryId)}
@@ -23,7 +24,7 @@ export default function UnsureBody(props: UnsureBodyProps): JSX.Element {
             <div className="live-cand__pct">{Math.round(c.pct)}%</div>
           </div>
           <div className="live-cand__sub">{c.sub}</div>
-        </div>
+        </button>
       ))}
 
       <div className="live-unsure__bottom">

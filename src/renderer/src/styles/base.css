@@ -25,7 +25,11 @@ body {
 }
 
 button {
+  /* `all: unset` also resets box-sizing to content-box, which silently adds
+     padding + border to any element with an explicit width — the strip grew
+     by exactly 26px when it became a button (REVIEW.md P8). */
   all: unset;
+  box-sizing: border-box;
   cursor: pointer;
 }
 
@@ -107,4 +111,29 @@ textarea {
 .caret {
   opacity: 0.55;
   font-weight: 300;
+}
+
+/* Keyboard focus (REVIEW.md P8). `:focus-visible` only, so a mouse click
+   never paints a ring and every at-rest reference frame is untouched — but
+   anyone driving this from the keyboard can always see where they are.
+   Text fields are excluded: they show a caret, they already carry the
+   design's own :focus styles, and the ⌘K overlay autofocuses its input,
+   which would put a ring in the reference frame. */
+:focus-visible:not(input):not(textarea):not(select) {
+  outline: 2px solid var(--border-strong);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Respect the OS setting. Nothing here is decorative — the strip's alert and
+   the auto-pick bar carry meaning — so motion is removed, not the states. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

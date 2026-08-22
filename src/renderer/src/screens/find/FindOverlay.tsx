@@ -58,7 +58,8 @@ const FindOverlay = (props: FindOverlayProps): JSX.Element => {
           const selected = i === selectedIndex
           const last = i === results.length - 1
           return (
-            <div
+            <button
+              type="button"
               key={r.entryId}
               className={[
                 'find-row',
@@ -81,7 +82,7 @@ const FindOverlay = (props: FindOverlayProps): JSX.Element => {
                     <div className="find-row__preview pretty">{r.preview.join(' · ')}</div>
                   )
                 : r.sub != null && <div className="find-row__sub">{r.sub}</div>}
-            </div>
+            </button>
           )
         })}
         <div className="find-footer">

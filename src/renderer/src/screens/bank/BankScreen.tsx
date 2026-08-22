@@ -42,12 +42,12 @@ function BankDetail(props: BankDetailProps): JSX.Element {
       <div className="bank-detail__header">
         <Label crumb>{crumb}</Label>
         <div className="bank-detail__actions">
-          <span className="action bank-detail__action" onClick={onEdit}>
+          <button type="button" className="action bank-detail__action" onClick={onEdit}>
             Edit
-          </span>
-          <span className="action bank-detail__action" onClick={onPractice}>
+          </button>
+          <button type="button" className="action bank-detail__action" onClick={onPractice}>
             Practice
-          </span>
+          </button>
         </div>
       </div>
       <div className="bank-detail__body">
@@ -134,13 +134,14 @@ const BankScreen = (props: BankScreenProps): JSX.Element => {
         <div className="bank-side__title">Question bank</div>
         <div className="label bank-side__label">LOOPS</div>
         {loops.map((l) => (
-          <div
+          <button
+            type="button"
             key={l.id}
             className={l.id === selectedLoopId ? 'bank-loop bank-loop--selected' : 'bank-loop'}
             onClick={() => onSelectLoop(l.id)}
           >
             {l.shortName}
-          </div>
+          </button>
         ))}
         <div className="label bank-side__label bank-side__label--sections">SECTIONS</div>
         {sections.map((s) => (
@@ -150,12 +151,12 @@ const BankScreen = (props: BankScreenProps): JSX.Element => {
           </div>
         ))}
         <div className="bank-side__footer">
-          <div className="bank-side__link" onClick={onImport}>
+          <button type="button" className="bank-side__link" onClick={onImport}>
             Import from a job post
-          </div>
-          <div className="bank-side__link" onClick={onStories}>
+          </button>
+          <button type="button" className="bank-side__link" onClick={onStories}>
             Stories library · {storiesCount}
-          </div>
+          </button>
         </div>
       </div>
 
@@ -169,9 +170,9 @@ const BankScreen = (props: BankScreenProps): JSX.Element => {
             placeholder={`Search ${answerCount} answers`}
             onChange={(e) => onSearch(e.target.value)}
           />
-          <div className="chip bank-list__new" onClick={onNewAnswer}>
+          <button type="button" className="chip bank-list__new" onClick={onNewAnswer}>
             New answer
-          </div>
+          </button>
         </div>
         <div className="bank-list__scroll">
           {groups.map((g, gi) => (
@@ -188,7 +189,8 @@ const BankScreen = (props: BankScreenProps): JSX.Element => {
               {g.rows.map((r) => {
                 const selected = r.id === selectedAnswerId
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={r.id}
                     className={selected ? 'bank-row bank-row--selected' : 'bank-row'}
                     onClick={() => onSelectAnswer(r.id)}
@@ -217,7 +219,7 @@ const BankScreen = (props: BankScreenProps): JSX.Element => {
                         <span>{r.pointsLabel}</span>
                       </div>
                     )}
-                  </div>
+                  </button>
                 )
               })}
             </Fragment>

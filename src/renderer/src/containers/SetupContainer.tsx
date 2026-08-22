@@ -293,6 +293,8 @@ export default function SetupContainer(): JSX.Element | null {
             ? 'the card stays up until you choose — nothing commits on its own'
             : 'it commits the leader when the countdown runs out'
       }}
+      highLegibility={settings.highLegibility}
+      onToggleLegibility={() => void settings.update({ highLegibility: !settings.highLegibility })}
       placementError={placementError}
       alert={
         saveProblem ??

@@ -39,9 +39,9 @@ export default function ImportPane(props: ImportPaneProps): JSX.Element {
     <div className="importer">
       <div className="importer__header">
         <Label crumb>IMPORT · EXPORT</Label>
-        <span className="action importer__close" onClick={onClose}>
+        <button type="button" className="action importer__close" onClick={onClose}>
           Close
-        </span>
+        </button>
       </div>
 
       <div className="importer__body">
@@ -71,9 +71,9 @@ export default function ImportPane(props: ImportPaneProps): JSX.Element {
                   replaces your ENTIRE current bank. Merging below adds its questions to this loop
                   instead.
                 </div>
-                <div className="cta importer__cta" onClick={onRestore}>
+                <button type="button" className="cta importer__cta" onClick={onRestore}>
                   Restore this backup
-                </div>
+                </button>
               </>
             )}
             {preview.problem != null ? (
@@ -96,7 +96,8 @@ export default function ImportPane(props: ImportPaneProps): JSX.Element {
                     </div>
                   ))}
                 </div>
-                <div
+                <button
+                  type="button"
                   className="importer__check"
                   role="checkbox"
                   aria-checked={skipDuplicates}
@@ -106,13 +107,14 @@ export default function ImportPane(props: ImportPaneProps): JSX.Element {
                     {skipDuplicates ? '✓' : ''}
                   </span>
                   Skip questions I already have
-                </div>
-                <div
+                </button>
+                <button
+                  type="button"
                   className={canImport ? 'cta importer__cta' : 'cta importer__cta importer__cta--off'}
                   onClick={canImport ? onImport : undefined}
                 >
                   {canImport ? `Add ${preview.importable} to the bank` : 'Nothing to add'}
-                </div>
+                </button>
               </>
             )}
           </div>
@@ -125,12 +127,12 @@ export default function ImportPane(props: ImportPaneProps): JSX.Element {
             survives losing it.
           </div>
           <div className="importer__exports">
-            <span className="action importer__action" onClick={() => onExport('md')}>
+            <button type="button" className="action importer__action" onClick={() => onExport('md')}>
               Export as notes (.md)
-            </span>
-            <span className="action importer__action" onClick={() => onExport('json')}>
+            </button>
+            <button type="button" className="action importer__action" onClick={() => onExport('json')}>
               Export a full backup (.json)
-            </span>
+            </button>
           </div>
         </div>
 

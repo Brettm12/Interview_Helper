@@ -29,13 +29,20 @@ try {
   await page.getByText('no story yet — fix now').waitFor()
   stage('setup renders with loop + warning stat')
 
-  await page.locator('.setup-toggle').click()
+  await page.locator('.setup-toggle--transcript').click()
   if (!(await page.locator('.setup-toggle--on').count())) throw new Error('transcript toggle did not turn on')
   stage('transcript toggle on')
 
   await page.locator('.setup-cta:not(.setup-cta--disabled)').waitFor()
   stage('both sources report a level → Start enabled')
-  await page.locator('.setup-cta').click()
+
+  // REVIEW.md P8: the primary control has to be reachable and operable from
+  // the keyboard — it was a plain div, so it was neither. Focus it and press
+  // Enter rather than clicking.
+  const ctaTag = await page.locator('.setup-cta').evaluate((el) => el.tagName)
+  if (ctaTag !== 'BUTTON') throw new Error(`Start listening is a <${ctaTag}>, not a button`)
+  await page.locator('.setup-cta').focus()
+  await page.keyboard.press('Enter')
 
   await page.getByText('ARMED · WAITING FOR THEM').waitFor()
   stage('armed card')

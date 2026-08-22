@@ -174,4 +174,8 @@ export interface Settings {
    *  the screen; it is not enough for someone watching the interviewer
    *  (REVIEW.md P5). */
   autoPickSec: number | null
+  /** raise the dimmest text and the struck-through points above the design
+   *  default, which fails WCAG AA at 3.36:1 (REVIEW.md P7). Off by default:
+   *  the shipped look is the design reference. */
+  highLegibility: boolean
 }

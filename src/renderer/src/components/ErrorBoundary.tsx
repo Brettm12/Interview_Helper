@@ -33,7 +33,8 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, St
     // One line, one action: get the full panel back.
     if (new URLSearchParams(window.location.search).get('window') === 'strip') {
       return (
-        <div
+        <button
+          type="button"
           style={{
             padding: '10px 12px',
             font: '500 12.5px/1.3 var(--font-ui)',
@@ -44,7 +45,7 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, St
           onClick={() => void api.strip.expand()}
         >
           Strip hit an error — click to reopen the panel
-        </div>
+        </button>
       )
     }
 

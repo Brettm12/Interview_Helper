@@ -25,9 +25,9 @@ export default function ArmedCard(props: ArmedCardProps): JSX.Element {
       </div>
       <div className="armed-footer">
         <span className="footer-hint">{statusLeft}</span>
-        <span className="footer-hint armed-footer__pause" onClick={onPause}>
+        <button type="button" className="footer-hint armed-footer__pause" onClick={onPause}>
           Pause
-        </span>
+        </button>
       </div>
     </div>
   )

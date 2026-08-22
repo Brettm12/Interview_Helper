@@ -47,6 +47,7 @@
   --warn-border: oklch(0.42 0.07 75);
   --warn-text: #bfb3a0;
   --dot-inactive: #4f545b;           /* upcoming point marker */
+  --point-covered-opacity: 0.4;      /* struck-through points (see .lih-legible) */
   --placement-selected-border: #4b5158; /* selected placement card, schematic block */
   --track-progress: #2e3238;         /* 44×2 progress bar remainder */
   --track-autopick: #26292e;         /* unsure auto-pick track */
@@ -65,4 +66,16 @@
 
   /* -- shadow (only one in the whole design) -- */
   --shadow-strip: 0 6px 20px rgba(0, 0, 0, 0.28);
+}
+
+/* High-legibility mode (REVIEW.md P7), default off — opt in on the setup
+   screen. Three declarations, deliberately: #6f6b64 on #16181b computes to
+   3.36:1, which fails WCAG AA, and it is the colour of "TAP THE ONE THEY
+   MEANT" — the instruction you read while panicking. Covered points at .4
+   fall below readable at 15.5px, and half the value of the strikethrough is
+   being able to see what you already said. Fixing the tokens outright would
+   change the design reference for everyone, so it is a switch. */
+:root.lih-legible {
+  --text-dim: #8d8880;
+  --point-covered-opacity: 0.55;
 }

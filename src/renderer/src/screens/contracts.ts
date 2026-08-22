@@ -323,6 +323,9 @@ export interface SetupScreenProps {
   }
   keepTranscript: boolean
   onToggleTranscript: () => void
+  /** raise the dimmest text above the design default (REVIEW.md P7) */
+  highLegibility?: boolean
+  onToggleLegibility?: () => void
   placement: 'docked' | 'strip' | 'second-screen'
   onPlacement: (p: 'docked' | 'strip' | 'second-screen') => void
   /** one-line graceful error, e.g. only one display for second-screen */

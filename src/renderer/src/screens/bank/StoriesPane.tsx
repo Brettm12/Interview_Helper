@@ -54,14 +54,15 @@ const StoriesPane = (props: StoriesPaneProps): JSX.Element => {
           {rows.map((r) => {
             const selected = draft?.storyId === r.id
             return (
-              <div
+              <button
+                type="button"
                 key={r.id}
                 className={selected ? 'stories-row stories-row--selected' : 'stories-row'}
                 onClick={() => onSelect(r.id)}
               >
                 <div className="stories-row__title">{r.title}</div>
                 <div className="stories-row__sub">{r.sub}</div>
-              </div>
+              </button>
             )
           })}
         </div>
@@ -96,9 +97,9 @@ const StoriesPane = (props: StoriesPaneProps): JSX.Element => {
                 {draft.metrics.map((m) => (
                   <div key={m} className="metric-chip stories-metric">
                     {m}
-                    <span className="stories-metric__x" onClick={() => onMetricRemove(m)}>
+                    <button type="button" className="stories-metric__x" onClick={() => onMetricRemove(m)}>
                       ×
-                    </span>
+                    </button>
                   </div>
                 ))}
                 <input

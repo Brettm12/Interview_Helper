@@ -536,6 +536,18 @@ function SetupDevices(): JSX.Element {
           onChange: noop,
           detail: WHISPER_TIERS[0].detail
         }}
+        autoPick={{
+          options: [
+            { value: '4', label: 'Unsure: picks for me after 4s' },
+            { value: '8', label: 'Unsure: picks for me after 8s' },
+            { value: 'never', label: 'Unsure: waits for me' }
+          ],
+          value: '4',
+          onChange: noop,
+          detail: 'it commits the leader when the countdown runs out'
+        }}
+        highLegibility={false}
+        onToggleLegibility={noop}
         keepTranscript
         onToggleTranscript={noop}
         placement="docked"

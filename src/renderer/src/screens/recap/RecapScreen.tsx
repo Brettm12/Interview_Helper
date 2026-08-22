@@ -39,8 +39,28 @@ function RecapRow({ row }: { row: RecapRowView }): JSX.Element {
     .filter(Boolean)
     .join(' ')
 
+  // Not a <button>: the row contains its own "Add to bank" button, and
+  // nesting interactive elements is worse than the div it replaces. It gets
+  // the keyboard directly instead (REVIEW.md P8).
+  const toggle = (): void => setOpen((o) => !o)
   return (
-    <div className={rowClass} onClick={expandable ? () => setOpen((o) => !o) : undefined}>
+    <div
+      className={rowClass}
+      onClick={expandable ? toggle : undefined}
+      role={expandable ? 'button' : undefined}
+      tabIndex={expandable ? 0 : undefined}
+      aria-expanded={expandable ? open : undefined}
+      onKeyDown={
+        expandable
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                toggle()
+              }
+            }
+          : undefined
+      }
+    >
       <div className="recap-row__time">{row.time}</div>
       <div className="recap-row__mid">
         <div className="recap-row__question pretty">{row.question}</div>

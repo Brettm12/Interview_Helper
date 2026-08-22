@@ -127,7 +127,7 @@
 }
 
 .point-row--covered {
-  opacity: 0.4;
+  opacity: var(--point-covered-opacity);
 }
 
 .point-row__check {

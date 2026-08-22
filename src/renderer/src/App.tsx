@@ -141,11 +141,19 @@ export default function App(): JSX.Element {
       })
     }
     const stopBankSync = startBankSync()
+    // high-legibility mode is a root class so every window (panel, strip,
+    // second screen) picks it up from the same setting (REVIEW.md P7)
+    const applyLegible = (on: boolean): void => {
+      document.documentElement.classList.toggle('lih-legible', on === true)
+    }
+    applyLegible(useSettingsStore.getState().highLegibility) // in case it is already loaded
+    const stopLegible = useSettingsStore.subscribe((s) => applyLegible(s.highLegibility))
     // main and second windows also write settings (strip drag) — stay fresh
     const stopSettingsSync = startSettingsSync()
     return () => {
       stopBankSync()
       stopSettingsSync()
+      stopLegible()
     }
   }, [])
 

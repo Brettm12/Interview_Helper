@@ -107,5 +107,6 @@ export const SettingsSchema = z.object({
   micDeviceId: z.string().nullable().default(null),
   meetingDeviceId: z.string().nullable().default(null),
   whisperModel: z.string().default(DEFAULT_WHISPER_MODEL),
-  autoPickSec: z.number().nullable().default(TUNING.autoPickSec)
+  autoPickSec: z.number().nullable().default(TUNING.autoPickSec),
+  highLegibility: z.boolean().default(false)
 })
